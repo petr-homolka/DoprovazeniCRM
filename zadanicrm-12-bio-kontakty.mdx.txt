@@ -1,0 +1,109 @@
+---
+title: "Kapitola 12: Modul kontaktů s biologickou rodinou"
+description: "Plánování, evidence a supervize styku dítěte s původní rodinou."
+icon: "users-between-lines"
+---
+
+<Warning>
+**Instrukce pro AI programátora:** Zatímco v tabulce `events` se objevuje událost `bio_contact` (jako záznam na časové ose rodiny pro rychlý přehled), detailní správa těchto kontaktů vyžaduje vlastní robustní relační strukturu. Tento modul se dělí na 3 úrovně: 1. Plán (Co je povoleno/nařízeno), 2. Harmonogram (Kdy se to stane), 3. Supervize (Jak to proběhlo).
+</Warning>
+
+## 1. Databázový model (SQL)
+
+Tento kód doplňuje hybridní databázi o detailní agendu styků. Spusťte v Supabase SQL Editoru.
+
+```sql
+-- 1. Číselník povolených forem kontaktu
+CREATE TYPE contact_form AS ENUM (
+    'osobni_asistovany', 
+    'osobni_neasistovany', 
+    'online_videohovor', 
+    'telefonicky', 
+    'pisemny'
+);
+
+CREATE TYPE contact_status AS ENUM (
+    'planned', 
+    'realized', 
+    'cancelled_by_bio', 
+    'cancelled_by_foster', 
+    'cancelled_by_child', 
+    'no_show'
+);
+
+-- 2. Plán kontaktů (Dlouhodobý rámec stanovený soudem/OSPODem)
+CREATE TABLE contact_plans (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID REFERENCES organizations(id) NOT NULL,
+    child_id UUID REFERENCES persons(id) NOT NULL,
+    biological_person_id UUID REFERENCES persons(id) NOT NULL,
+    approved_by TEXT NOT NULL, -- např. 'Soud', 'OSPOD', 'Dohoda pěstounů'
+    court_decision_id UUID REFERENCES court_decisions(id), -- Volitelná vazba na konkrétní rozsudek z Kapitoly 11
+    frequency_description TEXT NOT NULL, -- např. "1x za 14 dní na 2 hodiny"
+    allowed_forms contact_form[] NOT NULL, -- Pole povolených forem styku
+    court_limitations TEXT, -- Zákazy nebo omezení (např. "Zákaz styku pod vlivem alkoholu")
+    valid_from DATE NOT NULL,
+    valid_to DATE,
+    created_by UUID REFERENCES profiles(id),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 3. Harmonogram kontaktů (Konkrétní naplánované termíny)
+CREATE TABLE contact_schedules (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    contact_plan_id UUID REFERENCES contact_plans(id) ON DELETE CASCADE,
+    scheduled_date TIMESTAMP WITH TIME ZONE NOT NULL,
+    location TEXT NOT NULL,
+    planned_form contact_form NOT NULL,
+    escort_required BOOLEAN DEFAULT FALSE,
+    assigned_ko_id UUID REFERENCES profiles(id), -- Kdo z organizace styk dozoruje/asistuje
+    status contact_status DEFAULT 'planned',
+    cancellation_reason TEXT, -- Vyplní se, pokud se styk neuskutečnil
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 4. Supervize a realizace (Zápis z proběhlého styku)
+CREATE TABLE contact_supervisions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    schedule_id UUID REFERENCES contact_schedules(id) ON DELETE CASCADE,
+    realized_date TIMESTAMP WITH TIME ZONE NOT NULL,
+    duration_minutes INT NOT NULL,
+    child_reaction_before TEXT NOT NULL,
+    course_of_contact TEXT NOT NULL,
+    child_reaction_after TEXT NOT NULL,
+    ai_processed BOOLEAN DEFAULT FALSE, -- Flag, zda byl text zpracován a strukturován pomocí AI z hlasového záznamu
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 5. Audit triggery pro zpětnou dohledatelnost
+CREATE TRIGGER audit_contact_plans AFTER INSERT OR UPDATE OR DELETE ON contact_plans FOR EACH ROW EXECUTE FUNCTION process_audit_log();
+CREATE TRIGGER audit_contact_schedules AFTER INSERT OR UPDATE OR DELETE ON contact_schedules FOR EACH ROW EXECUTE FUNCTION process_audit_log();
+CREATE TRIGGER audit_contact_supervisions AFTER INSERT OR UPDATE OR DELETE ON contact_supervisions FOR EACH ROW EXECUTE FUNCTION process_audit_log();
+
+```
+
+## 2. Architektura a Byznys logika
+
+Aplikace musí hlídat dodržování pravidel (Soft-blokace) a ošetřovat rizikové situace.
+
+1. **Validace Plánu vs. Harmonogramu:**
+Když Klíčová osoba (KO) nebo Pěstoun zadává nový termín do `contact_schedules`, systém automaticky kontroluje data vůči `contact_plans`. Pokud se pracovník pokusí naplánovat formu styku `osobni_neasistovany`, ale rozsudek umožňuje pouze `osobni_asistovany`, systém zobrazí žluté varování o porušení soudního rozhodnutí. Uložení je možné vynutit s poznámkou, která se propíše do audit logu.
+
+
+2. **Sběr dat ze styku (AI Záznamník):**
+Jakmile styk proběhne, zapisuje se `contact_supervisions`. Aby KO nemusela složitě vyťukávat text do tří oddělených polí na mobilu, nahraje jeden souvislý hlasový záznam přes diktafon v aplikaci `FosterFlow Worker`. Google Gemini (AI Asistent) je promptován tak, aby surový text automaticky roztřídil a vložil do sloupců: `child_reaction_before`, `course_of_contact` a `child_reaction_after`.
+
+
+3. **Propagace do Timeline (Události):**
+Jakmile je záznam v `contact_supervisions` uložen a schválen, backend API **musí automaticky** vygenerovat agregovanou událost typu `bio_contact` do hlavní tabulky `events`. Zápis do Timeline tak zaručuje, že událost uvidí KO ihned po otevření karty rodiny jako součást celkové chronologie.
+
+
+4. **Neuskutečněné styky:**
+Záznam o *neuskutečněném* styku je právně stejně důležitý jako ten o uskutečněném. Pokud je status v tabulce `contact_schedules` změněn na `no_show` nebo `cancelled_by_bio`, systém vyžaduje zadání `cancellation_reason`. Tyto případy se pololetně automaticky agregují do reportu pro OSPOD k doložení nezájmu ze strany biologické rodiny.
+
+
+## 3. Uživatelské rozhraní (UI/UX)
+
+* **FosterFlow Organization (Desktop):** Záložka "Kontakty". V horní části je aktivní *Plán* (rozsudek). Pod ním je kalendářní pohled a tabulkový výpis všech proběhlých i zrušených harmonogramů. Obsahuje tlačítko `Vygenerovat zprávu o kontaktech` (AI projde všechny supervizní zápisy za dané období a sestaví jednolité PDF).
+* **FosterFlow Worker (Mobilní PWA):** KO v terénu nevidí kalendáře, ale při kliknutí na velké FAB tlačítko `+` vidí speciální volbu `Zapsat proběhlý kontakt`. Otevře se diktafon, který rovnou ukládá data do struktury `contact_supervisions`.
+

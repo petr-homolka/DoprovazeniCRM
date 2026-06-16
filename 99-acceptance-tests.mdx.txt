@@ -1,0 +1,76 @@
+---
+title: "Příloha: Akceptační testy (UAT)"
+description: "Definition of Done: End-to-end scénáře pro ověření funkčnosti systému."
+icon: "list-check"
+---
+
+<Warning>
+**Instrukce pro QA / Vývojáře:** Tyto testy ověřují funkčnost napříč moduly. Systém nelze považovat za hotový (MVP), dokud neprojde 100 % těchto scénářů bez chyb a bez nutnosti ručního zásahu do databáze.
+</Warning>
+
+## 1. Jádro a Bezpečnost (Core & RBAC)
+
+**Test 001: Přístupová práva (RLS a RBAC)**
+* **Výchozí stav:** V systému existuje Rodina A (přidělená KO 1) a Rodina B (přidělená KO 2).
+* **Akce:** Přihlášení do aplikace pod účtem KO 1.
+* **Očekávaný výsledek:** Na dashboardu je vidět pouze Rodina A. Při pokusu o přímé volání API s ID Rodiny B vrátí server chybu 403 (Forbidden) nebo prázdné pole. Modul "Finance organizace" v menu zcela chybí.
+
+**Test 002: Delegace role (Zástup)**
+* **Výchozí stav:** KO 1 má přidělenou Rodinu A. Ředitel přidělí KO 2 dočasnou roli, která jí dává oprávnění číst všechny spisy (`cases.view_all`).
+* **Akce:** Přihlášení pod účtem KO 2.
+* **Očekávaný výsledek:** KO 2 nyní vidí na dashboardu Rodinu A i Rodinu B. Zápis do audit logu (`audit_logs`) zaznamená přidělení oprávnění ředitelem.
+
+## 2. Životní cyklus a Události (Lifecycle & Events)
+
+**Test 003: Založení rodiny a změna stavu**
+* **Výchozí stav:** Administrátor zakládá novou poptávku od pěstouna.
+* **Akce:** Vytvoření záznamu domácnosti. Pokus o přesun stavu z `lead` rovnou do `active_accompanying` bez vložení dokumentu "Souhlas ORP".
+* **Očekávaný výsledek:** Systém zablokuje přesun (Soft/Hard block) a vyžaduje nahrání povinného dokumentu. Po nahrání dokumentu se stav změní.
+
+**Test 004: Zápis z návštěvy pomocí AI Záznamníku**
+* **Výchozí stav:** KO 1 otevírá na mobilu (Worker PWA) kartu Rodiny A.
+* **Akce:** Kliknutí na "Nová událost", nahrání 15sekundového hlasového vzkazu: *"Dnes jsem byla u Nováků, všechno je v pořádku, Petr se ve škole zlepšil, příště musím přinést formuláře na tábor."*
+* **Očekávaný výsledek:** Systém z audia vygeneruje JSON. V Timeline rodiny vznikne událost typu `visit_log`. Text je zformátován (bez plevelných slov). V seznamu úkolů (`tasks`) se KO 1 objeví nový záznam: "Přinést formuláře na tábor".
+
+## 3. Krizový management a Workflow Lite
+
+**Test 005: Nahlášení krizového incidentu**
+* **Výchozí stav:** Dítě z Rodiny A uteklo z domova.
+* **Akce:** KO 1 v mobilní aplikaci stiskne tlačítko "Krize" a zvolí `child_runaway`.
+* **Očekávaný výsledek:** Vznikne záznam v `crisis_cases`. Stav rodiny indikuje aktivní krizi. Přes Workflow Lite se automaticky odešle SMS notifikace Řediteli. Vytvoří se kritický úkol "Nařídit případovou supervizi" s termínem do 3 dnů.
+
+## 4. Finance a Vzdělávání
+
+**Test 006: Započtení vzdělávání s čerpáním dotace**
+* **Výchozí stav:** Pěstoun Jan Novák má letos splněno 10 hodin ze 24. Limit SPVPP dotace je 60 000 Kč, zbývá 60 000 Kč.
+* **Akce:** Ekonomka zadá do systému fakturu za víkendový pobyt (14 hodin, 5000 Kč) a schválí ji.
+* **Očekávaný výsledek:** Dotace SPVPP klesne na 55 000 Kč. Hodiny vzdělávání pěstouna se automaticky přepočítají na 24/24. Certifikát se připne do modulu dokumentů.
+
+**Test 007: Včasné varování (The 24h Rule)**
+* **Výchozí stav:** Je 1. října. Pěstounka Jana Nováková má splněno 8 hodin vzdělávání.
+* **Akce:** Spuštění nočního CRON jobu.
+* **Očekávaný výsledek:** KO 1 (přidělená k Janě Novákové) obdrží alert s vysokou prioritou a systém vygeneruje úkol: "Zajistit doplnění hodin vzdělávání pro Janu Novákovou".
+
+## 5. Spisová služba a Retence (Compliance)
+
+**Test 008: Export spisu rodiny (Migrace)**
+* **Výchozí stav:** Rodina A přechází k jiné doprovázející organizaci.
+* **Akce:** Ředitel klikne na "Předat spis", vybere rozsah dat a potvrdí.
+* **Očekávaný výsledek:** Profil rodiny se uzamkne pro editaci (`read_only`). Vygeneruje se ZIP soubor zašifrovaný heslem, obsahující manifest a všechny přiložené dokumenty (PDF, audita). V databázi se uloží SHA-256 hash tohoto souboru.
+
+**Test 009: Právo být zapomenut (GDPR)**
+* **Výchozí stav:** V systému je záznam o zájemci o pěstounství (nepodepsal dohodu, nečerpal peníze), který požádal o výmaz dat.
+* **Akce:** Administrátor spustí manuální GDPR výmaz pro daný profil.
+* **Očekávaný výsledek:** Jméno, příjmení a osobní údaje se přepíší hashem (anonymizace). Historické události zůstávají zachovány pro statistiky, ale nelze je spojit s konkrétní identitou. Spis se stává nevyhledatelným přes standardní vyhledávání.
+
+## 6. Integrace RAG a Šablon
+
+**Test 010: Trasovaný dotaz na legislativu**
+* **Výchozí stav:** KO 1 využívá Knowledge Base chat.
+* **Akce:** Odeslání dotazu: "Jaké jsou podmínky pro nezprostředkovanou pěstounskou péči prarodiči?"
+* **Očekávaný výsledek:** AI odpoví textem s uvedením zdrojů (např. *ZSPOD §47*). V databázi v tabulce `ai_interaction_logs` vznikne záznam obsahující položený dotaz, přesnou odpověď a pole ID použitých zdrojových vektorů, ze kterých AI čerpala (traceability log).
+
+**Test 011: Vygenerování Zprávy pro OSPOD**
+* **Výchozí stav:** Rodina A má v časové ose 15 událostí za posledních 6 měsíců. Existuje platná verze šablony "Pololetní zpráva".
+* **Akce:** KO klikne na "Vygenerovat zprávu" a vybere časové období.
+* **Očekávaný výsledek:** Systém zkompiluje události, AI je shrne do souvislého textu. Hodnoty z databáze (adresa, jména) nahradí proměnné v šabloně. Výsledkem je naformátované PDF, které se uloží do spisu a zaeviduje do `generated_documents` se svým kryptografickým hashem.

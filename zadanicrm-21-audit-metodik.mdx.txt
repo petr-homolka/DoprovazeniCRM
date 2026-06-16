@@ -1,0 +1,98 @@
+
+---
+title: "Kapitola 21: Audit metodik a trasování AI"
+description: "Verzování právních zdrojů a důkazní stopa pro vysvětlitelnost umělé inteligence."
+icon: "scale-balanced"
+---
+
+<Warning>
+**Instrukce pro AI programátora:** Modul Knowledge Base (z Kapitoly 5) se nesmí spoléhat pouze na hloupý přepis dokumentů do vektorů. Metodiky se mění, zákony se novelizují. Systém musí udržovat historické verze dokumentů. Každý dotaz na AI musí být navíc kryptograficky zalogován spolu s přesnými útržky textů (chunks), které AI použila jako kontext k vygenerování odpovědi.
+</Warning>
+
+## 1. Databázový model (SQL)
+
+Tento model zavádí strukturu pro verzování legislativy a neprůstřelný auditní log umělé inteligence. Spusťte v Supabase SQL Editoru.
+
+```sql
+-- 1. Zdroje práva (Kategorizace)
+CREATE TYPE legal_source_type AS ENUM (
+    'zakon',              -- Zákon (např. ZSPOD, OZ)
+    'vyhlaska',           -- Vyhláška (např. 473/2012 Sb.)
+    'metodika_mpsv',      -- Závazné stanovisko MPSV
+    'interni_smernice',   -- Interní pravidlo Doprovázení.com
+    'judikatura'          -- Rozhodnutí soudů (NS, ÚS)
+);
+
+-- 2. Evidence právních rámců
+CREATE TABLE legal_frameworks (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID REFERENCES organizations(id), -- NULL znamená, že jde o celostátní zákon
+    name TEXT NOT NULL, -- např. "Zákon o sociálně-právní ochraně dětí"
+    abbreviation TEXT, -- např. "ZSPOD"
+    source_type legal_source_type NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 3. Verzování článků ve vektorové databázi (Úprava tabulky z Kap. 5)
+ALTER TABLE knowledge_base_articles ADD COLUMN framework_id UUID REFERENCES legal_frameworks(id);
+ALTER TABLE knowledge_base_articles ADD COLUMN version_number INT DEFAULT 1;
+ALTER TABLE knowledge_base_articles ADD COLUMN valid_from DATE NOT NULL DEFAULT CURRENT_DATE;
+ALTER TABLE knowledge_base_articles ADD COLUMN valid_to DATE; -- NULL znamená, že jde o aktuálně platnou verzi
+ALTER TABLE knowledge_base_articles ADD COLUMN section_reference TEXT; -- např. "§ 47b odst. 2"
+
+-- 4. Trasovací deník AI (AI Tracing Log)
+-- Slouží jako důkaz u soudu nebo auditu, co přesně AI poradila
+CREATE TABLE ai_interaction_logs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID REFERENCES organizations(id) NOT NULL,
+    user_id UUID REFERENCES profiles(id) NOT NULL, -- Kdo se ptal
+    
+    -- Vstupy a Výstupy
+    user_prompt TEXT NOT NULL,
+    ai_response TEXT NOT NULL,
+    
+    -- Zdroje (Traceability)
+    retrieved_article_ids UUID[] NOT NULL, -- Pole ID z knowledge_base_articles, které byly použity jako kontext
+    
+    -- Auditní parametry
+    model_version TEXT NOT NULL, -- např. 'gemini-1.5-pro'
+    tokens_used INT,
+    interaction_date TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 5. Audit triggery
+CREATE TRIGGER audit_legal_frameworks AFTER INSERT OR UPDATE OR DELETE ON legal_frameworks FOR EACH ROW EXECUTE FUNCTION process_audit_log();
+-- U logů AI trigger neděláme, tabulka sama o sobě funguje jako append-only log.
+
+```
+
+## 2. Architektura a Byznys logika (RAG s garancí pravdy)
+
+Proces Retrieval-Augmented Generation (RAG) je zde upraven tak, aby se choval jako právník: nikdy neodpovídá bez citace a nikdy nepoužívá neplatné zákony.
+
+1. **Vložení nové novely (Metodik):**
+Dne 1. ledna 2027 vstoupí v platnost novela ZSPOD. Metodik v systému nenahradí starý text. Vytvoří *novou verzi* dotčených paragrafů (`knowledge_base_articles`). Starým verzím nastaví `valid_to = '2026-12-31'`. Systém vygeneruje nové vektory pouze pro novou verzi.
+
+
+2. **Filtrovaný vektorový dotaz (RAG Search):**
+Když se Klíčová osoba (KO) ptá AI na řešení situace v terénu, systém před převodem dotazu na vektory provede tvrdý databázový filtr. **Do vyhledávání (Cosine Similarity) pustí pouze články, kde je `valid_to IS NULL` nebo `valid_to >= TODAY`.** Tím je zaručeno, že AI nebude "halucinovat" na základě zrušených zákonů.
+
+
+3. **Generování odpovědi s citacemi:**
+Do systémového promptu pro Gemini je přidáno nařízení:
+
+> "Tvým úkolem je odpovědět na dotaz. Ke každému tvrzení připoj referenci na číslo ID článku (z dodaného kontextu), ze kterého čerpáš. Pokud informace v kontextu chybí, odmítni odpovědět."
+
+
+4. **Zápis důkazní stopy (AI Tracing Log):**
+Jakmile Gemini vygeneruje odpověď, backend uloží do tabulky `ai_interaction_logs` přesné znění otázky, vygenerované odpovědi a *pole všech ID článků*, které Gemini dostala jako kontext.
+Pokud si KO po půl roce stěžuje, že *"AI mi řekla, že to můžu udělat"*, Ředitel v logu přesně dohledá, na čem AI své tvrzení tehdy postavila.
+
+
+## 3. Uživatelské rozhraní (UI/UX)
+
+* **FosterFlow Organization (Desktop - AI Audit Dashboard):** Metodik má vyhrazenou sekci `Logy AI Asistenta`. Vidí zde tabulku všech dotazů, které klíčové osoby položily do systému, a odpovědi, které dostaly. Pokud uvidí, že AI odpovídá vyhýbavě na častý dotaz (např. *Jak správně zapsat asistovaný styk?*), je to pro metodika signál, že interní metodika v Knowledge Base není dostatečně detailní a musí ji dopsat.
+* **FosterFlow Worker (Mobilní PWA):** Rozhraní "AI Asistent" připomíná běžný chat. Zásadní rozdíl je v tom, že pod každou bublinou s odpovědí od AI svítí klikatelné modré "pilulky" (Pills) se zdroji (např. `§ 47b ZSPOD`, `Metodika č. 5`). Po kliknutí na pilulku se otevře spodní panel s přesným zněním originálního textu, ze kterého AI čerpala, aby si ho mohla KO sama ověřit.
+
+```
+

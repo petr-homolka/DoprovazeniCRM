@@ -1,0 +1,62 @@
+---
+title: "Kapitola 5: Integrace AI a Knowledge Base"
+description: "Technická realizace AI asistentů (Záznamník, OCR, RAG) nad Google Cloud Platform."
+icon: "brain-circuit"
+---
+
+<Warning>
+**Kritický požadavek na vývoj:** Systém používá výhradně modely prostřednictvím podnikového API (Google Cloud Platform / Gemini API) v režimu "Zero-Data Retention". Zpracovávaná data (hlas, OCR text, dotazy) se **nesmí** ukládat u poskytovatele a nesmí být použita k trénování globálních modelů.
+</Warning>
+
+## 1. AI Záznamník (Voice-to-Text & Extrakce)
+
+Tento modul primárně využívá Klíčová osoba (KO) v mobilní aplikaci `FosterFlow Worker` bezprostředně po návštěvě v rodině.
+
+<Steps>
+  <Step title="Záznam a Hrubý přepis">
+    KO nahraje audio pomocí nativního mikrofonu v zařízení. Systém odešle audio soubor na **Google Cloud Speech-to-Text API**. Výsledkem je surový, nestrukturovaný text (`raw_transcription`).
+  </Step>
+  <Step title="Sémantická analýza (Gemini API)">
+    Surový text je okamžitě odeslán do modelu **Google Gemini Pro** s tímto pevně definovaným systémovým promptem:
+    
+    > "Jsi expertní asistent sociálního pracovníka OSPOD. Tvým úkolem je analyzovat hrubý přepis mluveného slova z návštěvy v pěstounské rodině.
+    > 1. Vytvoř formální, strukturovaný 'Zápis z návštěvy' (vypusť plevelná slova a emoce KO).
+    > 2. Identifikuj 'Krizová rizika' (např. agrese, problémy ve škole, zhoršení zdraví).
+    > 3. Vytvoř seznam 'Akčních kroků' (co má klíčová osoba do příště zařídit).
+    > Odpověz výhradně ve formátu JSON se strukturou: `{"summary": "...", "risks": ["..."], "action_items": ["..."]}`"
+  </Step>
+  <Step title="Lidská validace (Human-in-the-loop)">
+    Vygenerovaný JSON systém rozparsuje a zobrazí KO na obrazovce ke schválení. Dokud KO nestiskne tlačítko `Uložit a potvrdit`, data se nezapíší do tabulky `events` na časovou osu rodiny.
+  </Step>
+</Steps>
+
+## 2. Modul OCR a vytěžování dokumentů
+
+Modul nahrazuje ruční přepisování dat z lékařských zpráv, omluvenek, vysvědčení a soudních rozsudků.
+
+1. **Vstup:** KO vyfotí dokument nebo pěstoun nahraje PDF. Soubor se uloží na Google Drive organizace.
+2. **OCR:** Spustí se **Google Cloud Document AI** (nebo Cloud Vision API), které převede obrázek na surový text (`ocr_raw_text`).
+3. **Extrakce (Gemini API):** Text se pošle do LLM s cílem získat strukturovaná metadata:
+    * *Typ dokumentu* (Lékařská zpráva, Rozsudek, Školní hodnocení, Jiné)
+    * *Datum vystavení*
+    * *Vystavující instituce*
+    * *Stručné resumé (max 3 věty)*
+4. **Rozhraní:** Vedle náhledu PDF/obrázku se zobrazí vytažená data. KO je může manuálně upravit (in-place editace). Po schválení se záznam o dokumentu vloží jako `Event: document_upload`.
+
+## 3. RAG Knowledge Base (Srdce metodiky)
+
+Tento modul představuje "mozek" celé aplikace. Nejedná se o obecného chatbota, ale o expertní systém (Retrieval-Augmented Generation), který odpovídá výhradně na základě metodik a interních pravidel Doprovázení.com.
+
+### Architektura uložení znalostí (Vector Search)
+Když metodik nahraje do systému nový zákon (např. ZSPOD) nebo novou interní metodiku:
+1. Systém text rozdělí na menší odstavce (chunks).
+2. Přes Google Text Embedding API se každý odstavec převede na číselný vektor.
+3. Vektor se uloží do tabulky `knowledge_base_articles` do sloupce `embedding` (využívá se rozšíření PostgreSQL `pgvector`).
+
+### Zpracování dotazu z terénu
+Když se KO zeptá: *"Musí mít 16leté dítě souhlas bio-otce k cestě do Anglie na 3 měsíce?"*
+1. Dotaz se převede na vektor.
+2. Databáze (Supabase) provede *Cosine Similarity Search* (vyhledání nejpodobnějších vektorů) v tabulce `knowledge_base_articles`.
+3. Systém vybere 3 nejrelevantnější metodické články.
+4. Tyto články se vloží do promptu pro Gemini Pro jako kontext s instrukcí:
+   > "Odpověz na dotaz uživatele výhradně na základě přiložených metodik. Pokud odpověď v textu nenajdeš, nespekuluj a napiš, že informace chybí. Ke svému tvrzení vždy uveď odkaz na zdrojový článek."

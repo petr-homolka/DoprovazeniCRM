@@ -1,0 +1,52 @@
+---
+title: "Závěr: Strategie vývoje a Roadmapa"
+description: "Jak zadávat příkazy Replit Agentovi a plány pro FosterFlow V2.0."
+icon: "map"
+---
+
+<Warning>
+Tento dokument popisuje, jak fázovat vývoj. Nepokoušejte se nahrát celý Blueprint do AI agenta v jednom promptu s příkazem "Naprogramuj to". Agent by ztratil kontext. Vývoj musí probíhat v oddělených, testovatelných iteracích.
+</Warning>
+
+## 1. Strategie implementace (Fázování pro Replit)
+
+Při komunikaci s vývojovým AI asistentem postupujte podle těchto pěti fází. Teprve po odladění jedné fáze přejděte k další.
+
+### Fáze 1: Jádro a Bezpečnost (Dny 1-2)
+* **Zadání pro AI:** "Založ Next.js aplikaci. Připoj Supabase. Vytvoř tabulky z Kapitoly 2 (`organizations`, `profiles`, `households`, `persons`). Naimplementuj striktně RLS pravidla z Kapitoly 1."
+* **Cíl:** Plně funkční autentizace a zajištění, že každý uživatel vidí pouze svá povolená data.
+
+### Fáze 2: Event-Driven Backend (Dny 3-4)
+* **Zadání pro AI:** "Vytvoř tabulku `events`. Naprogramuj základní API routes pro vkládání událostí. Nastav databázové auditní triggery nad všemi vytvořenými tabulkami."
+* **Cíl:** Fungující nezničitelná historie rodiny a funkční zápis do `audit_logs`.
+
+### Fáze 3: FosterFlow Organization MVP (Dny 5-7)
+* **Zadání pro AI:** "Vytvoř desktopové UI (třísloupcový layout, trading-app styl). Zobraz dashboard domácností a dohod. Připoj logiku čerpání ze `service_transactions` a aplikuj 'Soft-blokaci' z Kapitoly 4."
+* **Cíl:** Ekonomka a Ředitel mají rozhraní, kde vidí čerpání dotací a vizuální Sparklines.
+
+### Fáze 4: FosterFlow Worker MVP (Dny 8-10)
+* **Zadání pro AI:** "Vytvoř oddělené mobilní PWA rozhraní pro Klíčové osoby. Udělej design podobný aplikaci Things a WhatsApp. Hlavní pohled tvoří časová osa z tabulky `events`. Zprovozni lokální `IndexedDB` pro ukládání draftů bez internetu."
+* **Cíl:** KO má v telefonu rychlou aplikaci schopnou offline režimu.
+
+### Fáze 5: AI Integrace (Dny 11-14)
+* **Zadání pro AI:** "Naimplementuj moduly z Kapitoly 5. Připoj nativní mikrofon prohlížeče v mobilní PWA, odesílej audio na GCP Speech-to-text a text analyzuj přes Gemini. Následně zprovozni `pgvector` a RAG Knowledge Base."
+* **Cíl:** Systém ožije, AI zpracovává terénní data a odpovídá na legislativní dotazy.
+
+## 2. Roadmapa pro budoucí verze (V2.0)
+
+Funkce, se kterými je nutné počítat v architektonickém návrhu, ale které nejsou součástí prvního MVP (Minimum Viable Product).
+
+<CardGroup cols={2}>
+  <Card title="Přímá ISDS Integrace" icon="envelope">
+    Systém nebude generovat pouze PDF zprávu pro OSPOD k ručnímu stažení. Po podepsání Ředitelem se PDF rovnou odešle přes API Informačního systému datových schránek (ISDS) na příslušný úřad.
+  </Card>
+  <Card title="E-mail Parsing (Webhook)" icon="at">
+    Každá rodina získá alias (např. `rodina-nova@doprovazeni.com`). Pokud na tento e-mail zašle zprávu škola nebo lékař, systém e-mail zachytí, rozbalí přílohy a automaticky vygeneruje událost `Externí komunikace` na Timeline.
+  </Card>
+  <Card title="Machine Learning: Detekce rizik" icon="chart-line-down">
+    Po nasbírání dostatečného množství strukturovaných dat z tisíců událostí lze spustit prediktivní modely. Systém označí rodinu červenou vlajkou dříve, než problém eskaluje do úplného selhání péče, na základě včasné identifikace skrytých vzorců v zápisech KO.
+  </Card>
+  <Card title="Route Optimization" icon="route">
+    Systém zná lokace domácností a termíny povinných návštěv. FosterFlow pro KO automaticky navrhne nejefektivnější logistiku výjezdů pro daný týden s ohledem na optimalizaci cestovních nákladů organizace.
+  </Card>
+</CardGroup>

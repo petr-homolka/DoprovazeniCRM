@@ -1,0 +1,107 @@
+
+---
+title: "Kapitola 19: Plnohodnotný modul notifikací"
+description: "Centrální dispečink pro doručování zpráv přes aplikaci, e-maily a Push notifikace."
+icon: "bell-ring"
+---
+
+<Warning>
+**Instrukce pro AI programátora:** Nezaměňujte entity. `Event` (Událost) je historický záznam. `Task` (Úkol) je práce k vyřešení. `Notification` (Notifikace) je pouze jednorázové *upozornění* uživatele na Event nebo Task. Notifikace jsou pomíjivé a mohou být bezpečně smazány poté, co si je uživatel přečte. Modul musí běžet asynchronně, aby odesílání e-mailů nezpomalovalo ukládání dat do databáze.
+</Warning>
+
+## 1. Databázový model (SQL)
+
+Tento model vytváří frontu notifikací, logování doručitelnosti a uživatelské preference. Spusťte v Supabase SQL Editoru.
+
+```sql
+-- 1. Číselníky pro notifikace
+CREATE TYPE notification_channel AS ENUM ('in_app', 'email', 'push_mobile', 'sms');
+CREATE TYPE notification_priority AS ENUM ('low', 'normal', 'urgent');
+CREATE TYPE delivery_status AS ENUM ('pending', 'sent', 'failed', 'read');
+
+-- 2. Uživatelské preference (Kdo chce dostávat jaké zprávy)
+CREATE TABLE user_notification_preferences (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+    notify_on_new_task BOOLEAN DEFAULT TRUE,
+    notify_on_task_deadline BOOLEAN DEFAULT TRUE,
+    notify_on_document_upload BOOLEAN DEFAULT FALSE,
+    preferred_urgent_channel notification_channel DEFAULT 'push_mobile',
+    preferred_daily_summary BOOLEAN DEFAULT TRUE, -- Zda chce jeden ranní e-mail místo spamu
+    UNIQUE(user_id)
+);
+
+-- 3. Hlavní tabulka Notifikací (In-App Inbox)
+CREATE TABLE notifications (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    message_body TEXT NOT NULL,
+    priority notification_priority DEFAULT 'normal',
+    
+    -- Kontext (Po kliknutí na notifikaci systém ví, kam uživatele přesměrovat)
+    target_entity_type TEXT, -- např. 'task', 'event', 'crisis_case'
+    target_entity_id UUID,
+    
+    is_read BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 4. Fronta a Log doručování (Pro e-maily, SMS a Push zprávy)
+CREATE TABLE notification_delivery_logs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    notification_id UUID REFERENCES notifications(id) ON DELETE CASCADE,
+    channel notification_channel NOT NULL,
+    status delivery_status DEFAULT 'pending',
+    external_provider_id TEXT, -- např. Message ID ze SendGridu nebo Firebase (FCM)
+    error_message TEXT,
+    attempt_count INT DEFAULT 0,
+    dispatched_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+```
+
+## 2. Architektura a Byznys logika (Notification Dispatcher)
+
+Architektura nesmí dovolit, aby Klíčová osoba dostala tři notifikace (E-mail, Push, In-app) o tom, že do spisu byla nahrána bezvýznamná omluvenka. Logiku řídí tzv. **Notification Dispatcher** (běžící ideálně na Supabase Edge Functions).
+
+1. **Vznik události a Trigger:**
+V systému vznikne Krizový incident (např. *Útěk dítěte*). Databáze vygeneruje interní webhook pro Notification Dispatcher.
+
+
+2. **Vyhodnocení priorit a preferencí (Routing):**
+Dispatcher vyhodnotí typ události:
+
+* **Urgentní (Krize):** Ignoruje uživatelské preference. Okamžitě vkládá záznamy do tabulky `notifications` a do logu pro odeslání přes `push_mobile` (na mobil KO) a `sms` (pro Ředitele).
+* **Běžné (Nový dokument):** Zkontroluje `user_notification_preferences`. Pokud má uživatel `notify_on_document_upload = FALSE`, notifikaci vůbec nevytvoří.
+* **Nízká priorita:** Vloží se pouze do `in_app` notifikací (zvoneček v aplikaci) a nevyrušuje pracovníka e-mailem.
+
+
+3. **Doručování (3rd Party Integrations):**
+CRON job nebo asynchronní fronta (Edge Function) vybírá z tabulky `notification_delivery_logs` záznamy se statusem `pending`:
+
+* Pro `email` volá API (např. Resend nebo SendGrid).
+* Pro `push_mobile` volá Firebase Cloud Messaging (FCM) nebo nativní Web Push API (pro PWA).
+* Úspěšné doručení se označí jako `sent`, chyba jako `failed` (při chybě se provede max 3x retry).
+
+
+4. **Daily Summary (Denní souhrn):**
+Pokud má uživatel nastaveno `preferred_daily_summary = TRUE`, systém přes den nespamuje. Každý den v 7:00 ráno vygeneruje jeden strukturovaný e-mail: *"Dnes vás čeká: 2 zpožděné úkoly, 3 nové dokumenty ve spisu. Otevřít FosterFlow."*
+
+
+## 3. Uživatelské rozhraní (UI/UX)
+
+* **FosterFlow Worker (Mobilní PWA):**
+* Aplikace po prvním spuštění vyžádá oprávnění k odesílání Push notifikací (Service Worker).
+* V pravém horním rohu je ikona **Zvonečku** s červeným badge (počtem nepřečtených In-app notifikací).
+* Rozkliknutí zvonečku otevře jednoduchý list. Po kliknutí na notifikaci (např. *Byl schválen respit*) se aplikace plynule přeroutuje na konkrétní záznam transakce a notifikace se asynchronně označí jako `is_read = TRUE`.
+
+
+* **FosterFlow Organization (Desktop):**
+* Kromě zvonečku využívá aplikace **Toast Notifikace** (malé obdélníky vyskakující v pravém dolním rohu obrazovky).
+* Pokud je Ekonomka v aplikaci online a někdo v terénu vyfotí fakturu za nákup, okamžitě (přes Supabase Realtime WebSockets) jí vyskočí Toast zpráva: *"Nová faktura čeká na schválení."*
+
+
+
+```

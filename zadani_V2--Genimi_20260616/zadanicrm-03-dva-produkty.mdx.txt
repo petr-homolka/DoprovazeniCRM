@@ -1,0 +1,56 @@
+---
+title: "Kapitola 3: Dva nezávislé produkty (Rozhraní)"
+description: "Dekapling (oddělení) mobilní aplikace pro terén a desktopového portálu pro vedení."
+icon: "mobile-laptop"
+---
+
+<Warning>
+**Zásadní architektonický pokyn:** Systém nesmí spojovat agendu sociálního pracovníka a agendu ekonomky do jednoho responzivního menu. Při přihlášení uživatele systém zkontroluje jeho roli a přesměruje ho do příslušného, zcela odděleného uživatelského rozhraní (Worker nebo Organization). Obě rozhraní sdílejí stejnou databázi, ale nabízejí diametrálně odlišný uživatelský zážitek (UX).
+</Warning>
+
+## 1. Produkt A: FosterFlow Worker (Terénní aplikace)
+
+Toto rozhraní používá Klíčová osoba (KO) na svém mobilním telefonu. Je to její primární pracovní nástroj. Designově vychází z kombinace aplikací **Things** a **WhatsApp**. Cílem je minimalizovat čas strávený "ťukáním" do displeje.
+
+### Hlavní prvky rozhraní
+1. **Absence složitých menu:** Žádný postranní panel (sidebar). Aplikace využívá jednoduchou spodní navigační lištu (Bottom Bar): *Moje Rodiny | Kalendář | Notifikace | Profil*.
+2. **Timeline (Časová osa):** Po kliknutí na rodinu nevidí KO statickou tabulku s daty, ale chronologický feed událostí (od nejnovější po nejstarší). Rychle zjistí, co se stalo před její návštěvou.
+3. **Záchytné body:** V horní části obrazovky rodiny svítí dynamické "Záchytné body" (např. *Žlutý štítek: Zítra vyprší IPOD* nebo *Červený štítek: Čeká se na vyjádření OSPOD*).
+4. **Plovoucí akční tlačítko (FAB):** Vpravo dole je neustále přítomné velké tlačítko `+`. Jeho stisknutí vyvolá okamžitou kontextovou nabídku:
+   * 🎙️ **Záznamník** (Spustí nahrávání hlasu pro AI přepis).
+   * 📷 **Vyfotit dokument** (Spustí fotoaparát a odešle fotku k OCR vytěžení).
+   * 📝 **Nová událost** (Manuální zadání textu).
+
+### Offline-First UX
+Pokud je zařízení offline, rozhraní se nesmí zablokovat. FAB tlačítko zůstává aktivní. Uložená událost se na Timeline zobrazí okamžitě, ale s malou ikonkou ☁️ (čeká na synchronizaci).
+
+---
+
+## 2. Produkt B: FosterFlow Organization (Kancelář)
+
+Toto rozhraní používá Vedení, Ekonomka a Metodik na monitorech počítačů nebo tabletech. Inspiruje se **Trading aplikacemi**. Nabízí vysokou hustotu informací (High Data Density) a agregované pohledy.
+
+### Hlavní prvky rozhraní
+1. **Třísloupcový layout (Split-pane):**
+   * *Levý sloupec:* Navigace (Dohody, Finance, Audity, Knowledge Base).
+   * *Střední sloupec:* Datová tabulka nebo seznam s rychlými filtry.
+   * *Pravý sloupec:* Detail vybraného záznamu (otevírá se in-place, bez přechodu na novou stránku).
+2. **Glanceable UI (Vizuální indikátory):** Tabulky neukazují jen čísla. Každý řádek s rodinou obsahuje vizuální **Sparklines** (mini-progress bary). 
+   * Příklad: Sloupec *Respit* obsahuje malý bar, který ukazuje čerpání `320/360`. Dokud je pod 80 %, je modrý. Jakmile přesáhne 80 %, zbarví se oranžově. Ekonomka tak jedním pohledem vidí, kde hrozí přečerpání dotace.
+3. **Komplexní workflow:** Zde se realizuje schvalování faktur od poskytovatelů, párování rozpočtů SPVPP a tvorba účetních výstupů pro Úřad práce.
+4. **Spisová služba (Exporty):** Tlačítko `Vygenerovat Spis`. Vyvolá proces, který zkompiluje všechny dokumenty a události rodiny do zabezpečeného ZIP archivu (obsahujícího kryptografické hashe) pro případ auditu MPSV.
+
+---
+
+## 3. Sdílené Jádro (Interakce mezi produkty)
+
+Ačkoliv jsou rozhraní oddělená, sdílejí logiku "Event-Driven" architektury. Akce v jednom produktu okamžitě ovlivňují druhý.
+
+<CardGroup cols={2}>
+  <Card title="Z Terénu do Kanceláře" icon="arrow-right-to-bracket">
+    KO na mobilu vyfotí omluvenku. Systém vytvoří událost `document_upload`. V ten samý okamžik v desktopové aplikaci Organization vyskočí notifikace u Ředitele (nebo pěstouna v klientské zóně), že byl doplněn spis dítěte.
+  </Card>
+  <Card title="Z Kanceláře do Terénu" icon="arrow-left-from-bracket">
+    Ekonomka v kanceláři schválí proplacení celodenního letního tábora. V mobilní aplikaci Worker se u daného dítěte zaktualizuje Sparkline ukazující čerpání respitu a KO si může potvrdit, že služba je finančně krytá.
+  </Card>
+</CardGroup>

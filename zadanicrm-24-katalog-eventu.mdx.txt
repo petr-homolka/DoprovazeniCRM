@@ -1,0 +1,155 @@
+
+
+
+---
+title: "Kapitola 24: Katalog událostí (Event Definitions)"
+description: "Centrální registr typů událostí, JSON schémata, validace a návazná workflow."
+icon: "book-atlas"
+---
+
+<Warning>
+**Instrukce pro AI programátora:** Frontend nesmí mít "natvrdo" nakódovaných 30 různých formulářů pro 30 typů událostí. Aplikace musí být **Configuration-Driven** (řízená konfigurací). Při zakládání nové události si frontend stáhne z databáze (nebo z konfiguračního souboru) definici pro daný typ, ze které dynamicky vygeneruje vstupní pole, a backend podle stejné definice zvaliduje JSONB `payload` před uložením do databáze.
+</Warning>
+
+## 1. Databázový model (SQL)
+
+Místo toho, aby programátor určoval pravidla v kódu, přesuneme je do meta-tabulky. Správce systému (Metodik) tak může v budoucnu vytvořit nový typ události bez nutnosti vydávat novou verzi aplikace.
+
+```sql
+-- 1. Kategorie událostí (Pro lepší filtrování na frontendu)
+CREATE TYPE event_category AS ENUM (
+    'routine',       -- Běžná operativa (návštěvy, telefonáty)
+    'administrative',-- Dokumenty, úřady, dotace
+    'legal',         -- Soudy, OSPOD, policie
+    'crisis',        -- Krizové stavy, útěky
+    'system'         -- Automaticky generované systémem (alerty)
+);
+
+-- 2. Centrální registr definic událostí
+CREATE TABLE event_definitions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID REFERENCES organizations(id), -- NULL znamená globální šablonu
+    event_type TEXT NOT NULL UNIQUE, -- např. 'visit_log', 'school_change'
+    name_cs TEXT NOT NULL, -- Zobrazovaný název (např. "Záznam z návštěvy")
+    category event_category NOT NULL,
+    
+    -- JSON Schema pro validaci struktury Payloadu
+    payload_schema JSONB NOT NULL, 
+    
+    -- Jaké pole ze schematu se má propsat do hlavičky na Timeline
+    timeline_summary_template TEXT NOT NULL, -- např. "{{ai_summary}}" nebo "{{court_verdict}}"
+    
+    -- Jaký proces se má spustit po uložení (Webhook/Internal routing)
+    workflow_trigger_key TEXT, -- např. 'trigger_ipod_review' nebo 'trigger_crisis_escalation'
+    
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 3. Audit trigger
+CREATE TRIGGER audit_event_definitions AFTER INSERT OR UPDATE OR DELETE ON event_definitions FOR EACH ROW EXECUTE FUNCTION process_audit_log();
+
+```
+
+## 2. Příklady definic (Katalog)
+
+Zde je ukázka, jak musí být strukturován sloupec `payload_schema` pro klíčové události. Aplikace jej validuje pomocí standardu *JSON Schema*.
+
+### A. Typ: `visit_log` (Záznam z návštěvy)
+
+Nejčastější událost. Využívá primárně AI Voice-to-Text.
+
+* **Kategorie:** `routine`
+* **Workflow Trigger:** Žádný automatický, pouze uložení na Timeline.
+* **JSON Schema (Povinná pole):**
+```json
+{
+  "type": "object",
+  "properties": {
+    "location": { "type": "string", "enum": ["doma", "venku", "kancelář"] },
+    "ai_summary": { "type": "string", "minLength": 50 },
+    "discussed_ipod_goals": { "type": "array", "items": { "type": "string" } }
+  },
+  "required": ["location", "ai_summary"]
+}
+
+```
+
+
+
+### B. Typ: `school_change` (Změna školy / Výchovný problém)
+
+Významná změna, která ovlivňuje životní cyklus plánování.
+
+* **Kategorie:** `routine`
+* **Workflow Trigger:** `trigger_ipod_task` (Vygeneruje KO úkol k revizi IPODu).
+* **JSON Schema (Povinná pole):**
+```json
+{
+  "type": "object",
+  "properties": {
+    "old_school_name": { "type": "string" },
+    "new_school_name": { "type": "string" },
+    "reason_for_change": { "type": "string", "minLength": 10 },
+    "is_expulsion": { "type": "boolean" }
+  },
+  "required": ["new_school_name", "reason_for_change", "is_expulsion"]
+}
+
+```
+
+
+
+### C. Typ: `bio_contact` (Realizace styku s biologickou rodinou)
+
+Vysoce senzitivní záznam pro soudní účely.
+
+* **Kategorie:** `legal`
+* **Workflow Trigger:** `trigger_contact_report_update`
+* **JSON Schema (Povinná pole):**
+```json
+{
+  "type": "object",
+  "properties": {
+    "contact_plan_id": { "type": "string", "format": "uuid" },
+    "child_reaction_before": { "type": "string" },
+    "course_of_contact": { "type": "string" },
+    "child_reaction_after": { "type": "string" }
+  },
+  "required": ["child_reaction_before", "course_of_contact", "child_reaction_after"]
+}
+
+```
+
+
+
+## 3. Architektura zpracování (Validation Middleware)
+
+Abychom zamezili chaosu, backend API nepovolí uložení události, dokud neprojde tímto procesem:
+
+1. **Vstup z frontendu:**
+Mobilní aplikace (`Worker`) nebo Desktop (`Organization`) odešle POST požadavek na `/api/events` obsahující `event_type` a datový `payload`.
+
+
+2. **Stažení definice (Definition Lookup):**
+API vrstva si z databáze vytáhne záznam z tabulky `event_definitions` odpovídající zaslanému `event_type`.
+
+
+3. **Striktní validace (Schema Validation):**
+Backend prožene zaslaný JSON `payload` přes knihovnu (např. *Ajv JSON schema validator*), která jej porovná s definovaným `payload_schema`.
+
+* Pokud chybí povinné pole (např. u styku chybí `child_reaction_after`), API vrátí *HTTP 400 Bad Request* s popisem chyby. Data se neuloží.
+
+
+4. **Zápis a Spuštění Workflow:**
+Pokud je validace úspěšná, událost se zapíše do tabulky `events`. Backend se následně podívá na pole `workflow_trigger_key`. Pokud obsahuje hodnotu (např. `trigger_ipod_task`), vyvolá asynchronní funkci, která založí do systému nový Úkol (`tasks`).
+
+
+## 4. Uživatelské rozhraní (Dynamic Form Engine)
+
+* **FosterFlow Worker (Mobilní PWA):** KO klikne na tlačítko "Nová událost". Zobrazí se jí seznam kategorií z `event_category`. Vybere "Změna školy". Aplikace se podívá do `event_definitions`, stáhne si JSON Schema a z něj **automaticky vykreslí** čtyři vstupní políčka. Vývojář tak nemusí pro každý nový formulář psát nový React komponent, systém si ho postaví sám.
+
+```
+
+---
+

@@ -1,0 +1,66 @@
+---
+title: "FosterFlow: Master Blueprint"
+description: "Komplexní ERP a CRM systém pro doprovázející organizace pěstounské péče."
+icon: "book-open-cover"
+---
+
+<Warning>
+**Instrukce pro AI a vývojáře:** Tento dokument slouží jako absolutní zdroj pravdy (Source of Truth). Žádná systémová logika, oprávnění ani procesní krok nesmí být implementovány v rozporu s touto specifikací. Pokud specifikace neřeší konkrétní technický detail, je nutné dodržet paradigma **Event-Driven architektury** a **Offline-First** přístupu.
+</Warning>
+
+## 1. Vize a účel systému
+
+FosterFlow není generické CRM. Jde o specializovaný "operační systém" pro agendu sociálně-právní ochrany dětí (SPOD). Systém pracuje se zvláštními kategoriemi osobních údajů (zdravotní zprávy, soudní rozhodnutí), eviduje rodiny, hlídá čerpání státních dotací na výkon pěstounské péče (SPVPP) a procesuje agendu soudů a úřadů. 
+
+Cílem je radikálně minimalizovat administrativu pracovníků v terénu pomocí AI a maximalizovat auditní kontrolu a přehled pro vedení organizace.
+
+## 2. Architektonické pilíře
+
+Systém je postaven na čtyřech nepřekročitelných principech, které určují celý vývojový cyklus.
+
+<CardGroup cols={2}>
+  <Card title="Dva nezávislé produkty" icon="layer-group">
+    Systém odděluje rozhraní nad jednou databází: **FosterFlow Worker** (mobilní PWA pro terénní pracovníky) a **FosterFlow Organization** (desktopový portál pro vedení a ekonomiku).
+  </Card>
+  <Card title="Hybridní Event-Driven Model" icon="timeline-arrow">
+    Systém nepracuje jen se statickými složkami. Srdcem aplikace je tabulka `events`. Každá změna, návštěva nebo soudní rozhodnutí tvoří chronologickou časovou osu rodiny.
+  </Card>
+  <Card title="Offline-First" icon="wifi-slash">
+    Sociální pracovník nesmí být závislý na internetovém připojení. Aplikace pro terén běží offline a data synchronizuje asynchronně po připojení na síť.
+  </Card>
+  <Card title="Zero-Data AI" icon="robot">
+    Umělá inteligence funguje izolovaně. Odesílaná data se nesmí používat k tréninku modelů třetích stran. RAG Knowledge Base čerpá výhradně z interních metodik organizace.
+  </Card>
+</CardGroup>
+
+## 3. Technologický stack
+
+Tento technologický stack je závazný a musí být použit při inicializaci projektu.
+
+### Frontend
+* **Framework:** Next.js (App Router)
+* **Knihovna:** React 18+
+* **Styling:** Tailwind CSS (striktně využívat utility classes, bez vlastních CSS souborů, pokud to není nezbytně nutné).
+* **Ikony:** Lucide React
+* **PWA:** Implementace pomocí `next-pwa` nebo nativních Service Workers s využitím `IndexedDB` pro lokální offline ukládání transakcí.
+
+### Backend & Databáze
+* **Platforma:** Supabase
+* **Databáze:** PostgreSQL 15+
+* **Bezpečnost:** Row Level Security (RLS) aplikované na každou tabulku. Autorizace přes Supabase Auth.
+* **Vektorová databáze:** Rozšíření `pgvector` pro Knowledge Base.
+
+### Infrastruktura & Integrace (GCP)
+* **Hosting Frontendu:** Webglobe (Node.js / Statický export dle možností tarifu).
+* **Google Workspace API:** Google Drive (ukládání všech souborů, fotek a PDF) a Google Calendar API (synchronizace termínů). K autentizaci se používá Google Service Account.
+* **Google Cloud AI:** * *Google Gemini Pro API* (Zpracování textu, RAG, generování reportů).
+  * *Cloud Speech-to-Text* (Přepis diktovaných záznamů z terénu).
+  * *Document AI / Cloud Vision* (OCR vytěžování lékařských a soudních zpráv).
+
+## 4. Designová filozofie (UI/UX)
+
+Uživatelské rozhraní musí striktně dodržovat následující designový jazyk:
+
+1. **Aplikace Thinks jako vzor:** Extrémní minimalismus. Velké množství negativního prostoru (whitespace). Font *Inter*. Akcentní barvy se používají pouze pro stavy (červená = kritická událost, modrá = primární akce).
+2. **In-place editace:** Zákaz používání modálních oken (pop-upů) pro běžnou editaci dat. Kliknutí na hodnotu ji změní na `<input>` přímo v řádku.
+3. **Glanceable UI (Dashboardy):** Pro desktopové rozhraní (FosterFlow Organization) se využívají prvky z obchodních aplikací. Tabulky obsahují vysokou hustotu dat včetně *Sparklines* (miniaturních progress-barů přímo v řádku tabulky) pro okamžitý přehled čerpání limitů.

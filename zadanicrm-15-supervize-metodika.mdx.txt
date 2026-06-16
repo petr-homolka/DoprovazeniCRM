@@ -1,0 +1,114 @@
+
+---
+title: "Kapitola 15: Supervize a metodické vedení"
+description: "Evidence individuálních a skupinových supervizí pro splnění Standardů kvality SPOD."
+icon: "users-viewfinder"
+---
+
+<Warning>
+**Instrukce pro AI programátora:** Modul supervizí pracuje s vysoce citlivými personálními daty (např. syndrom vyhoření zaměstnance). Osobní supervizní poznámky (`supervision_notes`) podléhají nejpřísnějšímu RLS (Row Level Security). Nesmí k nim mít přístup nikdo jiný než samotný pracovník a případně Ředitel (pokud to vyžaduje vnitřní směrnice). Tyto záznamy se **nikdy** nepropisují do tabulky `events` k pěstounským rodinám.
+</Warning>
+
+## 1. Databázový model (SQL)
+
+Tento model odděluje samotnou událost supervize od osobních poznámek a konkrétních metodických doporučení. Spusťte v Supabase SQL Editoru.
+
+```sql
+-- 1. Číselníky pro supervize
+CREATE TYPE supervision_type AS ENUM (
+    'individual_personal', -- Osobní profesní rozvoj / prevence vyhoření
+    'individual_case',     -- Řešení konkrétního složitého případu rodiny
+    'group_team',          -- Skupinová týmová supervize
+    'methodological'       -- Metodické vedení (např. zavádění nových postupů)
+);
+
+CREATE TYPE supervision_status AS ENUM ('planned', 'completed', 'cancelled');
+
+-- 2. Hlavní evidence supervizních setkání
+CREATE TABLE supervisions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID REFERENCES organizations(id) NOT NULL,
+    type supervision_type NOT NULL,
+    supervision_date TIMESTAMP WITH TIME ZONE NOT NULL,
+    duration_minutes INT NOT NULL,
+    supervisor_name TEXT NOT NULL, -- Jméno (často externího) supervizora
+    status supervision_status DEFAULT 'planned',
+    household_id UUID REFERENCES households(id), -- Nullable. Vyplněno POUZE pokud jde o 'individual_case' (případová supervize)
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 3. Účastníci supervize (Pro skupinové i individuální)
+CREATE TABLE supervision_participants (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    supervision_id UUID REFERENCES supervisions(id) ON DELETE CASCADE,
+    employee_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+    attended BOOLEAN DEFAULT FALSE,
+    UNIQUE(supervision_id, employee_id)
+);
+
+-- 4. Osobní a formální poznámky ze supervize
+CREATE TABLE supervision_notes (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    supervision_id UUID REFERENCES supervisions(id) ON DELETE CASCADE,
+    author_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+    is_private BOOLEAN DEFAULT TRUE, -- Pokud TRUE, vidí to jen autor. Pokud FALSE, jde o oficiální zápis pro organizaci.
+    content_text TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 5. Metodická doporučení (Závazné výstupy)
+CREATE TABLE supervision_recommendations (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    supervision_id UUID REFERENCES supervisions(id) ON DELETE CASCADE,
+    employee_id UUID REFERENCES profiles(id) ON DELETE CASCADE, -- Komu je doporučení určeno
+    recommendation_text TEXT NOT NULL,
+    is_fulfilled BOOLEAN DEFAULT FALSE, -- Sledování, zda KO aplikovala doporučení v praxi
+    fulfilled_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 6. Audit triggery
+CREATE TRIGGER audit_supervisions AFTER INSERT OR UPDATE OR DELETE ON supervisions FOR EACH ROW EXECUTE FUNCTION process_audit_log();
+CREATE TRIGGER audit_supervision_notes AFTER INSERT OR UPDATE OR DELETE ON supervision_notes FOR EACH ROW EXECUTE FUNCTION process_audit_log();
+CREATE TRIGGER audit_supervision_recommendations AFTER INSERT OR UPDATE OR DELETE ON supervision_recommendations FOR EACH ROW EXECUTE FUNCTION process_audit_log();
+
+```
+
+## 2. Architektura a Byznys logika
+
+Aplikace pomáhá vedení organizace udržet přehled o tom, zda všichni pracovníci splňují povinné penzum supervizí.
+
+1. **Plánování (Organizace):**
+Ředitel nebo koordinátor zadá termín Skupinové supervize do systému. Vybere účastníky z řad Klíčových osob (KO). Těm se termín automaticky propíše do Kalendáře a do sekce "Supervize" v jejich PWA aplikaci.
+
+
+2. **Realizace a Prezenční listina:**
+Po proběhnutí supervize koordinátor potvrdí účast (`attended = TRUE`). Tento krok je kritický pro roční výkazy a audit Standardů kvality SPOD.
+
+
+3. **Případová supervize a Doporučení:**
+Pokud šlo o `individual_case` (Případovou supervizi ke konkrétní rodině):
+
+1. Supervizor/Metodik zapíše závazný postup do tabulky `supervision_recommendations`.
+2. Systém z tohoto záznamu **automaticky vygeneruje Úkol** (tabulka `tasks` z Kapitoly 14) pro danou KO s termínem do příští návštěvy.
+3. Jakmile KO doporučení splní, označí jej jako `is_fulfilled`.
+
+
+## 3. Vazba na Standardy kvality (Compliance)
+
+Tento modul primárně pokrývá **Standard č. 6 (Profesní rozvoj zaměstnanců)** a **Standard č. 7 (Prevence syndromu vyhoření)**.
+
+* **Roční výkaz:** Systém musí umět vygenerovat report pro MPSV nebo Krajský úřad, který prokáže: *"Zaměstnanec XY absolvoval v roce 2026 celkem 12 hodin případové a 8 hodin skupinové supervize."*
+* **Propojení s moduly:** Součástí auditu může být i nahrání naskenované a podepsané prezenční listiny. Ta se ukládá přes modul Dokumenty s tagem `Standard_7_Supervize` a váže se přímo na záznam v tabulce `supervisions`.
+
+## 4. Uživatelské rozhraní (UI/UX)
+
+* **FosterFlow Organization (Desktop):** Ředitel má k dispozici analytický **Supervizní Dashboard**. Vidí zde "semafor" zaměstnanců. Pokud někdo neměl supervizi déle než X měsíců (podle interní metodiky), svítí u jeho jména červený varovný indikátor. Dále zde schvaluje faktury od externích supervizorů.
+* **FosterFlow Worker (Mobilní PWA):** KO má v menu položku "Můj rozvoj". Zde vidí:
+1. Kdy ji čeká nejbližší supervize.
+2. Prostor pro soukromé poznámky (`supervision_notes` s `is_private = TRUE`), do kterých si v průběhu měsíce může rychle textově nebo hlasově (přes AI) zaznamenávat témata a frustrace, které chce se supervizorem probrat.
+
+
+
+```
+

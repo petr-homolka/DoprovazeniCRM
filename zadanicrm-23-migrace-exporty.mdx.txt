@@ -1,0 +1,98 @@
+
+---
+title: "Kapitola 23: Migrace a Exporty (Spisová služba)"
+description: "Přenos rodiny mezi organizacemi, import/export dat a kryptografická ochrana spisu."
+icon: "file-export"
+---
+
+<Warning>
+**Instrukce pro AI programátora:** Převod rodiny z Organizace A do Organizace B v Multi-Tenant databázi nesmí být řešen pouhým přepsáním sloupce `organization_id`. Takový krok by nevratně poškodil auditní stopu a ekonomické výkazy Organizace A. Migrace musí proběhnout jako kontrolovaný proces Exportu (zabalení do podepsaného balíčku) a Importu (vytvoření nových UUID s napojením na novou organizaci), zatímco v původní organizaci zůstane rodina ve stavu `transferred`.
+</Warning>
+
+## 1. Databázový model (SQL)
+
+Tento model zavádí tabulku pro sledování přenosu spisu mezi dvěma subjekty (nebo exportu mimo systém). Spusťte v Supabase SQL Editoru.
+
+```sql
+-- 1. Stavy přenosu spisu
+CREATE TYPE transfer_status AS ENUM (
+    'initiated',        -- Export vytvořen, čeká na stažení/předání
+    'in_transit',       -- Balíček předán, čeká se na potvrzení cílovou organizací
+    'completed',        -- Úspěšně naimportováno v cílové organizaci
+    'failed',           -- Chyba importu (např. poškozený hash)
+    'cancelled'         -- Přenos zrušen
+);
+
+-- 2. Logování migrací a přenosů
+CREATE TABLE case_transfers (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    source_organization_id UUID REFERENCES organizations(id) NOT NULL,
+    target_organization_ic TEXT, -- IČO cílové organizace (může být i mimo FosterFlow systém)
+    household_id UUID REFERENCES households(id) NOT NULL,
+    
+    -- Ochrana integrity
+    export_package_url TEXT NOT NULL, -- Dočasný odkaz na zašifrovaný ZIP
+    package_sha256_hash TEXT NOT NULL, -- Hash pro ověření, že se s daty po exportu nemanipulovalo
+    encryption_key_hint TEXT, -- Nápověda k heslu (např. "Heslo zasláno SMS na číslo ředitele")
+    
+    status transfer_status DEFAULT 'initiated',
+    initiated_by UUID REFERENCES profiles(id) NOT NULL,
+    initiated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    completed_at TIMESTAMP WITH TIME ZONE,
+    
+    notes TEXT
+);
+
+-- 3. Audit trigger
+CREATE TRIGGER audit_case_transfers AFTER INSERT OR UPDATE OR DELETE ON case_transfers FOR EACH ROW EXECUTE FUNCTION process_audit_log();
+
+```
+
+## 2. Architektura a Byznys logika (Export a Import)
+
+Systém se chová jako certifikovaná Spisová služba. Export neobsahuje jen "vyplivnutí" PDF souborů, ale kompletní přenos databázového stavu.
+
+1. **Fáze 1: Vygenerování Spisu (Export):**
+Ředitel Organizace A klikne u rodiny Novákových na `Předat spis jiné organizaci`.
+
+1. Backend vyhledá všechny související záznamy (`persons`, `events`, `contact_plans`, `documents`).
+2. Všechna relační data zkompiluje do jednoho velkého `manifest.json`.
+3. Stáhne všechny fyzické soubory (PDF, audionahrávky) ze Storage.
+4. Vše zabalí do jednoho ZIP archivu, který zašifruje heslem (AES-256).
+5. Vypočítá SHA-256 hash tohoto ZIPu, uloží ho do `case_transfers` a původní rodinu přepne do stavu `lifecycle_state = 'termination'`.
+
+
+2. **Fáze 2: Kryptografické pečetění a Předání:**
+Systém vygeneruje bezpečný odkaz ke stažení ZIPu platný 7 dní a unikátní SMS kód (heslo k ZIPu). Ředitel Organizace A tyto údaje předá Organizaci B. Databáze Organizace A si natrvalo ponechává `anonymizovanou` kopii spisu pro případ auditu Úřadu práce (kvůli dotacím SPVPP, které již byly vyčerpány).
+
+
+3. **Fáze 3: Import a Remapping (Cílová organizace):**
+Organizace B používá také FosterFlow. Ředitel B klikne na `Importovat spis`, nahraje ZIP a zadá heslo.
+
+1. Backend ZIP rozbalí a zkontroluje `SHA-256` hash vůči manifestu. Pokud nesouhlasí (někdo do ZIPu přidal soubor), import tvrdě zamítne.
+2. **Remapping UUID:** Systém vytvoří pro Organizaci B *nové* záznamy (nová UUID) v tabulkách `households` a `persons`, aby nedošlo ke kolizi.
+3. Vezme všechny historické `events` (události) z manifestu a vloží je k nové rodině. Tím zachová Klíčové osobě v Organizaci B kompletní časovou osu (Timeline), co se v rodině dělo minulé roky.
+
+
+## 3. Zpracování datových konfliktů
+
+Při importu systém chytře řeší návaznosti:
+
+* **Pracovníci OSPOD:** Pokud manifest obsahuje ID pracovníka OSPOD, systém podle e-mailu zkontroluje, zda už tento OSPOD pracovník v databázi Organizace B neexistuje. Pokud ano, napojí rodinu na něj, místo aby vytvářel duplikát.
+* **Nedokončené úkoly (`tasks`):** Historické (uzavřené) úkoly se do Organizace B nepřenáší (jsou irelevantní). Přenesou se pouze úkoly se statusem `todo` nebo `in_progress` a zařadí se do fronty s prioritou "Nutno přeřadit na novou KO".
+
+## 4. Uživatelské rozhraní (UI/UX)
+
+* **FosterFlow Organization (Desktop - Migration Wizard):**
+* Převod spisu je kritická operace. Ředitel prochází krok za krokem tzv. *Wizardem* (Průvodcem).
+* **Krok 1:** Potvrzení rodiny a výběr dat k exportu (Lze vyloučit interní supervizní poznámky, které si Organizace A nechává jako své know-how).
+* **Krok 2:** Zámek profilu. (Upozornění: *"Po vygenerování exportu se karta rodiny uzamkne pro další editaci Klíčovou osobou."*)
+* **Krok 3:** Generování odkazů a hashů. Zobrazení velkého zeleného boxu s heslem pro kopírování.
+
+
+* **FosterFlow Worker (Mobilní PWA):**
+* Pokud je rodina v procesu migrace (stav `in_transit`), Klíčová osoba na mobilu vidí rodinu s šedým filtrem a nápisem: *"Tento spis je v procesu předávání. Vkládání nových událostí je zablokováno."*
+
+
+
+```

@@ -1,0 +1,103 @@
+---
+title: "Kapitola 14: Plnohodnotný systém úkolů"
+description: "Delegování, sledování a eskalace úkolů nezávisle na časové ose událostí."
+icon: "list-check"
+---
+
+<Warning>
+**Instrukce pro AI programátora:** Úkol (Task) a Událost (Event) jsou dvě odlišné entity. Událost je nezměnitelný záznam o tom, co se stalo. Úkol je dynamický objekt vyžadující akci, má svého řešitele a termín (Deadline). Úkoly se nesmí utopit v historii událostí, musí mít vlastní agendu, upozornění a eskalační mechanismus.
+</Warning>
+
+## 1. Databázový model (SQL)
+
+Tento model zavádí oddělenou strukturu pro úkoly, jejich přiřazení a komentování, plně napojenou na zbytek systému. Spusťte v Supabase SQL Editoru.
+
+```sql
+-- 1. Číselníky pro úkoly
+CREATE TYPE task_priority AS ENUM ('low', 'medium', 'high', 'critical');
+CREATE TYPE task_status AS ENUM ('todo', 'in_progress', 'waiting_on_third_party', 'completed', 'cancelled');
+
+-- 2. Hlavní tabulka úkolů
+CREATE TABLE tasks (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID REFERENCES organizations(id) NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    priority task_priority DEFAULT 'medium',
+    status task_status DEFAULT 'todo',
+    due_date TIMESTAMP WITH TIME ZONE NOT NULL,
+    
+    -- Kontextové vazby (K čemu úkol patří)
+    household_id UUID REFERENCES households(id), -- Vazba na rodinu
+    person_id UUID REFERENCES persons(id), -- Vazba na konkrétní osobu
+    related_event_id UUID REFERENCES events(id), -- Vazba na událost, která úkol vyvolala
+    related_crisis_id UUID REFERENCES crisis_cases(id), -- Vazba na krizový management
+    
+    created_by UUID REFERENCES profiles(id) NOT NULL,
+    completed_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 3. Přiřazení úkolů (Task Assignments) - Podpora více řešitelů
+CREATE TABLE task_assignments (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    task_id UUID REFERENCES tasks(id) ON DELETE CASCADE,
+    assigned_to UUID REFERENCES profiles(id) ON DELETE CASCADE,
+    assigned_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(task_id, assigned_to)
+);
+
+-- 4. Komunikace nad úkolem (Aby se konverzace neztratila v e-mailech)
+CREATE TABLE task_comments (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    task_id UUID REFERENCES tasks(id) ON DELETE CASCADE,
+    author_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+    comment_text TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 5. Audit triggery pro zpětnou dohledatelnost
+CREATE TRIGGER audit_tasks AFTER INSERT OR UPDATE OR DELETE ON tasks FOR EACH ROW EXECUTE FUNCTION process_audit_log();
+CREATE TRIGGER audit_task_assignments AFTER INSERT OR UPDATE OR DELETE ON task_assignments FOR EACH ROW EXECUTE FUNCTION process_audit_log();
+CREATE TRIGGER audit_task_comments AFTER INSERT OR UPDATE OR DELETE ON task_comments FOR EACH ROW EXECUTE FUNCTION process_audit_log();
+
+```
+
+## 2. Architektura a Byznys logika
+
+Úkoly ve FosterFlow vznikají dvěma způsoby: **Manuálně** (uživatel jej vytvoří) a **Automaticky** (systém jej vygeneruje na základě logiky).
+
+1. **Automatické generování (System-Generated Tasks):**
+Systém funguje jako neviditelný manažer. Backend API automaticky vkládá záznamy do tabulky `tasks` v následujících případech:
+
+* *Uzavření nové dohody:* Vygeneruje úkol pro KO *"Zpracovat vstupní IPOD"* (Termín: za 30 dnů).
+* *Konec platnosti IPOD:* Vygeneruje úkol pro KO *"Zpracovat pololetní revizi IPOD"* (Termín: 30 dnů před koncem platnosti).
+* *Soudní rozsudek nabyl právní moci:* Vygeneruje úkol *"Zaktualizovat plán kontaktů"*.
+
+
+2. **Eskalační Workflow (Při nedodržení termínu):**
+Pokud aktuální čas překročí `due_date` a úkol není ve stavu `completed` nebo `cancelled`:
+
+1. Úkol automaticky získá červený štítek (změna priority na `critical`).
+2. Do `task_assignments` se systémově přidá Ředitel nebo nadřízený Metodik jako sledující.
+3. Vygeneruje se speciální záznam do tabulky `events` (`type: system_alert`) upozorňující na nedodržení kritické lhůty.
+
+
+3. **Stav: Čekání na třetí stranu:**
+Sociální práce často závisí na úřadech. Pokud KO žádá OSPOD o stanovisko a čeká, přepne úkol do stavu `waiting_on_third_party`. Tímto se pozastaví eskalační timer a vedení vidí, že zpoždění není chybou pracovníka.
+
+
+## 3. Uživatelské rozhraní (UI/UX)
+
+Jako vždy, i zde platí striktní oddělení přístupu na terénní a kancelářské zobrazení.
+
+* **FosterFlow Worker (Mobilní PWA):** Záložka "Úkoly". Extrémně jednoduchý checklist seřazený podle termínu (`due_date` ASC).
+* Červené = zpožděné, Žluté = dnešní, Zelené = budoucí.
+* *Ovládání:* Swipe doprava (přejetí prstem) = Dokončit. Kliknutí na úkol otevře rychlý náhled, kde je vidět kontext (jaké rodiny se týká) a možnost přidat komentář.
+
+
+* **FosterFlow Organization (Desktop):** Plnohodnotný pohled na agendu. Ředitel má k dispozici zobrazení typu **Kanban Board** (sloupce: K řešení, Probíhá, Čeká se, Hotovo) s možností filtrovat úkoly napříč všemi svými podřízenými (Klíčovými osobami). Pokud ředitel vidí zpožděný úkol, může přímo v něm zanechat zprávu přes tabulku `task_comments` (např. *"Proč to ještě není?"*).
+
+```
+

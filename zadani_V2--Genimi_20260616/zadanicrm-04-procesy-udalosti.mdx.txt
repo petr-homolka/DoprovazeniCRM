@@ -1,0 +1,65 @@
+---
+title: "Kapitola 4: Procesy a Události (Workflows)"
+description: "Pravidla pro Event-Driven architekturu, IPOD cyklus a logiku Soft-Blokace."
+icon: "diagram-project"
+---
+
+<Warning>
+**Klíčový pokyn pro implementaci logiky:** Systém FosterFlow je **Event-Driven**. To znamená, že stav rodiny se vždy dopočítává a procesy se spouštějí na základě záznamů v tabulce `events`. Aplikace nesmí bránit sociální práci tvrdými systémovými restrikcemi, ale využívá tzv. *Soft-blokaci* s auditní stopou.
+</Warning>
+
+## 1. Zpracování událostí (Event Flow)
+
+Jakákoliv významná změna v životě rodiny se nesmí pouze "přepsat" v tabulce. Musí vzniknout událost (`Event`), která zafunguje jako spouštěč (Trigger) pro navazující workflow.
+
+### Příklad: Změna školy
+1. **Vstup (Terén):** Pěstoun oznámí Klíčové osobě (KO), že dítě přešlo na jinou základní školu. KO tuto informaci zapíše do systému.
+2. **Akce databáze:** Do tabulky `events` se zapíše záznam typu `school_change` s datem, původcem a payloadem (nová škola).
+3. **Reakce systému (Webhook/Job na pozadí):** Systém zachytí tento event a vyhodnotí, že změna školy má dopad na Individuální plán ochrany dítěte.
+4. **Výstup (Notifikace):** Systém vygeneruje novou událost typu `system_alert` s úkolem pro KO: *"Změna školy – Aktualizujte cíl v IPODu v sekci Vzdělávání."* KO vidí tento úkol na své Timeline jako žlutý štítek.
+
+## 2. Individuální plán ochrany dítěte (IPOD)
+
+IPOD není statické PDF a není vlastněn organizací (vlastní ho OSPOD). Systém s ním pracuje jako s kontinuálním cyklem.
+
+<Steps>
+  <Step title="Stanovení cílů (Plánování)">
+    Při nové dohodě nebo po 6 měsících KO v systému definuje "Cíle" (např. *Zlepšení prospěchu z matematiky*, *Stabilizace vztahu s matkou*). Každý cíl má odpovědnou osobu a termín.
+  </Step>
+  <Step title="Sběr důkazů (Průběžná evidence)">
+    Při následných návštěvách se běžné události v terénu (např. zpráva z PPP, vyfocená žákovská knížka) "navěšují" (tagují) k příslušným cílům IPODu.
+  </Step>
+  <Step title="Upozornění na vypršení (Eskalace)">
+    Pět měsíců po založení IPODu systém automaticky vygeneruje alert: *"Vyžadována 6měsíční revize IPODu"*.
+  </Step>
+  <Step title="Vyhodnocení (Uzavření cyklu)">
+    KO otevře IPOD. Systém jí přehledně seřadí všechny "navěšené" události za uplynulého půl roku k danému cíli. KO cíle vyhodnotí a vygeneruje Zprávu pro OSPOD.
+  </Step>
+</Steps>
+
+## 3. Kontakt s biologickou rodinou
+
+Tento proces je přísně sledován soudy a vyžaduje vysoce strukturovaný zápis, který se liší od běžné návštěvy.
+
+* **Spouštěč:** Rozsudek soudu o úpravě styku nebo žádost OSPOD.
+* **Formulář události:** Zápis z kontaktu (`event_type: bio_contact`) **musí povinně obsahovat tři pole**:
+  1. `child_reaction_before`: Reakce a stav dítěte před zahájením styku.
+  2. `course_of_contact`: Samotný průběh styku a chování biologické rodiny.
+  3. `child_reaction_after`: Reakce a stav dítěte po ukončení styku (často i s několikadenním odstupem).
+* **AI Asistence:** Pokud KO diktuje zápis přes hlasový záznamník, AI asistent dostane specifický prompt, aby tyto tři oblasti z hlasového záznamu aktivně a přesně vyextrahoval do příslušných polí JSON payloadu.
+
+## 4. Soft-Blokace (Ochrana státních peněz s možností výjimky)
+
+FosterFlow nesmí omezovat Klíčovou osobu v práci. Sociální práce má stovky výjimek (schválených soudem nebo OSPODem), které nelze natvrdo naprogramovat. Aplikace proto využívá **Soft-blokaci**.
+
+### Příklad Workflow: Proplacení celodenního letního tábora
+Zákonný parametr (`system_parameters`) říká, že dítě musí mít minimálně 2 roky, aby se mu mohl z dotace proplatit celodenní respitní pobyt.
+
+1. KO zadá do aplikace u 1,5letého dítěte požadavek na proplacení víkendového tábora.
+2. Systém validuje požadavek vůči tabulce parametrů a zjistí nesoulad (věk < 2).
+3. **Místo červeného Erroru ("Nelze uložit") systém zobrazí žlutý dialogový box:**
+   > *"Varování: Dítě nesplňuje zákonnou věkovou hranici (2 roky) pro proplacení celodenního respitu z dotace SPVPP. Hrozí riziko neuznání nákladu úřadem práce."*
+4. Systém nabídne možnost vynuceného uložení s povinným textovým polem:
+   > `[x] Jsem si vědom rizika a disponuji schválenou výjimkou z OSPODu.`
+   > `Důvod výjimky: ____________________`
+5. Pokud KO výjimku zdůvodní, systém transakci normálně uloží. Vytvoří však okamžitý zápis do `audit_logs` (včetně uvedeného důvodu vynucení), který slouží pro kontrolu Ředitele a jako štít pro ekonomku při auditu MPSV.

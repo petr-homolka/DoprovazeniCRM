@@ -1,0 +1,126 @@
+
+---
+title: "Kapitola 25: Granulární oprávnění (RBAC)"
+description: "Role-Based Access Control: Systém oprávnění, rolí a delegací nezávislý na tvrdém kódu."
+icon: "key"
+---
+
+<Warning>
+**Kritická instrukce pro AI programátora:** Zapomeňte na jednoduché ENUM role (např. `ko`, `director`) aplikované přímo v tabulce `profiles`. Systém FosterFlow využívá plnohodnotný relační model **RBAC (Role-Based Access Control)**. Přístup k datům (RLS) a funkcím (UI) se neřídí tím, *kdo uživatel je*, ale tím, *jaká má přidělená oprávnění* přes vazební tabulky.
+</Warning>
+
+## 1. Databázový model (SQL)
+
+Tento model odděluje fyzické uživatele, jejich logické role a konkrétní systémová oprávnění. Zahrnuje také Supabase funkci pro rychlé ověřování práv v RLS politikách. Spusťte v Supabase SQL Editoru.
+
+```sql
+-- 1. Definice konkrétních oprávnění (Akce v systému)
+-- Tato tabulka je "číselník" naplněný systémem (např. 'view_finance', 'export_cases', 'delete_documents')
+CREATE TABLE permissions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    code TEXT NOT NULL UNIQUE, -- Strojový kód oprávnění (např. 'cases.export')
+    description TEXT NOT NULL, -- Lidský popis (např. 'Může exportovat spisy rodin')
+    module TEXT NOT NULL -- Modul, ke kterému oprávnění patří (např. 'finance', 'core', 'documents')
+);
+
+-- 2. Definice rolí (Šablony)
+-- Organizace si může vytvořit vlastní role (např. "Externí psycholog", "Administrativa")
+CREATE TABLE roles (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID REFERENCES organizations(id), -- NULL = Systémová globální role
+    name TEXT NOT NULL,
+    description TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 3. Vazba: Která role má jaká oprávnění (Mapování)
+CREATE TABLE role_permissions (
+    role_id UUID REFERENCES roles(id) ON DELETE CASCADE,
+    permission_id UUID REFERENCES permissions(id) ON DELETE CASCADE,
+    PRIMARY KEY (role_id, permission_id)
+);
+
+-- 4. Vazba: Který uživatel má jaké role
+-- Uživatel může mít více rolí (např. "Klíčová osoba" + "Koordinátor vzdělávání")
+CREATE TABLE user_roles (
+    user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+    role_id UUID REFERENCES roles(id) ON DELETE CASCADE,
+    assigned_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    assigned_by UUID REFERENCES profiles(id),
+    PRIMARY KEY (user_id, role_id)
+);
+
+-- 5. Helper funkce pro RLS (Row Level Security) v Supabase
+-- Rychlé ověření, zda má aktuální uživatel dané oprávnění
+CREATE OR REPLACE FUNCTION has_permission(required_permission_code TEXT)
+RETURNS BOOLEAN AS $$
+DECLARE
+    has_perm BOOLEAN;
+BEGIN
+    SELECT EXISTS (
+        SELECT 1
+        FROM user_roles ur
+        JOIN role_permissions rp ON ur.role_id = rp.role_id
+        JOIN permissions p ON rp.permission_id = p.id
+        WHERE ur.user_id = auth.uid()
+        AND p.code = required_permission_code
+    ) INTO has_perm;
+    
+    RETURN has_perm;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
+
+-- 6. Audit triggery
+CREATE TRIGGER audit_roles AFTER INSERT OR UPDATE OR DELETE ON roles FOR EACH ROW EXECUTE FUNCTION process_audit_log();
+CREATE TRIGGER audit_user_roles AFTER INSERT OR UPDATE OR DELETE ON user_roles FOR EACH ROW EXECUTE FUNCTION process_audit_log();
+
+```
+
+## 2. Architektura a Byznys logika (Aplikace v praxi)
+
+Model RBAC umožňuje naprostou flexibilitu bez zásahu do zdrojového kódu.
+
+1. **Vytváření uživatelských skupin (Custom Roles):**
+Ředitel zjistí, že potřebuje novou pozici "Asistentka". Nepotřebuje volat programátora. V aplikaci `FosterFlow Organization` vytvoří novou roli *Asistentka*, zaškrtne jí práva `view_cases` (vidí rodiny) a `upload_documents` (může nahrávat), ale nezaškrtne `view_finance` (nevidí peníze).
+
+
+2. **Použití v RLS (Zabezpečení databáze):**
+Při psaní bezpečnostních politik (Row Level Security) se programátor už neptá na roli.
+*Příklad RLS pro zobrazení finančních transakcí:*
+
+```sql
+CREATE POLICY "Uživatelé s právem view_finance vidí transakce"
+ON service_transactions FOR SELECT
+USING (has_permission('finance.view'));
+
+```
+
+
+3. **Použití na Frontendu (Skrývání UI):**
+Aplikace si po přihlášení stáhne pole všech oprávnění daného uživatele (např. `['cases.view', 'documents.upload']`). Frontendové komponenty (tlačítka, položky v menu) se pak renderují podmíněně:
+
+```jsx
+{user.permissions.includes('cases.export') && (
+  <Button onClick={exportCase}>Exportovat spis</Button>
+)}
+
+```
+
+
+## 3. Výchozí seed data (Bootstrapping)
+
+Aby mohl systém po instalaci začít fungovat, musí databáze obsahovat základní set oprávnění.
+Příklady `permission.code`, které musí být vloženy při inicializaci:
+
+* `cases.view_assigned` (Vidí jen své rodiny)
+* `cases.view_all` (Vidí všechny rodiny v organizaci)
+* `finance.view` (Vidí SPVPP a faktury)
+* `finance.approve` (Může schvalovat výdaje)
+* `admin.manage_users` (Může zakládat nové zaměstnance a měnit jim role)
+* `system.export_data` (Může generovat ZIP exporty spisu)
+
+```
+
+---
+

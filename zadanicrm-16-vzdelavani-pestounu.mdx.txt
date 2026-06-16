@@ -1,0 +1,105 @@
+
+---
+title: "Kapitola 16: Vzdělávání pěstounů"
+description: "Agenda zákonného vzdělávání, evidence certifikátů a hlídání ročních limitů."
+icon: "graduation-cap"
+---
+
+<Warning>
+**Instrukce pro AI programátora:** Vzdělávání pěstounů (Zákonná povinnost 24 hodin/rok) je v systému dvoukolejný proces. Na jedné straně jde o splnění *výchovně-vzdělávací povinnosti* (osvědčení, certifikát). Na druhé straně jde často o *finanční transakci* (organizace školení proplácí z dotace SPVPP). Tento modul musí tyto dvě roviny elegantně propojit, aby nedocházelo k duplicitnímu zadávání dat.
+</Warning>
+
+## 1. Databázový model (SQL)
+
+Tento model zavádí tabulku pro evidenci školení a propojuje ji se stávajícím modulem dokumentů a finančních transakcí. Spusťte v Supabase SQL Editoru.
+
+```sql
+-- 1. Číselníky pro vzdělávání
+CREATE TYPE education_form AS ENUM (
+    'prezencni', 
+    'online_synchronni', 
+    'e_learning', 
+    'pobytove'
+);
+
+CREATE TYPE education_status AS ENUM (
+    'planned',    -- Naplánováno (čeká na realizaci)
+    'completed',  -- Absolvováno (ale chybí certifikát)
+    'verified',   -- Ověřeno (certifikát nahrán a zkontrolován KO/Vedením)
+    'cancelled'   -- Zrušeno
+);
+
+-- 2. Evidence vzdělávacích aktivit pěstounů
+CREATE TABLE education_records (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID REFERENCES organizations(id) NOT NULL,
+    foster_parent_id UUID REFERENCES profiles(id) NOT NULL, -- Pěstoun (nikoliv rodina, vzdělává se konkrétní osoba)
+    year INT NOT NULL, -- Kalendářní rok, do kterého se hodiny započítávají
+    course_name TEXT NOT NULL,
+    provider_name TEXT NOT NULL,
+    form education_form NOT NULL,
+    date_from DATE NOT NULL,
+    date_to DATE NOT NULL,
+    duration_hours INT NOT NULL CHECK (duration_hours > 0),
+    status education_status DEFAULT 'planned',
+    
+    -- Vazba na modul Dokumentů (PDF certifikát)
+    certificate_document_id UUID REFERENCES documents(id),
+    
+    -- Vazba na modul Ekonomiky (Pokud školení hradí DO z dotace SPVPP)
+    financial_transaction_id UUID REFERENCES service_transactions(id),
+    
+    notes TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 3. Audit triggery pro NÚKIB
+CREATE TRIGGER audit_education_records AFTER INSERT OR UPDATE OR DELETE ON education_records FOR EACH ROW EXECUTE FUNCTION process_audit_log();
+
+```
+
+## 2. Architektura a Byznys logika
+
+Zákon o sociálně-právní ochraně dětí (ZSPOD) vyžaduje, aby každý pěstoun absolvoval 24 hodin vzdělávání za kalendářní rok. Systém funguje jako automatický hlídač.
+
+1. **Průběžný součet (The 24h Rule):**
+Backend API při jakémkoliv dotazu na kartu pěstouna dynamicky sčítá pole `duration_hours` ze všech záznamů v tabulce `education_records` pro aktuální `year`, které mají status `verified`.
+
+
+2. **Eskalační Workflow (Konec 3. kvartálu):**
+Systém obsahuje CRON job, který se spouští vždy k **1. říjnu** daného roku. Projde všechny aktivní pěstouny.
+
+* Pokud má pěstoun součet hodin >= 24: Zelený indikátor, vše v pořádku.
+* Pokud má pěstoun součet < 18 hodin: Systém automaticky vygeneruje Událost (`events`) typu `system_alert` s vysokou prioritou a Úkol (`tasks`) pro Klíčovou osobu: *"Pěstoun Novák nemá splněny hodiny vzdělávání. Zajistěte nápravu do konce roku."*
+
+
+3. **Vazba na finance (SPVPP):**
+Pokud se pěstoun účastní víkendového pobytu, který hradí DO z dotace dítěte:
+
+1. Ekonomka založí záznam do `service_transactions` (čerpání dotace).
+2. Backend v jednom kroku automaticky vygeneruje i záznam do `education_records` pro pěstouna, prováže je přes `financial_transaction_id` a započte mu hodiny, aby se zabránilo dvojímu přepisování.
+
+
+## 3. Integrace AI (Vytěžování certifikátů)
+
+Tento modul výrazně ulehčuje práci s pomocí funkce **FosterFlow AI Document AI**.
+
+1. Pěstoun (nebo KO) vyfotí certifikát ze školení na mobilu.
+2. Soubor se nahraje a Google Cloud Document AI přečte text.
+3. Gemini model pomocí specifického promptu vyextrahují:
+* `course_name` (Název kurzu)
+* `provider_name` (Vzdělávací instituce)
+* `date_to` (Datum absolvování)
+* `duration_hours` (Počet hodin)
+
+
+4. Data se uživateli předvyplní do formuláře. Uživatel klikne na `Potvrdit a uložit`. Záznam se zapíše s příznakem `verified` a certifikát se bezpečně připojí do sloupce `certificate_document_id`.
+
+## 4. Uživatelské rozhraní (UI/UX)
+
+* **FosterFlow Organization (Desktop):** Ředitel má k dispozici analytický dashboard **"Compliance Vzdělávání"**. Zobrazuje se jako velká tabulka všech pěstounů se sloupcovým minigrafem (Sparkline), který vizualizuje pokrok od 0 do 24 hodin. Slouží pro rychlou orientaci a generování výstupních reportů pro kontrolu z MPSV/Kraje.
+* **FosterFlow Worker (Mobilní PWA):** KO na detailu pěstouna vidí jednoduchý koláčový graf (např. 16/24 hod). Tlačítko `+ Přidat certifikát` okamžitě otevírá fotoaparát zařízení.
+* **Foster Parent Portal (Klientská zóna):** *Příprava pro budoucí produkt.* Pěstoun se sám přihlásí, vidí, kolik hodin mu letos zbývá, a sám může ze svého mobilu uploadovat PDF osvědčení, které spadne Klíčové osobě ke schválení.
+
+```

@@ -1,0 +1,120 @@
+---
+title: "Kapitola 11: Modul soudní agendy (Court Cases)"
+description: "Dlouhodobá evidence soudních řízení, stání a rozhodnutí nezávisle na časové ose událostí."
+icon: "scale-balanced"
+---
+
+<Warning>
+**Instrukce pro AI programátora:** Soudní agenda nesmí být implementována pouze jako izolované události (`events`). Soudní řízení se táhne měsíce i roky, má svá stání, opravné prostředky a nabývá právní moci. Události (Events) slouží pouze k zobrazení změn v řízení na časové ose, ale samotná data musí být strukturována ve vlastních relačních tabulkách (`court_cases`, `court_hearings`, `court_decisions`), které fungují jako "kontejnery" pro daný soudní spor.
+</Warning>
+
+## 1. Databázový model (SQL)
+
+Tento model rozšiřuje stávající hybridní databázi. Poskytuje strukturu pro dlouhodobé sledování soudní agendy.
+
+```sql
+-- 1. Číselník soudů
+CREATE TABLE courts (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name TEXT NOT NULL UNIQUE,
+    city TEXT NOT NULL,
+    data_box_id TEXT
+);
+
+-- 2. Kontejner soudního řízení (Case)
+CREATE TYPE court_case_status AS ENUM ('active', 'appealed', 'closed_final');
+
+CREATE TABLE court_cases (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID REFERENCES organizations(id) NOT NULL,
+    household_id UUID REFERENCES households(id) NOT NULL,
+    person_id UUID REFERENCES persons(id), -- Konkrétní dítě, kterého se spor týká (nullable, pokud jde o celou rodinu)
+    court_id UUID REFERENCES courts(id) NOT NULL,
+    sp_zn TEXT NOT NULL, -- Spisová značka (např. "12 P 34/2025")
+    judge_name TEXT,
+    subject TEXT NOT NULL, -- Předmět řízení (např. "Svěření do pěstounské péče", "Úprava styku s biologickou matkou")
+    status court_case_status DEFAULT 'active',
+    opened_date DATE NOT NULL,
+    closed_date DATE,
+    notes TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 3. Jednotlivá soudní jednání (Hearings)
+CREATE TABLE court_hearings (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    court_case_id UUID REFERENCES court_cases(id) ON DELETE CASCADE,
+    hearing_date TIMESTAMP WITH TIME ZONE NOT NULL,
+    room_number TEXT,
+    attended_by_ko UUID REFERENCES profiles(id), -- Klíčová osoba, která se účastnila
+    hearing_notes TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 4. Rozhodnutí a usnesení (Decisions)
+CREATE TYPE decision_type AS ENUM ('rozsudek', 'usneseni', 'predbezne_opatreni');
+
+CREATE TABLE court_decisions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    court_case_id UUID REFERENCES court_cases(id) ON DELETE CASCADE,
+    decision_type decision_type NOT NULL,
+    issue_date DATE NOT NULL, -- Datum vydání rozhodnutí
+    effective_date DATE, -- Datum nabytí právní moci (Klíčové pro SPOD!)
+    verdict_summary TEXT NOT NULL,
+    document_id UUID REFERENCES documents(id), -- Fyzické PDF s anonymizovaným rozsudkem
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Triggery pro audit log
+CREATE TRIGGER audit_court_cases AFTER INSERT OR UPDATE OR DELETE ON court_cases FOR EACH ROW EXECUTE FUNCTION process_audit_log();
+CREATE TRIGGER audit_court_hearings AFTER INSERT OR UPDATE OR DELETE ON court_hearings FOR EACH ROW EXECUTE FUNCTION process_audit_log();
+CREATE TRIGGER audit_court_decisions AFTER INSERT OR UPDATE OR DELETE ON court_decisions FOR EACH ROW EXECUTE FUNCTION process_audit_log();
+
+```
+
+## 2. Architektura a Byznys logika
+
+Aplikace musí respektovat právní logiku SPOD. Rozhodnutí soudu není závazné, dokud nenabude právní moci.
+
+### Vztah k tabulce Events (Časová osa)
+
+Kdykoliv je vytvořen záznam v tabulkách `court_cases`, `court_hearings` nebo `court_decisions`, aplikační vrstva (Backend API) musí **automaticky vygenerovat záznam do hlavní tabulky `events**`, aby to Klíčová osoba (KO) viděla na své Timeline rodiny.
+
+* **Příklad:** Ekonomka nebo administrativní podpora zadá, že 15. 10. proběhne soudní stání (`court_hearings`). Na Timeline rodiny se okamžitě objeví: *"Nové soudní jednání naplánováno na 15. 10. (Sp. Zn. 12 P 34/2025)"*.
+
+### Nabytí právní moci (Workflow)
+
+Nejkritičtější moment soudní agendy.
+
+1. Systém eviduje `court_decisions` s vyplněným `issue_date`, ale prázdným `effective_date`.
+2. Zobrazuje se varování (žlutý štítek): *"Rozsudek čeká na vyznačení doložky právní moci."*
+3. Jakmile pracovník doplní `effective_date` (právní moc), systém automaticky:
+* Změní stav řízení na `closed_final`.
+* Vygeneruje událost (`severity: 3` - kritická) s úkolem pro KO: *"Rozsudek nabyl právní moci. Aktualizujte IPOD dítěte a plán kontaktů s biologickou rodinou."*
+
+
+
+## 3. Integrace AI (Automatické párování)
+
+Tento modul je ideálním kandidátem pro plnou automatizaci administrativy pomocí Google Document AI a Gemini.
+
+1. **Upload a OCR:**
+Do systému je nahrán sken soudního rozhodnutí (přes mobil nebo desktop). Zpracuje se přes OCR do surového textu.
+
+
+2. **Extrakce metadat (Gemini):**
+Gemini analyzuje text a hledá primární identifikátor – **Spisovou značku** (např. ve formátu `\d+ [A-Z]+ \d+\/\d+`).
+
+
+3. **Automatické zařazení (Párování):**
+Systém vyhledá `sp_zn` v tabulce `court_cases`. Pokud najde shodu, dokument automaticky přiloží k danému případu, založí draft záznamu do `court_decisions` a předvyplní datum vydání a výrok. Pracovník pouze jedním kliknutím potvrdí ("Uložit do spisu").
+
+
+## 4. Uživatelské rozhraní (UI/UX)
+
+* **FosterFlow Organization (Desktop):** V detailu rodiny existuje samostatná záložka "Soudní agenda". Obsahuje rozbalovací seznam (Accordion) všech soudních řízení. Uvnitř každého případu je hierarchicky zobrazena historie stání a přiložených rozsudků.
+* **FosterFlow Worker (Mobil):** Zde se nesmí zobrazovat složitá tabulka. KO vidí soudní agendu primárně roztroušenou na své časové ose (`Timeline`). Pokud si rozklikne záložku "Soudy", vidí pouze jednoduchý seznam aktivních spisových značek a nejbližších termínů jednání (read-only pohled s možností rychlého prokliku na stažení PDF rozsudku).
+
+```
+
+```

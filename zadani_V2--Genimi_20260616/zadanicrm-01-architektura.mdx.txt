@@ -1,0 +1,57 @@
+---
+title: "Kapitola 1: Architektura, Bezpečnost a GDPR"
+description: "Pravidla pro Data Governance, Offline-First přístup a NÚKIB compliance."
+icon: "shield-check"
+---
+
+<Warning>
+**Kritický požadavek na vývoj:** Systém zpracovává zvláštní kategorie osobních údajů (čl. 9 GDPR). Zabezpečení nesmí být řešeno pouze skrytím UI elementů na frontendu. Izolace dat musí být technicky zadrátována na úrovni databáze (Backend) pomocí PostgreSQL Row Level Security (RLS).
+</Warning>
+
+## 1. Data Governance (Matice přístupů)
+
+Architektura databáze se musí striktně řídit zásadou **Need-to-Know** (uživatel vidí jen to, co nezbytně potřebuje ke své práci).
+
+<CardGroup cols={1}>
+  <Card title="Klíčová osoba (KO) – Terénní pracovník" icon="user">
+    * **Vidí:** Kompletní detailní záznamy, historii událostí (Events), zprávy a psychologické posudky **výhradně** u rodin, které jí byly explicitně přiděleny (kde `households.assigned_ko_id == auth.uid()`). 
+    * **Nevidí:** K datům ostatních rodin v organizaci nemá přístupový vektor. Databáze na dotaz `SELECT * FROM households` vrátí pouze její rodiny.
+  </Card>
+  <Card title="Ekonomka" icon="calculator">
+    * **Vidí:** Plošně všechny dohody, rozpočty SPVPP, limitní parametry a faktury.
+    * **Nevidí:** Nesmí vidět textové zápisy z návštěv, interní poznámky, zdravotní zprávy dětí ani kontakty na biologické rodiče. 
+    * **Implementace:** Ve výpisu finančních transakcí vidí systémově agregovaná data (např. `"Dítě ID-123, Respit 24h, 3000 Kč"`). V tabulce `service_transactions` má přístup k částkám, ale nemá přístup k propojeným citlivým textům v tabulce `events`.
+  </Card>
+  <Card title="Ředitel / Vedení organizace" icon="building">
+    * **Vidí:** Plošně všechna data v rámci své organizace (`organization_id == auth.jwt()->>'org_id'`). Přístup ke všem reportům, supervizím a auditním logům.
+  </Card>
+</CardGroup>
+
+## 2. Architektura Offline-First (Základ pro FosterFlow Worker)
+
+Klíčové osoby pracují v oblastech se špatným signálem. FosterFlow Worker (mobilní rozhraní) musí běžet jako PWA (Progressive Web App) plně funkční bez připojení k internetu.
+
+### Životní cyklus dat (Sync Queue)
+
+1. **Ranní synchronizace (Online):** Jakmile se pracovník přihlásí a je připojen k síti (např. na domácí Wi-Fi), Service Worker stáhne aktuální profily přidělených rodin, aktivní IPOD cíle a historii posledních událostí do lokální mezipaměti v prohlížeči (**IndexedDB**).
+2. **Práce v terénu (Offline):** Pracovník vkládá fotky dokumentů, nahrává audio záznamy a vytváří strukturované zápisy z návštěv. Systém nečeká na API odpověď. Záznamy se ukládají lokálně do fronty s příznakem `status: 'pending_sync'`. UI hlásí uživateli: *"Uloženo v zařízení. Čeká na připojení."*
+3. **Synchronizace na pozadí (Reconnection):** Jakmile Service Worker nebo prohlížeč detekuje obnovení stabilního připojení, automaticky spustí synchronizační frontu na pozadí. Data se odešlou na Supabase přes REST/GraphQL endpointy a po úspěšném uložení na serveru se smažou z lokální fronty.
+
+## 3. Bezpečnost a NÚKIB Compliance
+
+Systém je infrastrukturově navržen tak, aby obstál proti ransomware útokům a forenznímu auditu ze strany státu.
+
+### 1. Ochrana proti Ransomware (WORM Backup)
+Primární databáze (Supabase) zajišťuje Point-in-Time Recovery (PITR). Kromě toho je nutné vytvořit CRON job, který každou noc (02:00) provede komprimovaný SQL dump celé databáze. 
+Tento dump se zašifruje veřejným asymetrickým klíčem organizace a odešle na izolované **WORM (Write Once, Read Many)** úložiště (např. AWS S3 Object Lock / Google Cloud Storage v retention režimu). Tato záloha je po dobu 30 dnů technicky nesmazatelná i pro uživatele s nejvyššími právy SuperAdmin.
+
+### 2. Nezničitelná Auditní Stopa
+Jakákoliv modifikace v systému nesmí zůstat bez stopy. 
+* Na všechny klíčové tabulky (`events`, `households`, `persons`, `service_transactions`, atd.) je aplikován databázový trigger.
+* Při každé operaci `INSERT`, `UPDATE` nebo `DELETE` trigger automaticky vytvoří záznam do tabulky `audit_logs`.
+* Záznam obsahuje: `timestamp`, `user_id` (kdo změnu provedl), `table_name`, `action`, starou hodnotu (old_payload) a novou hodnotu (new_payload).
+
+### 3. Princip Soft-Delete
+Vzhledem k zákonné povinnosti uchovávat spisovou dokumentaci po dobu 10 let od ukončení péče, systém nezná fyzické mazání dat (`DELETE FROM ...`).
+* Akce "Smazat" na frontendu pouze změní atribut `status` dané entity na `'inactive'`.
+* Entita tak okamžitě zmizí z běžných přehledů, vyhledávání a statistik, ale v databázi zůstává navždy pro případnou státní kontrolu nebo obnovu. Skutečný tvrdý výmaz dat smí po uplynutí 10 let provést pouze globální administrátor.

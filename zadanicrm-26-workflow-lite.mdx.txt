@@ -1,0 +1,113 @@
+
+---
+title: "Kapitola 26: Workflow Lite (Automatizace řízená daty)"
+description: "Zjednodušený spouštěč procesů pomocí JSON pole namísto plnohodnotného Workflow Enginu."
+icon: "bolt"
+---
+
+<Warning>
+**Instrukce pro AI programátora:** Nevytvářejte žádné složité uživatelské rozhraní (UI) typu "Drag & Drop Workflow Builder". Konfiguraci automatizací spravuje administrátor přímo přes databázi formou JSON pole. Vaším úkolem je naprogramovat pouze "Action Runner" – backendovou službu, která po uložení události (`event`) toto JSON pole přečte a provede definované kroky.
+</Warning>
+
+## 1. Databázový model (SQL Úprava)
+
+Tento kód upravuje tabulku `event_definitions` z Kapitoly 24. Odstraňuje jednoduchý textový klíč a nahrazuje jej flexibilním polem akcí ve formátu JSONB. Spusťte v Supabase SQL Editoru.
+
+```sql
+-- Odstranění původního jednoduchého klíče
+ALTER TABLE event_definitions DROP COLUMN IF EXISTS workflow_trigger_key;
+
+-- Přidání pole pro definici navazujících akcí (Workflow Lite)
+ALTER TABLE event_definitions ADD COLUMN post_actions JSONB DEFAULT '[]'::jsonb;
+
+-- Příklad základního seedu pro ukázku formátu (nepovinné)
+COMMENT ON COLUMN event_definitions.post_actions IS 'Pole JSON objektů definujících akce. Příklad: [{"action": "create_task", "priority": "high"}]';
+
+```
+
+## 2. Podporované akce (Action Runner Typy)
+
+Backend API musí umět zpracovat tři základní typy systémových akcí. Jakákoliv jiná hodnota v klíči `"action"` bude systémem ignorována.
+
+1. **`create_task`**: Vytvoří nový záznam v tabulce `tasks`.
+2. **`send_notification`**: Vloží upozornění do modulu z Kapitoly 19 (`notifications`).
+3. **`change_case_state`**: Změní stav v `households.current_lifecycle_state` nebo `crisis_cases.status`.
+
+## 3. Příklady konfigurace (Katalog automatizací)
+
+Aby se zabránilo zmatkům, zde jsou přesné ukázky, jak musí administrátor (Metodik) strukturovat data ve sloupci `post_actions` pro různé situace.
+
+### Příklad A: Útěk dítěte (Krizová situace)
+
+Pokud je nahlášen útěk dítěte, systém musí okamžitě informovat ředitele a nařídit Klíčové osobě případovou supervizi.
+
+**JSON uloženo v `event_definitions` pro typ události `child_runaway`:**
+
+```json
+[
+  {
+    "action": "send_notification",
+    "channel": "sms",
+    "target_role": "director",
+    "priority": "urgent",
+    "title": "KRIZE: Útěk dítěte",
+    "message_template": "U rodiny {{household.name}} byl nahlášen útěk. Zkontrolujte systém."
+  },
+  {
+    "action": "create_task",
+    "assign_to": "assigned_ko",
+    "priority": "critical",
+    "title": "Zajistit případovou supervizi",
+    "due_days": 3,
+    "description": "Z důvodu krizového incidentu je nutné naplánovat případovou supervizi."
+  }
+]
+
+```
+
+### Příklad B: Změna školy
+
+Méně urgentní událost, ale vyžaduje formální aktualizaci plánu.
+
+**JSON uloženo v `event_definitions` pro typ události `school_change`:**
+
+```json
+[
+  {
+    "action": "create_task",
+    "assign_to": "assigned_ko",
+    "priority": "medium",
+    "title": "Mimořádná revize IPOD (Škola)",
+    "due_days": 14,
+    "description": "Dítě změnilo školu. Zaktualizujte vzdělávací cíle v IPODu."
+  }
+]
+
+```
+
+## 4. Architektura zpracování (Post-Save Hook)
+
+Logika zpracování je lineární a asynchronní, aby nezpomalovala uživateli odezvu aplikace po uložení formuláře.
+
+1. **Zápis Události:**
+Uživatel na frontendu vytvoří novou událost (např. ohlášení krize). Frontend odešle API požadavek na backend.
+
+
+2. **Stažení konfigurace:**
+Backend nejprve standardně uloží záznam do tabulky `events`. Hned poté si z tabulky `event_definitions` načte sloupec `post_actions`.
+
+
+3. **Sestavení kontextu:**
+Backend si z databáze vytáhne základní ID (kdo je `assigned_ko`, jaké je ID rodiny, jaké je ID uživatele s rolí `director`), aby mohl dynamické proměnné v JSONu nahradit skutečnými UUID.
+
+
+4. **Vykonání akcí (Execution Loop):**
+Backend ve smyčce projde pole `post_actions`.
+
+* Narazí na `create_task` ➔ Provede `INSERT INTO tasks (...)`.
+* Narazí na `send_notification` ➔ Provede `INSERT INTO notifications (...)`.
+
+
+```
+
+```

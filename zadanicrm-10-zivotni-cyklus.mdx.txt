@@ -1,0 +1,113 @@
+---
+title: "Kapitola 10: Životní cyklus případu (Case Lifecycle)"
+description: "Stavový automat (State Machine) definující průchod pěstounské rodiny systémem."
+icon: "arrows-spin"
+---
+
+<Warning>
+**Instrukce pro AI programátora:** Životní cyklus rodiny nesmí být implementován jako pouhé textové pole, které si uživatel libovolně přepisuje. Musí jít o striktní **Stavový automat (State Machine)**. Přechod z jednoho stavu do druhého (Transition) je možný pouze tehdy, pokud jsou splněny vstupní podmínky (např. nahrán povinný dokument). Každý přechod generuje událost do tabulky `events`.
+</Warning>
+
+## 1. Koncept Stavového automatu
+
+Zatímco tabulka `events` zaznamenává *co* se děje (časová osa), životní cyklus definuje, v jaké *fázi* se rodina jako klient nachází. Tento stav určuje, jaké moduly má Klíčová osoba (KO) odemčené (např. nelze čerpat dotaci SPVPP, pokud je rodina ve stavu `Zájemce`).
+
+### Nové SQL rozšíření (Aplikovat do databáze)
+Pro implementaci striktního cyklu vytvořte tento rozšiřující databázový model:
+
+```sql
+CREATE TYPE lifecycle_state AS ENUM (
+    'lead',                 -- Zájemce
+    'initial_contact',      -- První kontakt a předání informací
+    'negotiation',          -- Jednání o spolupráci
+    'pending_orp',          -- Čeká se na souhlas ORP (OSPOD)
+    'active_accompanying',  -- Aktivní doprovázení (Uzavřená dohoda, Přidělená KO)
+    'situation_change',     -- Změna situace (Pozastavení, Krizový přesun)
+    'termination',          -- Ukončení dohody (Běží výpověď)
+    'archived'              -- Archivace (Spis uzavřen)
+);
+
+-- Rozšíření tabulky households o striktní stavový cyklus
+ALTER TABLE households ADD COLUMN current_lifecycle_state lifecycle_state DEFAULT 'lead';
+
+-- Tabulka pro historii přechodů (kdo a kdy rodinu posunul do další fáze)
+CREATE TABLE lifecycle_transitions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    household_id UUID REFERENCES households(id) ON DELETE CASCADE,
+    previous_state lifecycle_state,
+    new_state lifecycle_state NOT NULL,
+    transition_date TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    triggered_by UUID REFERENCES profiles(id),
+    mandatory_document_id UUID REFERENCES documents(id), -- Odkaz na dokument, který přechod umožnil (např. Dohoda)
+    notes TEXT
+);
+
+-- Trigger pro automatický zápis do historie při změně stavu v households
+CREATE OR REPLACE FUNCTION log_lifecycle_transition()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF OLD.current_lifecycle_state IS DISTINCT FROM NEW.current_lifecycle_state THEN
+        INSERT INTO lifecycle_transitions (household_id, previous_state, new_state, triggered_by)
+        VALUES (NEW.id, OLD.current_lifecycle_state, NEW.current_lifecycle_state, auth.uid());
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE TRIGGER trigger_lifecycle_transition
+AFTER UPDATE OF current_lifecycle_state ON households
+FOR EACH ROW EXECUTE FUNCTION log_lifecycle_transition();
+
+```
+
+## 2. Matice přechodů (Transition Rules)
+
+Programátor musí na frontendu (i backend API) validovat následující pravidla. Tlačítko pro přechod do další fáze se nesmí zaktivovat, dokud nejsou splněny podmínky.
+
+1. **Zájemce (Lead) ➔ První kontakt:**
+* **Spouštěč:** Vytvoření záznamu v systému (telefonát, e-mail od pěstouna).
+* **Povinná akce:** Vyplnění základní karty rodiny (Jméno, Adresa).
+* **Oprávněná role:** Ředitel, Vedení, Sociální pracovník pověřený náběrem.
+
+
+2. **První kontakt ➔ Jednání o spolupráci:**
+* **Spouštěč:** Uskutečnění informační schůzky.
+* **Povinný dokument:** Uložen `Zápis z prvního kontaktu` (např. přes AI Záznamník).
+* **Odemčené funkce:** Možnost nahrávat strukturovaná data o dětech.
+
+
+3. **Jednání o spolupráci ➔ Souhlas ORP (Pending):**
+* **Spouštěč:** Rodina podepisuje žádost na OSPOD pro přidělení DO.
+* **Povinná akce:** Vyplněna vazba v tabulce `person_ospod_links`.
+* **Návazné workflow:** Systém spustí timer na 30 dnů (zákonná lhůta OSPOD) a vygeneruje alert, pokud se do té doby neozvou.
+
+
+4. **Souhlas ORP ➔ Aktivní doprovázení:**
+* **Spouštěč:** Doručení Rozhodnutí/Souhlasu a podpis Dohody o výkonu PP.
+* **Povinný dokument:** Nahráno PDF s Rozhodnutím ORP a nahrána podepsaná Dohoda.
+* **Návazné workflow:** 1. Vygeneruje se státní příspěvek v modulu `state_subsidies`.
+2. Odemkne se modul Respit a Vzdělávání.
+3. Vygeneruje se úkol pro přidělenou KO: *"Založit vstupní IPOD do 30 dnů"*.
+
+
+5. **Aktivní doprovázení ➔ Ukončení dohody (Termination):**
+* **Spouštěč:** Pěstoun podává výpověď, nebo dítě dosahuje zletilosti.
+* **Povinná akce:** Zadání data ukončení (`termination_date`).
+* **Návazné workflow:** Zablokuje se zakládání nových žádostí o respit (Soft-blokace). Systém vyzve ekonomku k závěrečnému vyúčtování.
+
+
+6. **Ukončení dohody ➔ Archivace:**
+* **Spouštěč:** Uzavření všech finančních transakcí a uplynutí případné výpovědní lhůty.
+* **Povinná akce:** Vygenerování "Závěrečné zprávy pro OSPOD" a stisknutí tlačítka `Uzavřít spis`.
+* **Návazné workflow:** Systém provede asynchronní ZIP export (Spisová služba), zamkne profil proti editaci (Read-only) a nastaví stav subjektů na `inactive`.
+
+
+## 3. Uživatelské rozhraní (UI/UX pro Lifecycle)
+
+V aplikaci `FosterFlow Organization` (Desktop) se pro zobrazení životního cyklu používá vizuální komponenta **Stepper** (Krokovadlo) umístěná v horní části profilu rodiny.
+
+* Zelené kroky = Hotovo
+* Modrý (Aktivní) krok = Aktuální stav
+* Šedé kroky = Budoucí stavy
+* *In-place interakce:* Po kliknutí na následující šedý krok systém otevře kontextový postranní panel (Slide-over), který vypíše chybějící povinné položky (např. ❌ *Chybí vložený dokument: Souhlas ORP*). Tlačítko `Přepnout stav` je zašedlé (disabled), dokud uživatel podmínky nesplní.
+

@@ -1,0 +1,112 @@
+
+---
+title: "Kapitola 22: Měření výkonu a Analytika"
+description: "KPI dashboardy, výpočet nákladů a sledování vytížení klíčových osob (KO)."
+icon: "chart-mixed"
+---
+
+<Warning>
+**Instrukce pro AI programátora:** Analytické dotazy (např. součty tisíců událostí a finančních transakcí za celý rok) jsou výpočetně náročné. **Nesmí se spouštět živě (Live) nad primárními tabulkami** (`events`, `service_transactions`), aby nedošlo ke zpomalení mobilní aplikace pro pracovníky v terénu. Systém musí využívat asynchronní výpočty a PostgreSQL `MATERIALIZED VIEW` (Materializované pohledy), které se aktualizují na pozadí.
+</Warning>
+
+## 1. Databázový model (SQL)
+
+Tento model zavádí struktury pro rychlé čtení agregovaných dat. Místo složitých `JOIN` dotazů si databáze předpočítává výsledky. Spusťte v Supabase SQL Editoru.
+
+```sql
+-- 1. Materializovaný pohled: Vytížení Klíčových osob (KO Workload)
+-- Aktualizuje se každou noc, slouží k rozdělování nových rodin
+CREATE MATERIALIZED VIEW mv_ko_workload AS
+SELECT 
+    p.id AS ko_id,
+    p.full_name,
+    COUNT(DISTINCT h.id) AS total_active_households,
+    COUNT(DISTINCT c.id) AS total_active_children,
+    COUNT(DISTINCT e.id) FILTER (WHERE e.created_at >= NOW() - INTERVAL '30 days') AS events_last_30_days,
+    COUNT(DISTINCT crisis.id) FILTER (WHERE crisis.status = 'active_escalated') AS active_crises
+FROM profiles p
+LEFT JOIN households h ON h.assigned_ko_id = p.id AND h.status = 'active'
+LEFT JOIN household_members hm ON hm.household_id = h.id
+LEFT JOIN persons c ON hm.person_id = c.id AND c.category = 'foster_child' AND c.status = 'active'
+LEFT JOIN events e ON e.created_by = p.id
+LEFT JOIN crisis_cases crisis ON crisis.household_id = h.id
+WHERE p.role = 'ko'
+GROUP BY p.id, p.full_name;
+
+-- 2. Materializovaný pohled: Náklady na dítě (Cost per Child)
+-- Páruje spotřebovaný státní příspěvek (SPVPP) s konkrétním dítětem
+CREATE MATERIALIZED VIEW mv_cost_per_child AS
+SELECT 
+    c.id AS child_id,
+    c.first_name,
+    c.last_name,
+    EXTRACT(YEAR FROM st.created_at) AS fiscal_year,
+    SUM(st.cost_czk) FILTER (WHERE st.category = 'respit') AS total_respite_cost,
+    SUM(st.cost_czk) FILTER (WHERE st.category = 'vzdelavani') AS total_education_cost,
+    SUM(st.cost_czk) AS total_cost_czk
+FROM persons c
+LEFT JOIN service_transactions st ON st.person_id = c.id AND st.approval_state = 'approved'
+WHERE c.category = 'foster_child'
+GROUP BY c.id, c.first_name, c.last_name, EXTRACT(YEAR FROM st.created_at);
+
+-- 3. Historická metrika organizace (Snapshoty)
+-- Pro sledování růstu organizace v čase
+CREATE TABLE organization_metrics_history (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID REFERENCES organizations(id) NOT NULL,
+    snapshot_date DATE NOT NULL UNIQUE,
+    total_active_agreements INT NOT NULL,
+    total_foster_children INT NOT NULL,
+    total_unresolved_tasks INT NOT NULL,
+    total_spvpp_spent_czk NUMERIC(12, 2) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Indexy pro rychlé dotazování z dashboardů
+CREATE UNIQUE INDEX idx_mv_ko_workload ON mv_ko_workload(ko_id);
+CREATE UNIQUE INDEX idx_mv_cost_per_child ON mv_cost_per_child(child_id, fiscal_year);
+
+```
+
+## 2. Architektura a Byznys logika (Výpočet KPI)
+
+Základem dobré analytiky není jen zobrazit čísla, ale dát jim kontext. FosterFlow neměří pouze kvantitu (počet rodin), ale skutečnou zátěž (složitost případů).
+
+1. **Vážené vytížení (Weighted Workload):**
+Běžné CRM ukazuje: *Pracovník A má 15 rodin, Pracovník B má 10 rodin.* FosterFlow používá algoritmus pro výpočet reálné kapacity:
+
+* Běžná rodina = 1 bod.
+* Rodina v soudním sporu (`court_cases` je `active`) = +1 bod.
+* Rodina s aktivní krizí (`active_escalated`) = +3 body.
+Ředitel tak jasně vidí, že Pracovník B s 10 rodinami je na pokraji vyhoření (skóre 25), zatímco Pracovník A (skóre 15) může přijmout novou rodinu od OSPOD.
+
+
+2. **Refresh Materializovaných pohledů:**
+Databázové pohledy (MV) se neaktualizují samy. Systém musí mít nastavený CRON job (např. každou noc v 04:00), který provede příkaz:
+`REFRESH MATERIALIZED VIEW CONCURRENTLY mv_ko_workload;`
+Tím se analytika přepočítá, aniž by došlo k uzamčení tabulek pro čtení během noční směny.
+
+
+3. **Logování metrik (Snímkování):**
+Každý měsíc (1. dne v měsíci) systém zapíše jeden řádek do tabulky `organization_metrics_history`. Díky tomu může aplikace nakreslit spojnicový graf, jak organizace roste nebo klesá v čase (což je kritické při žádostech o státní i krajské dotace).
+
+
+## 3. Uživatelské rozhraní (UI/UX pro Vedení)
+
+Modul Analytiky je dostupný výhradně v rozhraní **FosterFlow Organization (Desktop)** pod záložkou `KPI & Reporty`.
+
+* **Hlavní Dashboard (Glanceable UI):**
+* Nahoře jsou 4 velké "Karty" s nejdůležitějšími čísly: *Aktivní rodiny, Celkem dětí, Zbývající rozpočet SPVPP, Počet zpožděných IPODů*. Vedle každého čísla je malá zelená/červená šipka ukazující meziměsíční trend (např. `+5 %`).
+
+
+* **Heatmapa vytížení (Workload Matrix):**
+* Vizualizace pomocí matice. Řádky jsou Klíčové osoby, sloupce jsou dny v měsíci. Barva buňky (od světle modré po tmavě červenou) ukazuje počet zapsaných událostí (Events). Ředitel okamžitě vidí "červená místa", kde pracovníci trávili v terénu neúměrně mnoho času.
+
+
+* **Cost Center (Ekonomická efektivita):**
+* Tabulka generovaná z `mv_cost_per_child`. Umožňuje řadit děti/rodiny podle toho, kolik státních prostředků na odlehčení odčerpávají. Neslouží k penalizaci pěstounů, ale k detekci rodin, které vyžadují extrémní podporu (a kde by měla být nařízena Případová supervize).
+
+
+
+```
+

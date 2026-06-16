@@ -1,0 +1,229 @@
+---
+title: "Kapitola 2: Datový model a Hybridní databáze"
+description: "Kompletní SQL schéma pro PostgreSQL kombinující CRUD entity a Event Sourcing."
+icon: "database"
+---
+
+<Warning>
+**Instrukce pro implementaci:** Následující SQL kód musí být proveden v Supabase SQL Editoru v plném znění. Tento hybridní datový model nevyužívá jedinou plošnou tabulku "rodina". Místo toho rozkládá realitu na `households` (domácnosti) a `persons` (osoby). Veškerý děj se ukládá do centrální tabulky `events` (události).
+</Warning>
+
+## 1. Kompletní SQL Skript (Supabase PostgreSQL)
+
+<CodeGroup>
+```sql schema.sql
+-- 1. EXTENZE
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS vector; -- Nutné pro RAG AI Knowledge Base
+
+-- 2. ENUMY A ČÍSELNÍKY
+CREATE TYPE user_role AS ENUM ('superadmin', 'director', 'ko', 'economist', 'it', 'foster_parent');
+CREATE TYPE entity_status AS ENUM ('active', 'suspended', 'pending_archive', 'inactive');
+CREATE TYPE person_category AS ENUM ('foster_parent', 'foster_child', 'biological_child', 'other_member', 'biological_parent');
+CREATE TYPE agreement_status AS ENUM ('draft', 'active', 'terminated', 'transferred');
+CREATE TYPE event_type AS ENUM (
+    'visit_log',          -- Zápis z běžné návštěvy
+    'court_decision',     -- Rozsudek/Usnesení soudu
+    'school_change',      -- Změna školy nebo výchovný problém
+    'crisis_incident',    -- Krizová událost (např. útěk, nemocniční hospitalizace)
+    'bio_contact',        -- Proběhlý kontakt s biologickou rodinou
+    'document_upload',    -- Nahrání a vytěžení dokumentu (např. omluvenka)
+    'ipod_update',        -- Změna v individuálním plánu (IPOD)
+    'system_alert'        -- Automaticky generované systémové upozornění (blížící se termín)
+);
+
+-- 3. TEMPORÁLNÍ PARAMETRY (Historizace legislativy)
+CREATE TABLE system_parameters (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    param_key TEXT NOT NULL UNIQUE,
+    param_value JSONB NOT NULL,
+    valid_from DATE NOT NULL,
+    valid_to DATE,
+    description TEXT
+);
+
+-- 4. ORGANIZACE A UŽIVATELÉ (Multi-Tenancy)
+CREATE TABLE organizations (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name TEXT NOT NULL,
+    ic TEXT NOT NULL UNIQUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE profiles (
+    id UUID PRIMARY KEY, -- Primární klíč vázaný na tabulku auth.users (Supabase)
+    organization_id UUID REFERENCES organizations(id) NOT NULL,
+    role user_role NOT NULL,
+    full_name TEXT NOT NULL,
+    email TEXT NOT NULL UNIQUE,
+    phone TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 5. OSOBY A DOMÁCNOSTI (Jádro evidence rodin)
+CREATE TABLE households (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID REFERENCES organizations(id) NOT NULL,
+    address_street TEXT NOT NULL,
+    address_city TEXT NOT NULL,
+    address_zip TEXT NOT NULL,
+    assigned_ko_id UUID REFERENCES profiles(id),
+    status entity_status DEFAULT 'active',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE persons (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID REFERENCES organizations(id) NOT NULL,
+    category person_category NOT NULL,
+    first_name TEXT NOT NULL,
+    last_name TEXT NOT NULL,
+    birth_date DATE NOT NULL,
+    status entity_status DEFAULT 'active',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE household_members (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    household_id UUID REFERENCES households(id) ON DELETE CASCADE,
+    person_id UUID REFERENCES persons(id) ON DELETE CASCADE,
+    moved_in_date DATE NOT NULL,
+    moved_out_date DATE,
+    is_primary_caregiver BOOLEAN DEFAULT FALSE
+);
+
+CREATE TABLE person_relationships (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    person_id_1 UUID REFERENCES persons(id) ON DELETE CASCADE,
+    person_id_2 UUID REFERENCES persons(id) ON DELETE CASCADE,
+    relationship_type TEXT NOT NULL -- např. 'matka-syn', 'sourozenci'
+);
+
+-- 6. EVENT STORE (Časová osa a tok času)
+CREATE TABLE events (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID REFERENCES organizations(id) NOT NULL,
+    household_id UUID REFERENCES households(id), -- Záležitost celé rodiny
+    person_id UUID REFERENCES persons(id), -- Nullable, vyplněno pokud se událost týká konkrétního dítěte
+    type event_type NOT NULL,
+    severity INT DEFAULT 1, -- 1 = Běžné Info, 2 = Varování (žlutá), 3 = Kritické (červená)
+    payload JSONB NOT NULL, -- Surová data události (texty zápisu, pole z OCR, struktura)
+    created_by UUID REFERENCES profiles(id), -- Kdo událost zaznamenal / Systém
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 7. OSPOD A SOUDY
+CREATE TABLE ospod_offices (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    city TEXT NOT NULL,
+    data_box_id TEXT NOT NULL
+);
+
+CREATE TABLE ospod_workers (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    office_id UUID REFERENCES ospod_offices(id) ON DELETE CASCADE,
+    full_name TEXT NOT NULL,
+    email TEXT NOT NULL
+);
+
+CREATE TABLE person_ospod_links (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    person_id UUID REFERENCES persons(id) ON DELETE CASCADE,
+    ospod_worker_id UUID REFERENCES ospod_workers(id) ON DELETE CASCADE,
+    assigned_from DATE NOT NULL,
+    assigned_to DATE
+);
+
+-- 8. DOHODY A EKONOMIKA (Státní příspěvek SPVPP)
+CREATE TABLE foster_agreements (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID REFERENCES organizations(id) NOT NULL,
+    household_id UUID REFERENCES households(id) NOT NULL,
+    agreement_number TEXT NOT NULL,
+    date_signed DATE NOT NULL,
+    status agreement_status DEFAULT 'active',
+    termination_date DATE
+);
+
+CREATE TABLE state_subsidies (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID REFERENCES organizations(id) NOT NULL,
+    foster_agreement_id UUID REFERENCES foster_agreements(id) NOT NULL,
+    year INT NOT NULL,
+    total_allocated_czk NUMERIC(10, 2) NOT NULL,
+    total_spent_czk NUMERIC(10, 2) DEFAULT 0.00
+);
+
+CREATE TABLE service_transactions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID REFERENCES organizations(id) NOT NULL,
+    person_id UUID REFERENCES persons(id) NOT NULL, -- Dítě, pro které je čerpáno
+    category TEXT NOT NULL, -- např. 'respit', 'vzdelavani'
+    amount_used NUMERIC(10, 2) NOT NULL, -- Hodiny nebo dny
+    cost_czk NUMERIC(10, 2) NOT NULL,
+    applied_params JSONB NOT NULL, -- Snapshot zákonných limitů z tabulky system_parameters
+    approval_state TEXT DEFAULT 'draft',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 9. KNOWLEDGE BASE (Vektorová báze znalostí)
+CREATE TABLE knowledge_base_articles (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID REFERENCES organizations(id), -- NULL = globální know-how
+    title TEXT NOT NULL,
+    content_text TEXT NOT NULL,
+    category TEXT NOT NULL, -- 'metodika', 'zakon', 'judikatura'
+    embedding vector(1536), -- Sloupec pro Google Gemini Text Embeddings
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 10. AUDITNÍ LOGOVÁNÍ (Pro NÚKIB a zpětnou dohledatelnost)
+CREATE TABLE audit_logs (
+    id BIGSERIAL PRIMARY KEY,
+    organization_id UUID REFERENCES organizations(id),
+    user_id UUID,
+    table_name TEXT NOT NULL,
+    record_id UUID NOT NULL,
+    action TEXT NOT NULL, -- 'INSERT', 'UPDATE', 'DELETE'
+    old_data JSONB,
+    new_data JSONB,
+    warning_override_reason TEXT, -- Důvod obejití soft-blokace
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 11. INDEXY PRO OPTIMALIZACI DOTAZŮ
+CREATE INDEX idx_events_household ON events(household_id);
+CREATE INDEX idx_events_created_at ON events(created_at DESC);
+CREATE INDEX idx_kb_embedding ON knowledge_base_articles USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+
+</CodeGroup>
+
+## 2. Principy uložení dat v tabulce Events (JSONB Payload)
+Jelikož je tabulka events centrálním stavebním kamenem pro časovou osu, její sloupec payload je dynamický JSONB objekt. To zaručuje obrovskou flexibilitu bez nutnosti měnit schéma databáze při přidání nové agendy.
+
+Příklad Payloadu pro událost visit_log (Běžná návštěva v terénu):
+
+<CodeGroup>
+{
+  "location": "V bydlišti pěstounů",
+  "ai_summary": "Pěstounka nahlásila zhoršení prospěchu dítěte v matematice.",
+  "ipod_goals_discussed": ["goal_id_123"],
+  "audio_record_gdrive_id": "1A2B3C4D5E",
+  "action_items": ["Zajistit kontakt na doučování"]
+}
+</CodeGroup>
+
+Příklad Payloadu pro událost bio_contact (Styk s biologickou matkou):
+<CodeGroup>
+{
+  "contact_type": "assisted_personal",
+  "duration_minutes": 120,
+  "child_reaction_before": "Dítě bylo nervózní, nechtělo komunikovat.",
+  "course_of_contact": "Matka donesla dárky, ale vyptávala se na nevhodné detaily ze života pěstounů.",
+  "child_reaction_after": "Pláč a zhoršený spánek následující dvě noci."
+}
+</CodeGroup>
+
+Výhoda: Tyto události tvoří nezměnitelnou historii rodiny a slouží jako primární vstupní kontext (Prompt) pro LLM asistentku, když na konci pololetí generuje oficiální souhrnnou zprávu pro soud či OSPOD.
+

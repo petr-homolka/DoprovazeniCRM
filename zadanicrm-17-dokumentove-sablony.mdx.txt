@@ -1,0 +1,106 @@
+
+---
+title: "Kapitola 17: Systém dokumentových šablon"
+description: "Správa, verzování a automatické generování PDF výstupů pro soudy a OSPOD."
+icon: "file-signature"
+---
+
+<Warning>
+**Instrukce pro AI programátora:** Systém nesmí generovat PDF dokumenty pomocí "natvrdo" nakódovaných layoutů přímo ve zdrojovém kódu aplikace. Organizace musí mít možnost upravovat textace a vzhled dokumentů (IPOD, Zpráva pro soud) bez zásahu programátora. Každá šablona musí být **verzována**, aby systém dokázal vygenerovat historický dokument (např. z roku 2024) do šablony platné v roce 2024, nikoliv do té dnešní.
+</Warning>
+
+## 1. Databázový model (SQL)
+
+Tento model zavádí oddělení samotné šablony od jejích konkrétních časových verzí. Spusťte v Supabase SQL Editoru.
+
+```sql
+-- 1. Číselníky pro šablony
+CREATE TYPE template_type AS ENUM (
+    'ipod_initial',           -- Vstupní IPOD
+    'ipod_review',            -- Revize IPODu
+    'court_report',           -- Zpráva pro soud
+    'ospod_report_annual',    -- Roční zpráva OSPOD
+    'contact_plan',           -- Plán kontaktů s bio rodinou
+    'agreement_foster'        -- Dohoda o výkonu pěstounské péče
+);
+
+CREATE TYPE template_format AS ENUM ('markdown', 'html');
+
+-- 2. Hlavní evidence šablon
+CREATE TABLE document_templates (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID REFERENCES organizations(id) NOT NULL,
+    name TEXT NOT NULL,
+    type template_type NOT NULL,
+    description TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 3. Verzování šablon (Zásadní pro legislativní konzistenci)
+CREATE TABLE template_versions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    template_id UUID REFERENCES document_templates(id) ON DELETE CASCADE,
+    version_number INT NOT NULL,
+    content_format template_format DEFAULT 'markdown',
+    content_template TEXT NOT NULL, -- Samotný obsah šablony s proměnnými (např. {{child.first_name}})
+    header_template TEXT, -- Volitelná hlavička (např. logo organizace)
+    footer_template TEXT, -- Volitelná patička (stránkování, IČO)
+    valid_from DATE NOT NULL,
+    valid_to DATE, -- Pokud je NULL, jde o aktuálně platnou verzi
+    created_by UUID REFERENCES profiles(id) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(template_id, version_number)
+);
+
+-- 4. Evidence vygenerovaných dokumentů
+CREATE TABLE generated_documents (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID REFERENCES organizations(id) NOT NULL,
+    household_id UUID REFERENCES households(id) NOT NULL,
+    person_id UUID REFERENCES persons(id),
+    template_version_id UUID REFERENCES template_versions(id) NOT NULL,
+    document_url TEXT NOT NULL, -- Odkaz na uložené PDF (např. Google Drive / Supabase Storage)
+    generation_date TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    generated_by UUID REFERENCES profiles(id) NOT NULL,
+    file_hash TEXT NOT NULL -- SHA-256 hash pro prokázání nezměnitelnosti pro audit
+);
+
+-- 5. Audit triggery
+CREATE TRIGGER audit_document_templates AFTER INSERT OR UPDATE OR DELETE ON document_templates FOR EACH ROW EXECUTE FUNCTION process_audit_log();
+CREATE TRIGGER audit_template_versions AFTER INSERT OR UPDATE OR DELETE ON template_versions FOR EACH ROW EXECUTE FUNCTION process_audit_log();
+
+```
+
+## 2. Architektura a Byznys logika (Workflow generování)
+
+Generování dokumentu propojuje události (Events), RAG AI a verzovací logiku.
+
+1. **Správa šablon (Management):**
+Metodik organizace v aplikaci `FosterFlow Organization` vytvoří novou verzi šablony `Zpráva pro soud`. Do textu vloží zástupné proměnné (např. `{{household.address}}`, `{{summary_of_visits}}`). Staré verzi systému automaticky nastaví `valid_to` na včerejší datum.
+
+
+2. **Sběr dat ze systému (API vrstva):**
+Když Klíčová osoba klikne na "Vygenerovat zprávu pro soud za 1. pololetí 2026":
+
+1. Systém vyhledá všechny události (`events` typu `visit_log`, `bio_contact`, `crisis_incident`) pro dané dítě za vybrané období.
+2. Backend sestaví jeden velký datový JSON objekt (Context Payload).
+
+
+3. **AI Zpracování a Syntéza:**
+Protože texty z desítek návštěv jsou příliš dlouhé a surové, pošle se Context Payload do **Gemini Pro**.
+
+* *Prompt:* "Z těchto událostí sestav souvislý, formální text pro soud shrnující vývoj dítěte, úroveň péče pěstounů a rizika. Výstup zformátuj do JSON objektu s klíčem `summary_of_visits`."
+
+
+4. **Kompilace a PDF Export:**
+Backend vezme aktuálně platnou verzi šablony (`template_versions`), nahradí proměnné daty od AI a z databáze osob, převede Markdown/HTML na PDF a soubor zašifruje. Následně vygeneruje SHA-256 hash dokumentu a uloží odkaz do `generated_documents`.
+
+
+## 3. Uživatelské rozhraní (UI/UX)
+
+* **FosterFlow Organization (Desktop - Editor šablon):** Metodik má k dispozici vizuální editor (WYSIWYG nebo Markdown editor s živým náhledem). Na pravé straně obrazovky vidí seznam dostupných datových proměnných (Available Variables), které může přetahovat (Drag & Drop) do textu šablony. Vidí zde také kompletní historii verzí každé šablony.
+* **FosterFlow Worker (Mobilní PWA):** KO šablony vůbec nevidí ani neupravuje. V detailu rodiny klikne na záložku `Dokumenty` -> stiskne `+ Vygenerovat Zprávu pro OSPOD` -> Vybere časové období. Systém se na několik sekund přepne do stavu načítání (AI pracuje) a následně nabídne hotové PDF ke stažení či sdílení.
+
+```
+

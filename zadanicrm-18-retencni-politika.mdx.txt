@@ -1,0 +1,103 @@
+
+---
+title: "Kapitola 18: Retenční politika a GDPR"
+description: "Pravidla pro archivaci, anonymizaci a zákonné mazání dat (Right to be forgotten)."
+icon: "file-shield"
+---
+
+<Warning>
+**Instrukce pro AI programátora:** Modul Retenční politiky se nesmí omezit na pouhé skrývání záznamů na frontendu. Zpracování citlivých osobních údajů podléhá přísným lhůtám (např. zákon o SPOD vyžaduje archivaci spisu po dobu 10 let od ukončení péče, ale GDPR "právo být zapomenut" vyžaduje okamžitý výmaz u zájemců, kteří nepodepsali dohodu). Systém musí tyto konflikty řešit pomocí automatizovaných CRON úloh a tabulek politik.
+</Warning>
+
+## 1. Databázový model (SQL)
+
+Tento model rozšiřuje databázi o definice retenčních pravidel a auditní logy fyzického mazání. Spusťte v Supabase SQL Editoru.
+
+```sql
+-- 1. Číselníky pro retenci
+CREATE TYPE retention_action AS ENUM (
+    'soft_delete',     -- Pouze skryje z UI (status = 'inactive')
+    'anonymize',       -- Přepíše osobní data (Jméno, RČ) hashem, ale ponechá statistiky (finance, počty událostí)
+    'hard_delete'      -- Fyzický výmaz záznamu z databáze (DELETE)
+);
+
+CREATE TYPE trigger_event AS ENUM (
+    'case_closed',            -- Od data ukončení dohody / uzavření spisu
+    'lead_created',           -- Od data prvního kontaktu (pro neúspěšné zájemce)
+    'document_uploaded',      -- Specifické pro dočasné dokumenty (např. omluvenky)
+    'manual_gdpr_request'     -- Na základě žádosti subjektu o výmaz
+);
+
+-- 2. Definice retenčních politik (Pravidla)
+CREATE TABLE retention_policies (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID REFERENCES organizations(id) NOT NULL,
+    policy_name TEXT NOT NULL,
+    target_table TEXT NOT NULL, -- Např. 'persons', 'households', 'documents'
+    trigger trigger_event NOT NULL,
+    retention_period_days INT NOT NULL, -- Kolik dní po triggeru se má akce provést
+    action retention_action NOT NULL,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 3. Logování smazaných/anonymizovaných dat (Důkaz pro ÚOOÚ)
+CREATE TABLE data_deletion_logs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID REFERENCES organizations(id) NOT NULL,
+    policy_id UUID REFERENCES retention_policies(id), -- Nullable, pokud to byl ruční výmaz
+    deleted_record_id UUID NOT NULL, -- ID záznamu (už neexistuje nebo je anonymizované)
+    target_table TEXT NOT NULL,
+    action_taken retention_action NOT NULL,
+    executed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    executed_by UUID REFERENCES profiles(id) -- Nullable, pokud to udělal systémový CRON job
+);
+
+-- 4. Systémová fronta (Job Queue) pro odložené smazání
+CREATE TABLE archive_jobs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    record_id UUID NOT NULL,
+    target_table TEXT NOT NULL,
+    scheduled_action retention_action NOT NULL,
+    scheduled_for DATE NOT NULL,
+    status TEXT DEFAULT 'pending', -- 'pending', 'executed', 'failed'
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+```
+
+## 2. Architektura a Byznys logika
+
+Aplikace funguje jako nezávislý auditor. Nemlčky nemaže data, ale informuje a jedná podle pravidel.
+
+1. **Vložení do fronty (Scheduling):**
+Jakmile Klíčová osoba uzavře spis rodiny (přepne Lifecycle State na `archived`), trigger v databázi se podívá do `retention_policies`. Najde pravidlo: *"Při uzavření spisu (case_closed) počkej 3650 dní (10 let) a poté proveď anonymize nad tabulkou households a persons."* Systém vytvoří záznam v tabulce `archive_jobs` s přesným datem `scheduled_for`.
+
+
+2. **Noční CRON Job:**
+Každou noc ve 03:00 běží na serveru CRON job (nebo Supabase Edge Function). Prohledá tabulku `archive_jobs`, vybere všechny záznamy, kde `scheduled_for <= TODAY` a stav je `pending`.
+
+
+3. **Zpracování GDPR Výmazu (Právo být zapomenut):**
+Pokud se zájemce o pěstounství ozve, ale po 3 měsících komunikace utichne, a následně zašle žádost o výmaz:
+
+1. Administrátor v systému stiskne tlačítko "Aplikovat GDPR výmaz".
+2. Systém najde všechny záznamy osoby. **Zkontroluje, zda neexistuje aktivní dohoda o SPVPP nebo finanční transakce** (Zákonná povinnost uchovat účetnictví převyšuje GDPR právo na výmaz).
+3. Pokud nejsou blokace, systém provede `hard_delete` a zapíše to do `data_deletion_logs`.
+
+
+4. **Proces Anonymizace:**
+Při akci `anonymize` systém nesmaže události. Upraví záznam v tabulce `persons` takto:
+
+* `first_name` -> "ANONYMIZED"
+* `last_name` -> "ID-9A2B"
+* `birth_date` -> Změněno na 1. ledna daného roku (aby zůstaly zachovány věkové statistiky, ale neidentifikovala se osoba).
+Díky tomu organizaci zůstanou kompletní data o tom, kolik návštěv a krizových intervencí udělala v roce 2026, aniž by porušila zákon.
+
+
+## 3. Uživatelské rozhraní (UI/UX)
+
+* **FosterFlow Organization (Desktop - Data Protection Dashboard):** Přístup má pouze Ředitel nebo pověřenec pro ochranu osobních údajů (DPO). Zde vidí vizuální přehled Retenčních politik. Vidí frontu `archive_jobs` – tedy jaká data a rodiny budou v nejbližším měsíci automaticky anonymizovány. Má možnost do procesu zasáhnout a retenci odložit (např. pokud se objeví nové soudní řízení u starého případu).
+* **FosterFlow Worker (Mobilní PWA):** Terénní pracovník retenční politiku vůbec neřeší. Pouze pokud vyhledává historickou rodinu, která již byla anonymizována, systém mu nevrátí žádné výsledky a skryje ji z vyhledávání.
+
+```

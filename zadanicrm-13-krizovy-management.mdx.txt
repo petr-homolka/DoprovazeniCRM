@@ -1,0 +1,109 @@
+
+---
+title: "Kapitola 13: Modul krizového managementu"
+description: "Životní cyklus krizových incidentů, eskalační workflow a preventivní opatření."
+icon: "triangle-exclamation"
+---
+
+<Warning>
+**Instrukce pro AI programátora:** Krizová situace (např. útěk dítěte) se nesmí ukládat pouze jako jedna z mnoha událostí typu `crisis_incident` v tabulce `events`. Krize má svůj začátek, průběh (intervence) a konec (vyhodnocení). Proto vyžaduje vlastní tabulkovou strukturu (`crisis_cases`), která krizi "drží otevřenou", dokud není formálně vyřešena.
+</Warning>
+
+## 1. Databázový model (SQL)
+
+Tento model rozšiřuje databázi o krizový kontejner a evidenci krizových zásahů. Spusťte v Supabase SQL Editoru.
+
+```sql
+-- 1. Číselníky krizových stavů
+CREATE TYPE crisis_type AS ENUM (
+    'child_runaway',          -- Útěk dítěte
+    'hospitalization',        -- Náhlá hospitalizace / úraz
+    'police_intervention',    -- Zásah policie
+    'domestic_violence',      -- Podezření na domácí násilí
+    'self_harm',              -- Sebepoškozování nebo sebevražedné sklony
+    'foster_parent_collapse', -- Zhroucení pěstouna / neschopnost péče
+    'other_critical'          -- Jiné ohrožení života a zdraví
+);
+
+CREATE TYPE crisis_status AS ENUM (
+    'active_escalated',       -- Probíhá, vyžaduje okamžitou akci
+    'under_control',          -- Situace stabilizována, ale případ není uzavřen
+    'resolved_closed'         -- Vyřešeno, sepsána závěrečná zpráva
+);
+
+-- 2. Hlavní kontejner krizového případu
+CREATE TABLE crisis_cases (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID REFERENCES organizations(id) NOT NULL,
+    household_id UUID REFERENCES households(id) NOT NULL,
+    person_id UUID REFERENCES persons(id), -- Konkrétní osoba v ohrožení (nejčastěji dítě)
+    type crisis_type NOT NULL,
+    status crisis_status DEFAULT 'active_escalated',
+    reported_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    reported_by UUID REFERENCES profiles(id), -- Kdo krizi v systému založil (KO / Systém)
+    initial_description TEXT NOT NULL,
+    closed_at TIMESTAMP WITH TIME ZONE
+);
+
+-- 3. Intervence (Jednotlivé kroky prováděné během krize)
+CREATE TABLE crisis_actions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    crisis_case_id UUID REFERENCES crisis_cases(id) ON DELETE CASCADE,
+    action_taken TEXT NOT NULL, -- Co se stalo (např. "Volána RZS", "Výjezd do rodiny")
+    performed_by UUID REFERENCES profiles(id) NOT NULL,
+    action_date TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 4. Vyhodnocení a prevence (Nutné pro uzavření krize)
+CREATE TABLE crisis_resolutions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    crisis_case_id UUID REFERENCES crisis_cases(id) ON DELETE CASCADE UNIQUE,
+    resolution_summary TEXT NOT NULL, -- Jak případ dopadl
+    preventive_measures TEXT NOT NULL, -- Co se musí změnit v IPODu, aby se to neopakovalo
+    resolved_by UUID REFERENCES profiles(id) NOT NULL,
+    resolved_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 5. Audit triggery pro NÚKIB a dohledatelnost
+CREATE TRIGGER audit_crisis_cases AFTER INSERT OR UPDATE OR DELETE ON crisis_cases FOR EACH ROW EXECUTE FUNCTION process_audit_log();
+CREATE TRIGGER audit_crisis_actions AFTER INSERT OR UPDATE OR DELETE ON crisis_actions FOR EACH ROW EXECUTE FUNCTION process_audit_log();
+CREATE TRIGGER audit_crisis_resolutions AFTER INSERT OR UPDATE OR DELETE ON crisis_resolutions FOR EACH ROW EXECUTE FUNCTION process_audit_log();
+
+```
+
+## 2. Krizové Workflow a Stavový automat
+
+Pokud je v systému založena krize, automaticky přebírá nejvyšší prioritu a spouští paralelní procesy napříč oběma aplikacemi (Worker i Organization).
+
+1. **Vznik krize (Spouštěč):**
+Klíčové osobě (KO) volá pěstoun, že dítě uteklo z domova. KO na mobilu stiskne speciální červené tlačítko `KRIZE` a nahraje rychlý hlasový vzkaz. Systém zapíše záznam do `crisis_cases` se statusem `active_escalated`.
+
+
+2. **Okamžitá eskalace (Notifikace):**
+Backend okamžitě (přes Webhooks nebo Edge Functions) rozešle SMS/Push notifikace Řediteli a Metodikovi. Na desktopovém rozhraní `FosterFlow Organization` se přes horní navigační lištu objeví červený banner s odpočtem od nahlášení krize.
+
+
+3. **Průběh intervence:**
+Během řešení situace pracovníci (i více lidí najednou) přidávají krátké záznamy do `crisis_actions` (např. *14:30 - Kontaktována PČR*, *15:00 - Výjezd psychologa na místo*).
+
+
+4. **Zklidnění a Uzavření:**
+Jakmile je situace bezpečná, stav se mění na `under_control`. Aby se případ zcela uzavřel (`resolved_closed`), **systém tvrdě vyžaduje** vyplnění formuláře, který zapíše data do `crisis_resolutions` (Opatření do budoucna).
+
+
+5. **Zápis do událostí (Timeline) a IPOD:**
+Po uložení `crisis_resolutions` systém automaticky:
+
+1. Vygeneruje souhrnnou událost `crisis_incident` do hlavní tabulky `events`, aby to bylo navždy vidět v časové ose rodiny.
+2. Vygeneruje kritický úkol pro KO: *"Krize ukončena – Proveďte mimořádnou aktualizaci IPODu dítěte na základě přijatých opatření."*
+
+
+## 3. Integrace Knowledge Base během krize
+
+Toto je moment, kdy RAG AI asistent ukazuje svou maximální hodnotu.
+Když je založena krize typu `child_runaway`, systém nečeká na dotaz uživatele. Automaticky na pozadí vyhledá ve vektorové databázi (`knowledge_base_articles`) interní "Metodiku pro řešení útěků" a ihned ji připne nahoru k otevřenému krizovému případu jako checklist.
+
+KO nebo Ředitel tak mají okamžitě před očima krok za krokem, koho ze zákona informovat a do kolika hodin (policie, soud, biologický rodič), aniž by museli ve stresu prohledávat šanony.
+
+```
+

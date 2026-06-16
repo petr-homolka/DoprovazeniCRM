@@ -1,0 +1,92 @@
+
+---
+title: "Kapitola 20: Klientská zóna (Foster Parent Portal)"
+description: "Třetí produkt systému pro pěstouny. Samoobsluha, dokumenty a žádosti."
+icon: "house-user"
+---
+
+<Warning>
+**Instrukce pro AI programátora:** Toto je **třetí nezávislá aplikace** (vedle Worker a Organization). Je určena pro koncové klienty (pěstouny). Zabezpečení (RLS) zde musí být absolutně neprůstřelné. Pěstoun s rolí `foster_parent` smí v databázi číst **pouze** záznamy, kde `household_id` nebo `person_id` odpovídá jeho osobnímu profilu. Nesmí vidět interní poznámky Klíčové osoby, supervize ani auditní logy organizace.
+</Warning>
+
+## 1. Databázový model a RLS politiky (SQL)
+
+Klientská zóna z 90 % čte existující data. Potřebujeme ale vytvořit komunikační kanál (Žádosti) a explicitně definovat bezpečnostní politiky. Spusťte v Supabase SQL Editoru.
+
+```sql
+-- 1. Tabulka pro klientské požadavky (Samoobsluha)
+CREATE TYPE request_type AS ENUM ('respite_approval', 'education_reimbursement', 'document_upload', 'general_inquiry');
+CREATE TYPE request_status AS ENUM ('pending', 'in_progress', 'approved', 'rejected');
+
+CREATE TABLE client_requests (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID REFERENCES organizations(id) NOT NULL,
+    household_id UUID REFERENCES households(id) NOT NULL,
+    created_by UUID REFERENCES profiles(id) NOT NULL, -- Který pěstoun žádost podal
+    type request_type NOT NULL,
+    status request_status DEFAULT 'pending',
+    title TEXT NOT NULL,
+    description TEXT,
+    attachment_id UUID REFERENCES documents(id), -- Např. vyfocená faktura za tábor
+    resolution_notes TEXT, -- Vyjádření Klíčové osoby / Ekonomky
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    resolved_at TIMESTAMP WITH TIME ZONE
+);
+
+-- 2. Audit trigger
+CREATE TRIGGER audit_client_requests AFTER INSERT OR UPDATE OR DELETE ON client_requests FOR EACH ROW EXECUTE FUNCTION process_audit_log();
+
+-- 3. Zásadní RLS Politiky pro Klientskou zónu (Ukázka pro tabulku education_records)
+-- Pěstoun vidí JEN své vzdělávání
+CREATE POLICY "Foster parents can view their own education" 
+ON education_records FOR SELECT 
+USING (auth.uid() = foster_parent_id);
+
+-- Pěstoun může VKLÁDAT certifikáty (ale ty se uloží jako 'planned' nebo 'completed', nikoliv 'verified')
+CREATE POLICY "Foster parents can insert their own education" 
+ON education_records FOR INSERT 
+WITH CHECK (auth.uid() = foster_parent_id AND status IN ('planned', 'completed'));
+
+```
+
+## 2. Architektura a Byznys logika (Self-Service Workflow)
+
+Cílem portálu není nahradit sociální práci, ale zbavit Klíčovou osobu (KO) e-mailů typu *"Kolik mi ještě zbývá hodin vzdělávání?"* nebo *"Posílám omluvenku ze školy"*.
+
+1. **Autentizace (Magic Link):**
+Pěstouni často zapomínají hesla. Portál primárně využívá tzv. **Magic Link** (přihlášení přes odkaz zaslaný na e-mail) nebo přihlášení přes Google/Apple účet. Odpadá nutnost správy hesel.
+
+
+2. **Samoobsluha: Vzdělávání:**
+* **Situace:** Pěstoun se zúčastnil online webináře.
+* **Akce v Portálu:** Otevře portál na mobilu, klikne na `Přidat školení`, vyplní název a vyfotí certifikát.
+* **Návazné Workflow:** Záznam se propíše do `education_records` se statusem `completed`. Klíčové osobě vyskočí notifikace *"Pěstoun nahrál certifikát, zkontrolujte jej."* Po kontrole KO se hodiny ihned přičtou do celkového skóre pěstouna v portálu.
+
+
+3. **Samoobsluha: Čerpání Respitu:**
+* **Situace:** Pěstoun chce proplatit letní tábor z dotace SPVPP.
+* **Akce v Portálu:** V sekci *Finance* vidí pěstoun svůj roční limit (např. *Zbývá: 14 dní z 14*). Podá žádost (`client_requests` typu `respite_approval`), přiloží vyfocenou fakturu od pořadatele tábora.
+* **Návazné Workflow:** Žádost padá do schvalovacího procesu k Ekonomce. V portálu pěstoun vidí stav *Čeká na schválení*. Jakmile Ekonomka klikne na schválit, stav se změní a limit v portálu se přepočítá (např. na *Zbývá: 7 dní z 14*).
+
+
+4. **Digitální podpis / Souhlas s dokumenty:**
+Klíčová osoba vytvoří *Zprávu pro OSPOD*. Podle zákona s ní musí rodinu seznámit.
+
+1. KO publikuje dokument do Klientské zóny.
+2. Pěstounovi přijde SMS notifikace.
+3. Pěstoun si PDF přečte v portálu a klikne na tlačítko `Přečetl jsem a souhlasím`. Systém to zaloguje (čas, IP adresa, ID uživatele) jako právně platný digitální souhlas.
+
+
+## 3. Uživatelské rozhraní (UI/UX)
+
+* **Designový jazyk:** Musí být absolutně "blbuvzdorný" (Senior-friendly). Velké fonty, maximální kontrast, žádná skrytá menu.
+* **Dashboard (Hlavní obrazovka):**
+1. **Další návštěva:** Velký box s fotkou Klíčové osoby a datem *"Vaše KO (Jana Nováková) přijede: 15. srpna v 14:00"*.
+2. **Moje hodiny:** Kruhový graf zobrazující splněné hodiny vzdělávání (např. *18/24 hodin*).
+3. **Čerpání odlehčení:** Box zobrazující peníze / dny zbývající z letošní dotace.
+
+
+* **Tlačítko "Nová žádost" (FAB):** Podobně jako u `Worker` aplikace, velké tlačítko vpravo dole, které umožňuje rychle nahrát Omluvenku / Vysvědčení / Lékařskou zprávu rovnou z fotoaparátu mobilu.
+
+```
+
