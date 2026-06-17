@@ -23,7 +23,9 @@ import {
   X,
   FileDown,
   GraduationCap,
-  Stethoscope
+  Stethoscope,
+  Sun,
+  Moon
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 
@@ -44,6 +46,29 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<string>("overview");
   const [searchQuery, setSearchQuery] = useState("");
   const [currentUserProfile, setCurrentUserProfile] = useState<any>(null);
+  const [darkMode, setDarkMode] = useState<boolean>(false);
+
+  // Synchronizace tmavého režimu s localStorage a HTML třídou
+  useEffect(() => {
+    const savedMode = localStorage.getItem("darkMode") === "true";
+    setDarkMode(savedMode);
+    if (savedMode) {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
+  }, []);
+
+  const toggleDarkMode = () => {
+    const newMode = !darkMode;
+    setDarkMode(newMode);
+    localStorage.setItem("darkMode", String(newMode));
+    if (newMode) {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
+  };
 
   // 1. Ověření přihlášení při načtení
   useEffect(() => {
@@ -444,12 +469,11 @@ export default function Home() {
     );
   }
 
-  // RENDER: HLAVNÍ METADATA DASHBOARDU
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-slate-50 text-slate-900 font-sans">
+    <div className="flex h-screen w-full overflow-hidden bg-background text-foreground font-sans">
       
       {/* 1. ŠPIČKOVÝ SIDEBAR */}
-      <aside className="w-64 bg-slate-950 flex flex-col border-r border-slate-900">
+      <aside className="w-64 bg-slate-950 flex flex-col border-r border-slate-900 shrink-0">
         {/* Logo a Organizace */}
         <div className="p-6 border-b border-slate-800 flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shadow-lg shadow-primary/20">
@@ -467,7 +491,7 @@ export default function Home() {
 
         {/* Hlavní menu */}
         <nav className="flex-1 px-4 py-6 space-y-1">
-          <a href="#" className="flex items-center gap-3 px-4 py-3 rounded-lg bg-primary/10 text-primary font-medium transition-all">
+          <a href="#" className="flex items-center gap-3 px-4 py-3 rounded-lg bg-primary text-white shadow-md shadow-primary/25 font-medium transition-all">
             <Users className="w-5 h-5" />
             <span>Karty rodin</span>
           </a>
@@ -513,526 +537,564 @@ export default function Home() {
         </div>
       </aside>
 
-      {/* Hlavní pracovní plocha */}
-      <div className="flex-1 flex overflow-hidden">
+      {/* Pravá pracovní oblast (Header + Obsah) */}
+      <div className="flex-1 flex flex-col overflow-hidden bg-background">
         
-        {/* 2. TABULKOVÝ SEZNAM RODIN */}
-        <section className={`bg-slate-50 flex flex-col border-r border-slate-200 transition-all duration-300 overflow-hidden ${
-          selectedFamilyId ? "w-[40%] min-w-[480px]" : "w-full"
-        }`}>
-          {/* Hlavička sloupce a Hledání */}
-          <div className="p-6 border-b border-slate-200 bg-white space-y-4">
-            <div className="flex justify-between items-center">
-              <div>
-                <h2 className="text-xl font-bold text-slate-800 tracking-tight">Klientské spisy</h2>
-                <p className="text-xs text-slate-400 mt-1">Celkem {households.length} domácností v evidenci</p>
+        {/* HLAVIČKA (HEADER) */}
+        <header className="h-16 px-8 bg-card border-b border-border-custom flex items-center justify-between shrink-0 shadow-sm z-20 transition-colors">
+          <div className="flex items-center gap-3">
+            <Search className="w-4.5 h-4.5 text-muted" />
+            <input 
+              type="text" 
+              placeholder="Vyhledat v systému..."
+              className="bg-transparent border-none focus:outline-none text-sm text-foreground placeholder-muted w-64"
+            />
+          </div>
+          <div className="flex items-center gap-4">
+            {/* Dark Mode Toggle */}
+            <button 
+              onClick={toggleDarkMode}
+              title={darkMode ? "Přepnout na světlý režim" : "Přepnout na tmavý režim"}
+              className="p-2 text-muted hover:text-foreground hover:bg-slate-500/10 rounded-lg transition-all"
+            >
+              {darkMode ? <Sun className="w-5 h-5 text-amber-400" /> : <Moon className="w-5 h-5" />}
+            </button>
+            <div className="w-px h-6 bg-border-custom" />
+            {/* Profil a Avatar */}
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-full bg-primary/10 text-primary border border-primary/20 flex items-center justify-center font-bold text-sm shadow-sm shrink-0">
+                {currentUserProfile?.first_name?.charAt(0) || "U"}
               </div>
-              <button className="p-2 bg-primary hover:bg-primary-hover text-white rounded-lg transition-colors shadow-md">
-                <Plus className="w-4 h-4" />
-              </button>
-            </div>
-            
-            <div className="relative">
-              <Search className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
-              <input 
-                type="text" 
-                placeholder="Hledat rodinu, pěstouna, ID..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary focus:bg-white transition-all"
-              />
+              <div className="hidden sm:block text-left">
+                <p className="text-xs font-semibold text-foreground leading-tight">
+                  {currentUserProfile ? `${currentUserProfile.first_name} ${currentUserProfile.last_name}` : "Uživatel"}
+                </p>
+                <p className="text-[9px] text-muted font-medium uppercase tracking-wider mt-0.5">
+                  {currentUserProfile?.role || "worker"}
+                </p>
+              </div>
             </div>
           </div>
+        </header>
 
-          {/* Tabulka domácností */}
-          <div className="flex-1 overflow-auto bg-white">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50/75 text-[11px] font-semibold text-slate-500 uppercase tracking-wider sticky top-0 z-10">
-                  <th className="py-3 px-4">Evid. číslo</th>
-                  <th className="py-3 px-4">Pěstoun</th>
-                  {!selectedFamilyId && <th className="py-3 px-4">Adresa</th>}
-                  {!selectedFamilyId && <th className="py-3 px-4">Děti v péči</th>}
-                  <th className="py-3 px-4 text-center">Stav</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-150">
-                {households
-                  .filter(h => {
-                    const p = persons.find(p => p.household_id === h.id && p.role === "foster_parent");
-                    const c = persons.filter(p => p.household_id === h.id && p.role === "child");
-                    const childNames = c.map(ch => `${ch.first_name} ${ch.last_name}`).join(" ");
-                    const parentName = p ? `${p.first_name} ${p.last_name}` : "";
-                    return parentName.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                           childNames.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                           h.foster_id.toLowerCase().includes(searchQuery.toLowerCase());
-                  })
-                  .map((h) => {
-                    const p = persons.find(per => per.household_id === h.id && per.role === "foster_parent");
-                    const children = persons.filter(per => per.household_id === h.id && per.role === "child");
-                    const pAddress = p ? addresses.find(a => a.person_id === p.id) : null;
-                    const hasDup = p ? hasSurnameDuplicate(p.last_name) : false;
-
-                    return (
-                      <tr 
-                        key={h.id}
-                        onClick={() => {
-                          setSelectedFamilyId(h.id);
-                          setActiveTab("overview");
-                        }}
-                        className={`cursor-pointer hover:bg-slate-50/80 transition-colors ${
-                          selectedFamilyId === h.id ? "bg-primary/5 font-medium border-l-2 border-l-primary" : ""
-                        }`}
-                      >
-                        {/* Kód */}
-                        <td className="py-3.5 px-4 text-xs font-mono text-slate-500">
-                          {h.foster_id}
-                        </td>
-
-                        {/* Pěstoun */}
-                        <td className="py-3.5 px-4 text-sm text-slate-800">
-                          {p ? (
-                            <div className="flex flex-col">
-                              <span className="font-bold text-slate-900">
-                                {renderFosterParentName(p)}
-                              </span>
-                              {hasDup && pAddress && selectedFamilyId && (
-                                <span className="text-[10px] text-slate-500 flex items-center gap-0.5 mt-0.5">
-                                  <MapPin className="w-2.5 h-2.5 text-slate-400" />
-                                  {pAddress.city}
-                                </span>
-                              )}
-                            </div>
-                          ) : (
-                            <span className="text-slate-400 italic">Bez pěstouna</span>
-                          )}
-                        </td>
-
-                        {/* Adresa (skrytá při split-screenu) */}
-                        {!selectedFamilyId && (
-                          <td className="py-3.5 px-4 text-xs text-slate-650">
-                            {pAddress ? (
-                              <div className="flex flex-col">
-                                <span>{pAddress.street}</span>
-                                <span className="text-slate-400">{pAddress.city}</span>
-                              </div>
-                            ) : (
-                              "-"
-                            )}
-                          </td>
-                        )}
-
-                        {/* Děti (skrytá při split-screenu) */}
-                        {!selectedFamilyId && (
-                          <td className="py-3.5 px-4 text-xs text-slate-655">
-                            {children.length > 0 ? (
-                              <div className="flex flex-wrap gap-1">
-                                {children.map((ch) => (
-                                  <span key={ch.id} className="inline-block bg-slate-100 px-1.5 py-0.5 rounded text-[11px] text-slate-700">
-                                    {renderChildName(ch)}
-                                  </span>
-                                ))}
-                              </div>
-                            ) : (
-                              <span className="text-slate-400 italic">Žádné děti</span>
-                            )}
-                          </td>
-                        )}
-
-                        {/* Stav */}
-                        <td className="py-3.5 px-4 text-center">
-                          <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-wide uppercase ${
-                            h.status === "active" 
-                              ? "bg-emerald-50 text-emerald-700 border border-emerald-200" 
-                              : "bg-amber-50 text-amber-700 border border-amber-200"
-                          }`}>
-                            {h.status === "active" ? "Aktivní" : "Zájemce"}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        {/* 3. DETAILNÍ PANEL */}
-        {selectedHousehold ? (
-          <main className="w-[60%] flex-1 bg-slate-50 flex flex-col overflow-hidden border-l border-slate-200 animate-in slide-in-from-right duration-200">
-            {/* Horní lišta detailu */}
-            <div className="h-20 px-8 border-b border-slate-200 flex items-center justify-between bg-white shrink-0">
-              <div className="flex items-center gap-4">
+        {/* Hlavní rozdělená plocha klientských spisů */}
+        <div className="flex-1 flex overflow-hidden">
+          
+          {/* 2. TABULKOVÝ SEZNAM RODIN */}
+          <section className={`bg-background p-6 flex flex-col transition-all duration-300 overflow-hidden ${
+            selectedFamilyId ? "w-[40%] min-w-[480px]" : "w-full"
+          }`}>
+            <div className="bg-card rounded-xl border border-border-custom shadow-sm flex flex-col flex-1 overflow-hidden transition-colors">
+              {/* Hlavička tabulky */}
+              <div className="p-5 border-b border-border-custom flex justify-between items-center bg-card shrink-0 transition-colors">
                 <div>
-                  <div className="flex items-center gap-3">
-                    <h3 className="text-lg font-bold text-slate-800">
-                      {primaryFosterParent ? `Spis rodiny ${primaryFosterParent.last_name}ových` : "Detail spisu"}
-                    </h3>
-                    {primaryFosterParent?.custom_fields?.foster_care_type && 
-                      renderCareTypeBadge(primaryFosterParent.custom_fields.foster_care_type)
-                    }
-                  </div>
-                  <p className="text-xs text-slate-500">
-                    Doprovázeno pobočkou Brno • Evidenční kód: {selectedHousehold.foster_id}
-                  </p>
+                  <h3 className="font-bold text-lg text-foreground tracking-tight">Klientské spisy</h3>
+                  <p className="text-xs text-muted mt-0.5">Celkem {households.length} domácností v evidenci</p>
+                </div>
+                <button className="p-2 bg-primary hover:bg-primary-hover text-white rounded-lg transition-colors shadow-md shadow-primary/25">
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Vyhledávací pole nad tabulkou */}
+              <div className="p-4 border-b border-border-custom bg-card shrink-0 flex items-center gap-3 transition-colors">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-2.5 w-4 h-4 text-muted" />
+                  <input 
+                    type="text" 
+                    placeholder="Hledat rodinu, pěstouna..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-9 pr-4 py-2 bg-background border border-border-custom rounded-lg text-sm text-foreground placeholder-muted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
+                  />
                 </div>
               </div>
-              <div className="flex items-center gap-3">
-                <button className="px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 rounded-lg text-sm transition-colors border border-slate-200 shadow-sm">
-                  Vygenerovat PDF spis
-                </button>
-                <button className="px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg text-sm transition-colors shadow-md">
-                  Upravit kartu
-                </button>
-                <div className="w-px h-6 bg-slate-200 mx-1" />
-                <button 
-                  onClick={() => setSelectedFamilyId(null)}
-                  title="Zavřít detail rodiny"
-                  className="p-2 text-slate-400 hover:text-slate-650 hover:bg-slate-100 rounded-lg transition-all"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+
+              {/* Samotná tabulka */}
+              <div className="flex-1 overflow-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-border-custom bg-slate-500/5 text-[11px] font-bold text-muted uppercase tracking-wider sticky top-0 z-10">
+                      <th className="py-3 px-5">Pěstoun</th>
+                      {!selectedFamilyId && <th className="py-3 px-5">Adresa</th>}
+                      {!selectedFamilyId && <th className="py-3 px-5">Děti v péči</th>}
+                      <th className="py-3 px-5 text-center">Stav</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border-custom text-sm">
+                    {households
+                      .filter(h => {
+                        const p = persons.find(p => p.household_id === h.id && p.role === "foster_parent");
+                        const c = persons.filter(p => p.household_id === h.id && p.role === "child");
+                        const childNames = c.map(ch => `${ch.first_name} ${ch.last_name}`).join(" ");
+                        const parentName = p ? `${p.first_name} ${p.last_name}` : "";
+                        return parentName.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                               childNames.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                               h.foster_id.toLowerCase().includes(searchQuery.toLowerCase());
+                      })
+                      .map((h) => {
+                        const p = persons.find(per => per.household_id === h.id && per.role === "foster_parent");
+                        const children = persons.filter(per => per.household_id === h.id && per.role === "child");
+                        const pAddress = p ? addresses.find(a => a.person_id === p.id) : null;
+                        const hasDup = p ? hasSurnameDuplicate(p.last_name) : false;
+
+                        return (
+                          <tr 
+                            key={h.id}
+                            onClick={() => {
+                              setSelectedFamilyId(h.id);
+                              setActiveTab("overview");
+                            }}
+                            className={`cursor-pointer hover:bg-slate-500/5 transition-colors ${
+                              selectedFamilyId === h.id ? "bg-primary/10 font-medium border-l-2 border-l-primary" : ""
+                            }`}
+                          >
+                            {/* Pěstoun (Full name, index, care type badge) */}
+                            <td className="py-3.5 px-5 text-sm text-foreground">
+                              {p ? (
+                                <div className="flex flex-col">
+                                  <span className="font-bold flex items-center gap-1.5">
+                                    {renderFosterParentName(p)}
+                                  </span>
+                                  {hasDup && pAddress && selectedFamilyId && (
+                                    <span className="text-[10px] text-muted flex items-center gap-0.5 mt-0.5">
+                                      <MapPin className="w-2.5 h-2.5 text-muted" />
+                                      {pAddress.city}
+                                    </span>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-muted italic">Bez pěstouna</span>
+                              )}
+                            </td>
+
+                            {/* Adresa (skrytá při split-screenu) */}
+                            {!selectedFamilyId && (
+                              <td className="py-3.5 px-5 text-xs text-foreground/80">
+                                {pAddress ? (
+                                  <div className="flex flex-col">
+                                    <span className="font-medium">{pAddress.street}</span>
+                                    <span className="text-muted text-[11px] mt-0.5">{pAddress.city}</span>
+                                  </div>
+                                ) : (
+                                  "-"
+                                )}
+                              </td>
+                            )}
+
+                            {/* Děti (skrytá při split-screenu) */}
+                            {!selectedFamilyId && (
+                              <td className="py-3.5 px-5 text-xs text-foreground/80">
+                                {children.length > 0 ? (
+                                  <div className="flex flex-wrap gap-1">
+                                    {children.map((ch) => (
+                                      <span key={ch.id} className="inline-block bg-slate-500/5 px-2 py-0.5 rounded text-[11px] font-medium text-foreground border border-border-custom">
+                                        {renderChildName(ch)}
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <span className="text-muted italic text-[11px]">Bez dětí</span>
+                                )}
+                              </td>
+                            )}
+
+                            {/* Stav */}
+                            <td className="py-3.5 px-5 text-center">
+                              <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase ${
+                                h.status === "active" 
+                                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20" 
+                                  : "bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20"
+                              }`}>
+                                {h.status === "active" ? "Aktivní" : "Zájemce"}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
               </div>
             </div>
+          </section>
 
-            {/* Záložková navigace */}
-            <div className="bg-white border-b border-slate-200 px-8 flex gap-6 shrink-0">
-              <button 
-                onClick={() => setActiveTab("overview")}
-                className={`py-3 text-sm font-semibold border-b-2 transition-all ${
-                  activeTab === "overview" 
-                    ? "border-primary text-primary" 
-                    : "border-transparent text-slate-500 hover:text-slate-800"
-                }`}
-              >
-                Přehled rodiny
-              </button>
-              <button 
-                onClick={() => setActiveTab("timeline")}
-                className={`py-3 text-sm font-semibold border-b-2 transition-all ${
-                  activeTab === "timeline" 
-                    ? "border-primary text-primary" 
-                    : "border-transparent text-slate-500 hover:text-slate-800"
-                }`}
-              >
-                Časová osa ({selectedFamilyEvents.length})
-              </button>
-              <button 
-                onClick={() => setActiveTab("registry")}
-                className={`py-3 text-sm font-semibold border-b-2 transition-all ${
-                  activeTab === "registry" 
-                    ? "border-primary text-primary" 
-                    : "border-transparent text-slate-500 hover:text-slate-800"
-                }`}
-              >
-                Dokumenty a registry
-              </button>
-            </div>
+          {/* 3. DETAILNÍ PANEL */}
+          {selectedHousehold ? (
+            <main className="w-[60%] flex-1 bg-background p-6 flex flex-col overflow-hidden border-l border-border-custom animate-in slide-in-from-right duration-200">
+              <div className="bg-card rounded-xl border border-border-custom shadow-sm flex flex-col flex-1 overflow-hidden transition-colors">
+                
+                {/* Horní lišta detailu */}
+                <div className="p-6 border-b border-border-custom flex items-center justify-between bg-card shrink-0 transition-colors">
+                  <div>
+                    <div className="flex items-center gap-3">
+                      <h3 className="text-lg font-bold text-foreground">
+                        {primaryFosterParent ? `Spis rodiny ${primaryFosterParent.last_name}ových` : "Detail spisu"}
+                      </h3>
+                      {primaryFosterParent?.custom_fields?.foster_care_type && 
+                        renderCareTypeBadge(primaryFosterParent.custom_fields.foster_care_type)
+                      }
+                    </div>
+                    <p className="text-xs text-muted mt-1 font-mono">
+                      Evidenční kód: {selectedHousehold.foster_id} • Brno
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button className="px-4 py-2 bg-background hover:bg-slate-500/10 text-foreground border border-border-custom rounded-lg text-xs font-semibold tracking-wide transition-colors">
+                      PDF spis
+                    </button>
+                    <button className="px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg text-xs font-semibold tracking-wide transition-colors shadow-md shadow-primary/25">
+                      Upravit
+                    </button>
+                    <div className="w-px h-6 bg-border-custom mx-1" />
+                    <button 
+                      onClick={() => setSelectedFamilyId(null)}
+                      title="Zavřít detail rodiny"
+                      className="p-2 text-muted hover:text-foreground hover:bg-slate-500/10 rounded-lg transition-all"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+                </div>
 
-            {/* Hlavní obsah detailu dle vybrané záložky */}
-            <div className="flex-1 overflow-y-auto p-8 space-y-8">
-              
-              {/* TAB 1: PŘEHLED RODINY */}
-              {activeTab === "overview" && (
-                <div className="space-y-8">
-                  {/* Mřížka pěstouna a dětí */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    {/* Karta pěstouna */}
-                    <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
-                      <div>
-                        <div className="flex justify-between items-start">
-                          <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Hlavní Pěstoun</span>
-                          {primaryFosterParent?.custom_fields?.avatar_url && (
+                {/* Záložková navigace */}
+                <div className="bg-card border-b border-border-custom px-6 flex gap-6 shrink-0 transition-colors">
+                  <button 
+                    onClick={() => setActiveTab("overview")}
+                    className={`py-4 text-xs font-bold uppercase tracking-wider border-b-2 transition-all ${
+                      activeTab === "overview" 
+                        ? "border-primary text-primary" 
+                        : "border-transparent text-muted hover:text-foreground"
+                    }`}
+                  >
+                    Přehled rodiny
+                  </button>
+                  <button 
+                    onClick={() => setActiveTab("timeline")}
+                    className={`py-4 text-xs font-bold uppercase tracking-wider border-b-2 transition-all ${
+                      activeTab === "timeline" 
+                        ? "border-primary text-primary" 
+                        : "border-transparent text-muted hover:text-foreground"
+                    }`}
+                  >
+                    Časová osa ({selectedFamilyEvents.length})
+                  </button>
+                  <button 
+                    onClick={() => setActiveTab("registry")}
+                    className={`py-4 text-xs font-bold uppercase tracking-wider border-b-2 transition-all ${
+                      activeTab === "registry" 
+                        ? "border-primary text-primary" 
+                        : "border-transparent text-muted hover:text-foreground"
+                    }`}
+                  >
+                    Dokumenty a registry
+                  </button>
+                </div>
+
+                {/* Hlavní obsah detailu dle vybrané záložky */}
+                <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-500/5 transition-colors">
+                  
+                  {/* TAB 1: PŘEHLED RODINY (JEDNOSLOU PCOVÝ - STACKED VERTICALLY) */}
+                  {activeTab === "overview" && (
+                    <div className="space-y-6">
+                      
+                      {/* Hlavní Pěstoun Card */}
+                      <div className="bg-card p-5 rounded-xl border border-border-custom shadow-sm space-y-4 transition-colors">
+                        <div className="flex items-center gap-4">
+                          {primaryFosterParent?.custom_fields?.avatar_url ? (
                             <img 
                               src={primaryFosterParent.custom_fields.avatar_url} 
                               alt="avatar" 
-                              className="w-10 h-10 rounded-full border border-slate-200 object-cover"
+                              className="w-14 h-14 rounded-full border border-border-custom object-cover"
                             />
+                          ) : (
+                            <div className="w-14 h-14 rounded-full bg-primary/10 text-primary border border-primary/20 flex items-center justify-center font-bold text-xl">
+                              {primaryFosterParent?.first_name?.charAt(0)}
+                            </div>
                           )}
-                        </div>
-                        {primaryFosterParent && (
-                          <div className="mt-2 space-y-2">
-                            <p className="text-xl font-bold text-slate-800">
+                          <div>
+                            <h4 className="text-base font-bold text-foreground">
                               {renderFosterParentName(primaryFosterParent)}
-                            </p>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              {primaryFosterParent?.custom_fields?.foster_care_type && 
-                                renderCareTypeBadge(primaryFosterParent.custom_fields.foster_care_type)
-                              }
-                            </div>
+                            </h4>
+                            <p className="text-xs text-muted mt-0.5">Hlavní pěstoun domácnosti</p>
                           </div>
-                        )}
-                        <p className="text-xs text-primary font-bold mt-2">
-                          Profese: {primaryFosterParent?.custom_fields?.profession || "Neuvedeno"}
-                        </p>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-border-custom text-xs text-foreground transition-colors">
+                          <div>
+                            <span className="text-muted font-bold block uppercase text-[9px] tracking-wider">Profese:</span>
+                            <span className="font-semibold block mt-0.5">{primaryFosterParent?.custom_fields?.profession || "Neuvedeno"}</span>
+                          </div>
+                          <div>
+                            <span className="text-muted font-bold block uppercase text-[9px] tracking-wider">Aktuální adresa:</span>
+                            {primaryParentAddress ? (
+                              <div className="flex items-center justify-between bg-slate-500/5 px-2.5 py-1 rounded-lg border border-border-custom mt-1">
+                                <span className="font-semibold text-foreground/90">
+                                  {primaryParentAddress.street}, {primaryParentAddress.city}
+                                </span>
+                                <a 
+                                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${primaryParentAddress.street}, ${primaryParentAddress.city}`)}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  title="Google Maps"
+                                  className="text-primary hover:text-primary-hover p-1 hover:bg-slate-500/10 rounded"
+                                >
+                                  <Map className="w-3.5 h-3.5" />
+                                </a>
+                              </div>
+                            ) : (
+                              <span className="text-muted italic block mt-0.5">Neuvedena</span>
+                            )}
+                          </div>
+                        </div>
                       </div>
 
-                      {/* Adresa pěstouna a odkaz na Google Maps */}
-                      <div className="space-y-3 pt-4 border-t border-slate-100 text-xs mt-4">
-                        {primaryParentAddress && (
-                          <div className="space-y-1.5">
-                            <span className="text-slate-500 font-bold block uppercase text-[10px]">Aktuální adresa:</span>
-                            <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-lg border border-slate-200">
-                              <span className="text-slate-700">
-                                {primaryParentAddress.street}, {primaryParentAddress.city}
-                                {primaryParentAddress.floor_details && <span className="block text-[10px] text-slate-500">{primaryParentAddress.floor_details}</span>}
-                              </span>
-                              <a 
-                                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${primaryParentAddress.street}, ${primaryParentAddress.city}`)}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                title="Otevřít v Google Maps"
-                                className="p-1.5 hover:bg-slate-200 rounded-md text-primary transition-colors"
-                              >
-                                <Map className="w-4 h-4" />
-                              </a>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Seznam dětí v pěstounské péči */}
-                    <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4 col-span-2">
-                      <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Děti v pěstounské péči</h4>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {/* Děti v pěstounské péči (STACKED VERTICALLY - JEDNOSLOU PCOVÉ) */}
+                      <div className="space-y-4">
+                        <h4 className="text-[11px] font-bold text-muted uppercase tracking-wider pl-1">Děti v pěstounské péči (PP)</h4>
                         {fosterChildren.map((child) => (
-                          <div key={child.id} className="p-4 rounded-lg bg-slate-50 border border-slate-200 flex items-start gap-3 justify-between">
-                            <div className="space-y-2">
-                              <div className="flex items-center gap-2">
-                                {child.custom_fields?.avatar_url && (
-                                  <img 
-                                    src={child.custom_fields.avatar_url} 
-                                    alt="child" 
-                                    className="w-8 h-8 rounded-full object-cover border border-slate-200"
-                                  />
-                                )}
-                                <div>
-                                  <p className="text-sm font-bold text-slate-800">{renderChildName(child)}</p>
-                                  <p className="text-[10px] text-slate-400">Věk: {new Date().getFullYear() - new Date(child.birth_date).getFullYear()} let</p>
+                          <div key={child.id} className="bg-card p-5 rounded-xl border border-border-custom shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 transition-colors">
+                            <div className="flex items-center gap-3.5">
+                              {child.custom_fields?.avatar_url ? (
+                                <img 
+                                  src={child.custom_fields.avatar_url} 
+                                  alt="child" 
+                                  className="w-11 h-11 rounded-full object-cover border border-border-custom"
+                                />
+                              ) : (
+                                <div className="w-11 h-11 rounded-full bg-primary/10 text-primary border border-primary/20 flex items-center justify-center font-bold text-xs">
+                                  {child.first_name.charAt(0)}
                                 </div>
-                              </div>
-                              
-                              <div className="text-[11px] text-slate-650 pt-2 space-y-1">
-                                <p><span className="text-slate-400 font-medium">Záliby:</span> {child.custom_fields?.hobby || "Neuvedeno"}</p>
-                                <p><span className="text-slate-400 font-medium">Škola:</span> {child.custom_fields?.school || "Neuvedeno"}</p>
+                              )}
+                              <div>
+                                <p className="text-sm font-bold text-foreground">{renderChildName(child)}</p>
+                                <div className="flex gap-2 items-center text-[11px] text-muted mt-0.5">
+                                  <span>Věk: {new Date().getFullYear() - new Date(child.birth_date).getFullYear()} let</span>
+                                  <span>•</span>
+                                  <span>Záliby: {child.custom_fields?.hobby || "Neuvedeno"}</span>
+                                </div>
+                                <p className="text-[11px] text-muted mt-0.5">Škola: {child.custom_fields?.school || "Neuvedeno"}</p>
                               </div>
                             </div>
 
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide border ${
-                              child.safety_rating === "A" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
-                              child.safety_rating === "B" ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-red-50 text-red-700 border-red-200"
-                            }`}>
-                              Rating {child.safety_rating}
+                            <div className="flex sm:flex-col items-end gap-2 sm:gap-1.5 w-full sm:w-auto justify-between sm:justify-start border-t sm:border-t-0 border-border-custom pt-2 sm:pt-0 shrink-0">
+                              <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide border ${
+                                child.safety_rating === "A" ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20" :
+                                child.safety_rating === "B" ? "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/20" : 
+                                "bg-red-50 text-red-700 border-red-200 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/20"
+                              }`}>
+                                Rating {child.safety_rating}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                        {fosterChildren.length === 0 && (
+                          <p className="text-xs text-muted italic pl-1">V této rodině nejsou žádné děti v PP.</p>
+                        )}
+                      </div>
+
+                      {/* Rodinné vazby a biologické kontakty (STACKED VERTICALLY - JEDNOSLOU PCOVÉ) */}
+                      <div className="space-y-4">
+                        <h4 className="text-[11px] font-bold text-muted uppercase tracking-wider pl-1">Rodinné vazby a biologické kontakty</h4>
+                        
+                        {/* Ostatní členové domácnosti (např. biologické děti pěstouna) */}
+                        {otherMembers.map((member) => (
+                          <div key={member.id} className="bg-card p-4 rounded-xl border border-border-custom shadow-sm flex items-center justify-between transition-colors">
+                            <div className="flex items-center gap-3">
+                              {member.custom_fields?.avatar_url ? (
+                                <img src={member.custom_fields.avatar_url} alt="avatar" className="w-9 h-9 rounded-full object-cover border border-border-custom" />
+                              ) : (
+                                <div className="w-9 h-9 rounded-full bg-slate-500/10 text-foreground flex items-center justify-center font-bold text-xs">
+                                  {member.first_name.charAt(0)}
+                                </div>
+                              )}
+                              <div>
+                                <p className="text-sm font-semibold text-foreground">{member.first_name} {member.last_name}</p>
+                                <p className="text-[10px] text-muted mt-0.5">Člen domácnosti</p>
+                              </div>
+                            </div>
+                            <span className="text-[10px] bg-slate-500/10 px-2 py-0.5 rounded text-foreground font-semibold">
+                              {member.custom_fields?.relationship_to_child || "Člen rodiny"}
                             </span>
+                          </div>
+                        ))}
+
+                        {/* Biologičtí rodiče */}
+                        {biologicalParents.map((bio) => (
+                          <div 
+                            key={bio.id} 
+                            className={`bg-card p-4 rounded-xl border shadow-sm flex items-center justify-between transition-colors ${
+                              bio.safety_rating === "Z" 
+                                ? "border-red-200 dark:border-red-500/30" 
+                                : "border-border-custom"
+                            }`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="w-9 h-9 rounded-full bg-slate-500/10 flex items-center justify-center font-bold text-xs text-foreground">
+                                {bio.first_name.charAt(0)}
+                              </div>
+                              <div>
+                                <p className="text-sm font-semibold text-foreground">{bio.first_name} {bio.last_name}</p>
+                                <p className="text-[10px] text-muted mt-0.5">
+                                  Biologický rodič • Rating {bio.safety_rating}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="text-right">
+                              {bio.safety_rating === "Z" ? (
+                                <span className="px-2 py-0.5 bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/20 text-[9px] font-bold uppercase tracking-wide rounded border border-red-200">
+                                  Styk zakázán
+                                </span>
+                              ) : (
+                                <span className="text-xs font-mono text-foreground font-medium">{bio.phone || "Bez tel."}</span>
+                              )}
+                            </div>
                           </div>
                         ))}
                       </div>
                     </div>
-                  </div>
-
-                  {/* Biologická rodina a sociální kontakty */}
-                  <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
-                    <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Rodinné vazby a biologické kontakty</h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                      
-                      {/* Ostatní členové domácnosti (např. biologické děti pěstouna) */}
-                      {otherMembers.map((member) => (
-                        <div key={member.id} className="p-3.5 rounded-lg bg-slate-50 border border-slate-200 flex items-center gap-3">
-                          {member.custom_fields?.avatar_url ? (
-                            <img src={member.custom_fields.avatar_url} alt="avatar" className="w-9 h-9 rounded-full object-cover" />
-                          ) : (
-                            <div className="w-9 h-9 rounded-full bg-slate-200 flex items-center justify-center font-bold text-xs text-slate-500">
-                              {member.first_name.charAt(0)}
-                            </div>
-                          )}
-                          <div>
-                            <p className="text-sm font-semibold text-slate-800">{member.first_name} {member.last_name}</p>
-                            <p className="text-[10px] text-primary font-bold mt-0.5">
-                              {member.custom_fields?.relationship_to_child || "Člen rodiny"}
-                            </p>
-                          </div>
-                        </div>
-                      ))}
-
-                      {/* Biologičtí rodiče */}
-                      {biologicalParents.map((bio) => (
-                        <div 
-                          key={bio.id} 
-                          className={`p-3.5 rounded-lg border flex items-center justify-between ${
-                            bio.safety_rating === "Z" 
-                              ? "bg-red-50/50 border-red-200" 
-                              : "bg-slate-50 border-slate-200"
-                          }`}
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className="w-9 h-9 rounded-full bg-slate-200 border border-slate-200 flex items-center justify-center font-bold text-xs text-slate-500">
-                              {bio.first_name.charAt(0)}
-                            </div>
-                            <div>
-                              <p className="text-sm font-semibold text-slate-800">{bio.first_name} {bio.last_name}</p>
-                              <p className="text-[10px] text-slate-400 mt-0.5">
-                                Biologický rodič • Rating {bio.safety_rating}
-                              </p>
-                            </div>
-                          </div>
-
-                          {/* Zobrazení kontaktů přímo (GDPR karanténa je odložena na konec projektu) */}
-                          <div className="text-right">
-                            {bio.safety_rating === "Z" ? (
-                              <span className="px-2 py-0.5 bg-red-50 text-red-700 text-[9px] font-bold uppercase tracking-wide rounded border border-red-200">
-                                Styk zakázán
-                              </span>
-                            ) : (
-                              <span className="text-xs font-mono text-slate-700">{bio.phone || "Bez tel."}</span>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* TAB 2: ČASOVÁ OSA */}
-              {activeTab === "timeline" && (
-                <div className="space-y-4">
-                  <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Historie rodinných událostí a timeline</h4>
-                  
-                  {selectedFamilyEvents.length > 0 ? (
-                    <div className="relative border-l-2 border-slate-200 ml-4 pl-6 space-y-6">
-                      {selectedFamilyEvents.map((e) => (
-                        <div key={e.id} className="relative animate-in fade-in duration-200">
-                          <div className={`absolute -left-[31px] top-1.5 w-4 h-4 rounded-full ring-4 ring-slate-50 ${
-                            e.type === "crisis_event" ? "bg-red-500" : "bg-primary"
-                          }`} />
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <h5 className="font-bold text-sm text-slate-800">{e.title}</h5>
-                              <p className="text-xs text-slate-650 mt-1 leading-relaxed max-w-3xl">
-                                {e.payload?.content || e.payload?.text || "Bez textu"}
-                              </p>
-                            </div>
-                            <span className="text-xs text-slate-400 whitespace-nowrap ml-4">
-                              {new Date(e.occurred_at).toLocaleDateString("cs-CZ")}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-slate-400 italic pl-4">Zatím žádné události.</p>
                   )}
-                </div>
-              )}
 
-              {/* TAB 3: DOKUMENTY A REGISTRY */}
-              {activeTab === "registry" && (
-                <div className="space-y-8">
-                  {/* Školy a vzdělávání dětí */}
-                  <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
-                    <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                      <GraduationCap className="w-5 h-5 text-primary" />
-                      Evidence vzdělávání dětí
-                    </h4>
-                    <div className="divide-y divide-slate-100">
-                      {fosterChildren.map((child) => (
-                        <div key={child.id} className="py-3 first:pt-0 last:pb-0 flex justify-between items-center text-xs">
-                          <div>
-                            <span className="font-bold text-slate-800 block">{child.first_name} {child.last_name}</span>
-                            <span className="text-slate-500 mt-0.5 block">{child.custom_fields?.school || "ZŠ Merhautova Brno"}</span>
-                          </div>
-                          <div className="text-right text-slate-655">
-                            <span className="block font-medium">Třída: 6.A</span>
-                            <span className="text-[10px] text-slate-400 block mt-0.5">Třídní učitel: Mgr. Kateřina Novotná</span>
-                          </div>
-                        </div>
-                      ))}
-                      {fosterChildren.length === 0 && (
-                        <p className="text-xs text-slate-400 italic">V této rodině nejsou evidovány žádné školní děti.</p>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Zdravotní registry a fyziologie */}
-                  <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
-                    <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                      <Stethoscope className="w-5 h-5 text-primary" />
-                      Zdravotní a fyziologické záznamy
-                    </h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {fosterChildren.map((child) => (
-                        <div key={child.id} className="p-3.5 bg-slate-50 rounded-lg border border-slate-200 space-y-2.5 text-xs">
-                          <span className="font-bold text-slate-800 block border-b border-slate-200 pb-1">
-                            {child.first_name} {child.last_name}
-                          </span>
-                          <div className="space-y-1 text-slate-655">
-                            <p><span className="text-slate-400 font-medium">Registrující pediatr:</span> MUDr. Josef Fiala</p>
-                            <p><span className="text-slate-400 font-medium">Zdravotní pojišťovna:</span> 111 (VZP ČR)</p>
-                            <p><span className="text-slate-400 font-medium">Užívané léky:</span> Bez medikace</p>
-                            <p><span className="text-slate-400 font-medium">Fyziologie:</span> 142 cm / 35 kg</p>
-                          </div>
-                        </div>
-                      ))}
-                      {fosterChildren.length === 0 && (
-                        <p className="text-xs text-slate-400 italic col-span-2">Žádné zdravotní záznamy k dispozici.</p>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Dokumentový archiv klientského spisu */}
-                  <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
-                    <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                      <FileText className="w-5 h-5 text-primary" />
-                      DMS - Naskenované spisy a šablony
-                    </h4>
-                    <div className="space-y-2">
-                      {[
-                        { name: "Dohoda o doprovázení pěstounské rodiny.pdf", size: "2.4 MB", date: "15.01.2025" },
-                        { name: "IPOD - Individuální plán ochrany dítěte.pdf", size: "1.8 MB", date: "22.02.2025" },
-                        { name: "Soudní rozhodnutí o svěření do péče.pdf", size: "4.1 MB", date: "10.12.2024" },
-                        { name: "GDPR Souhlas se zpracováním údajů.pdf", size: "950 KB", date: "15.01.2025" }
-                      ].map((doc, dIdx) => (
-                        <div key={dIdx} className="p-3 bg-slate-50 hover:bg-slate-100/70 border border-slate-200 rounded-lg flex justify-between items-center transition-all text-xs">
-                          <div className="flex items-center gap-2.5">
-                            <FileText className="w-4 h-4 text-slate-400 shrink-0" />
-                            <div>
-                              <span className="font-semibold text-slate-800 block">{doc.name}</span>
-                              <span className="text-[10px] text-slate-400 block mt-0.5">Nahráno: {doc.date} • Velikost: {doc.size}</span>
+                  {/* TAB 2: ČASOVÁ OSA */}
+                  {activeTab === "timeline" && (
+                    <div className="bg-card p-6 rounded-xl border border-border-custom shadow-sm space-y-4 transition-colors">
+                      <h4 className="text-xs font-bold text-muted uppercase tracking-wider">Historie klientských kontaktů</h4>
+                      {selectedFamilyEvents.length > 0 ? (
+                        <div className="relative border-l-2 border-slate-500/25 ml-3 pl-6 space-y-6">
+                          {selectedFamilyEvents.map((e) => (
+                            <div key={e.id} className="relative animate-in fade-in duration-200">
+                              <div className={`absolute -left-[31px] top-1.5 w-3.5 h-3.5 rounded-full ring-4 ring-card ${
+                                e.type === "crisis_event" ? "bg-red-500" : "bg-primary"
+                              }`} />
+                              <div className="flex justify-between items-start gap-4">
+                                <div>
+                                  <h5 className="font-bold text-sm text-foreground">{e.title}</h5>
+                                  <p className="text-xs text-muted mt-1 leading-relaxed max-w-2xl">
+                                    {e.payload?.content || e.payload?.text || "Bez textu"}
+                                  </p>
+                                </div>
+                                <span className="text-[10px] text-muted font-medium whitespace-nowrap">
+                                  {new Date(e.occurred_at).toLocaleDateString("cs-CZ")}
+                                </span>
+                              </div>
                             </div>
-                          </div>
-                          <button className="p-1.5 hover:bg-slate-200 rounded text-slate-500 hover:text-slate-700 transition-colors">
-                            <FileDown className="w-4 h-4" />
-                          </button>
+                          ))}
                         </div>
-                      ))}
+                      ) : (
+                        <p className="text-xs text-muted italic pl-1">Zatím žádné události.</p>
+                      )}
                     </div>
+                  )}
+
+                  {/* TAB 3: DOKUMENTY A REGISTRY */}
+                  {activeTab === "registry" && (
+                    <div className="space-y-6">
+                      {/* Vzdělávání */}
+                      <div className="bg-card p-5 rounded-xl border border-border-custom shadow-sm space-y-4 transition-colors">
+                        <h4 className="text-xs font-bold text-muted uppercase tracking-wider flex items-center gap-2">
+                          <GraduationCap className="w-4.5 h-4.5 text-primary" />
+                          Evidence vzdělávání
+                        </h4>
+                        <div className="divide-y divide-border-custom">
+                          {fosterChildren.map((child) => (
+                            <div key={child.id} className="py-3 first:pt-0 last:pb-0 flex justify-between items-center text-xs text-foreground">
+                              <div>
+                                <span className="font-bold block">{child.first_name} {child.last_name}</span>
+                                <span className="text-muted mt-0.5 block">{child.custom_fields?.school || "ZŠ Merhautova Brno"}</span>
+                              </div>
+                              <div className="text-right">
+                                <span className="block font-medium">Třída: 6.A</span>
+                                <span className="text-[10px] text-muted block mt-0.5">Třídní učitel: Mgr. Kateřina Novotná</span>
+                              </div>
+                            </div>
+                          ))}
+                          {fosterChildren.length === 0 && (
+                            <p className="text-xs text-muted italic">V této rodině nejsou školní děti.</p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Zdraví */}
+                      <div className="bg-card p-5 rounded-xl border border-border-custom shadow-sm space-y-4 transition-colors">
+                        <h4 className="text-xs font-bold text-muted uppercase tracking-wider flex items-center gap-2">
+                          <Stethoscope className="w-4.5 h-4.5 text-primary" />
+                          Zdravotní a fyziologické údaje
+                        </h4>
+                        <div className="space-y-3">
+                          {fosterChildren.map((child) => (
+                            <div key={child.id} className="p-3.5 bg-slate-500/5 rounded-lg border border-border-custom space-y-2 text-xs text-foreground transition-colors">
+                              <span className="font-bold block border-b border-border-custom pb-1">
+                                {child.first_name} {child.last_name}
+                              </span>
+                              <div className="grid grid-cols-2 gap-2">
+                                <p><span className="text-muted font-medium">Pediatr:</span> MUDr. Josef Fiala</p>
+                                <p><span className="text-muted font-medium">Pojišťovna:</span> 111 (VZP)</p>
+                                <p className="col-span-2"><span className="text-muted font-medium">Léky:</span> Bez pravidelné medikace</p>
+                                <p className="col-span-2"><span className="text-muted font-medium">Měření:</span> 142 cm / 35 kg</p>
+                              </div>
+                            </div>
+                          ))}
+                          {fosterChildren.length === 0 && (
+                            <p className="text-xs text-muted italic">Žádné zdravotní údaje.</p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* DMS */}
+                      <div className="bg-card p-5 rounded-xl border border-border-custom shadow-sm space-y-4 transition-colors">
+                        <h4 className="text-xs font-bold text-muted uppercase tracking-wider flex items-center gap-2">
+                          <FileText className="w-4.5 h-4.5 text-primary" />
+                          DMS - Naskenované spisy a smlouvy
+                        </h4>
+                        <div className="space-y-2">
+                          {[
+                            { name: "Dohoda o doprovázení pěstounské rodiny.pdf", size: "2.4 MB", date: "15.01.2025" },
+                            { name: "IPOD - Individuální plán ochrany dítěte.pdf", size: "1.8 MB", date: "22.02.2025" },
+                            { name: "Soudní rozhodnutí o svěření do péče.pdf", size: "4.1 MB", date: "10.12.2024" },
+                            { name: "GDPR Souhlas se zpracováním údajů.pdf", size: "950 KB", date: "15.01.2025" }
+                          ].map((doc, dIdx) => (
+                            <div key={dIdx} className="p-3 bg-slate-500/5 hover:bg-slate-500/10 rounded-lg flex justify-between items-center transition-all text-xs transition-colors">
+                              <div className="flex items-center gap-2.5">
+                                <FileText className="w-4 h-4 text-muted shrink-0" />
+                                <div>
+                                  <span className="font-semibold text-foreground block">{doc.name}</span>
+                                  <span className="text-[10px] text-muted block mt-0.5">Nahráno: {doc.date} • {doc.size}</span>
+                                </div>
+                              </div>
+                              <button className="p-1.5 hover:bg-slate-500/15 rounded text-muted hover:text-foreground transition-colors">
+                                <FileDown className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                </div>
+
+                {/* AI COMMAND CENTER */}
+                <div className="p-5 border-t border-border-custom bg-card shrink-0 transition-colors">
+                  <div className="max-w-4xl mx-auto relative flex items-center">
+                    <Sparkles className="absolute left-4 w-5 h-5 text-primary" />
+                    <input 
+                      type="text" 
+                      placeholder="Zeptejte se AI na cokoliv ze spisu rodiny..."
+                      className="w-full pl-12 pr-24 py-3 bg-background border border-border-custom rounded-xl text-sm text-foreground placeholder-muted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all shadow-sm"
+                    />
+                    <button className="absolute right-3 px-4 py-1.5 bg-primary hover:bg-primary-hover text-white rounded-lg text-xs font-semibold tracking-wide flex items-center gap-1 transition-colors shadow-sm">
+                      Položit dotaz
+                    </button>
                   </div>
                 </div>
-              )}
-
-            </div>
-
-            {/* AI COMMAND CENTER (CHATOVÝ PANEL DOLE) */}
-            <div className="p-6 border-t border-slate-200 bg-white shrink-0">
-              <div className="max-w-4xl mx-auto relative">
-                <Sparkles className="absolute left-4 top-4 text-primary" />
-                <input 
-                  type="text" 
-                  placeholder="Zeptejte se AI na cokoliv ze spisu (např.: Kdy proběhla poslední návštěva?)..."
-                  className="w-full pl-12 pr-24 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary focus:bg-white shadow-sm transition-all"
-                />
-                <button className="absolute right-3 top-2.5 px-4 py-1.5 bg-primary hover:bg-primary-hover text-white rounded-lg text-xs font-semibold tracking-wide flex items-center gap-1 transition-colors">
-                  Položit dotaz
-                </button>
               </div>
+            </main>
+          ) : (
+            <div className="flex-1 flex items-center justify-center text-muted italic bg-background transition-colors">
+              Vyberte klientský spis z tabulky pro zobrazení detailu rodiny.
             </div>
-          </main>
-        ) : (
-          <div className="flex-1 flex items-center justify-center text-slate-500 italic bg-slate-50">
-            Vyberte klientský spis z tabulky pro zobrazení detailu rodiny.
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );
