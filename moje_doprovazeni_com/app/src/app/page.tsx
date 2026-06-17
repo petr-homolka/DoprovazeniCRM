@@ -169,37 +169,45 @@ export default function Home() {
   // HELPER FUNKCE PRO BUSINESS PRAVIDLA JMEN A DUPLICIT
   // ==========================================
 
+  const getCareTypeDescription = (type: string) => {
+    if (type === "A") return "Dlouhodobá zprostředkovaná pěstounská péče";
+    if (type === "B") return "Přechodná zprostředkovaná pěstounská péče";
+    if (type === "C") return "Nezprostředkovaná příbuzenská pěstounská péče";
+    return "";
+  };
+
   // Pomocník pro formátování jména pěstouna (odlišení duplicitních jmen)
   const getFosterParentDisplayName = (parent: any) => {
-    // Najít všechny pěstouny se stejným jménem a příjmením v naší paměti
+    // Najít všechny pěstouny se stejným příjmením v aktuálním seznamu
     const duplicates = persons.filter(p => 
       p.role === "foster_parent" && 
-      p.first_name === parent.first_name && 
       p.last_name === parent.last_name
     );
 
-    if (duplicates.length <= 1) {
-      return `${parent.first_name} ${parent.last_name}`;
-    }
+    let displayName = `${parent.first_name} ${parent.last_name}`;
 
-    // Pokud existují duplicity, zkusíme najít jejich adresy
-    const parentAddr = addresses.find(a => a.person_id === parent.id);
-    
-    // Zjistíme, zda existují duplicity na STEJNÉ adrese (stejná ulice i město)
-    const sameAddressDuplicates = duplicates.filter(d => {
-      const dAddr = addresses.find(a => a.person_id === d.id);
-      return dAddr && parentAddr && dAddr.city === parentAddr.city && dAddr.street === parentAddr.street;
-    });
-
-    if (sameAddressDuplicates.length > 1) {
-      // Pokud je shodná i adresa, očíslujeme je v závorce (podle ID / pořadí)
-      const sorted = [...sameAddressDuplicates].sort((a, b) => a.id.localeCompare(b.id));
+    if (duplicates.length > 1) {
+      // Seřadit abecedně podle křestního jména, pak podle id
+      const sorted = [...duplicates].sort((a, b) => {
+        const nameCompare = a.first_name.localeCompare(b.first_name, "cs-CZ");
+        if (nameCompare !== 0) return nameCompare;
+        return a.id.localeCompare(b.id);
+      });
       const index = sorted.findIndex(s => s.id === parent.id) + 1;
-      return `${parent.first_name} ${parent.last_name} (${index})`;
+      displayName += ` (${index})`;
     }
 
-    // Pokud mají stejná jména, ale jiné adresy, vrátíme standardní jméno (adresa se zobrazí hned pod ním)
-    return `${parent.first_name} ${parent.last_name}`;
+    const careType = parent.custom_fields?.foster_care_type;
+    if (careType) {
+      const rel = parent.custom_fields?.relationship_to_child;
+      if (careType === "C" && rel) {
+        displayName += ` (${careType} - ${rel})`;
+      } else {
+        displayName += ` (${careType})`;
+      }
+    }
+
+    return displayName;
   };
 
   // Pomocník pro formátování jména dítěte (odlišení duplicitních jmen v jedné rodině)
@@ -212,20 +220,134 @@ export default function Home() {
       p.last_name === child.last_name
     );
 
-    if (duplicates.length <= 1) {
-      return `${child.first_name} ${child.last_name}`;
+    let displayName = `${child.first_name} ${child.last_name}`;
+
+    if (duplicates.length > 1) {
+      // Očíslujeme je v závorce
+      const sorted = [...duplicates].sort((a, b) => a.id.localeCompare(b.id));
+      const index = sorted.findIndex(s => s.id === child.id) + 1;
+      displayName += ` (${index})`;
     }
 
-    // Očíslujeme je v závorce
-    const sorted = [...duplicates].sort((a, b) => a.id.localeCompare(b.id));
-    const index = sorted.findIndex(s => s.id === child.id) + 1;
-    return `${child.first_name} ${child.last_name} (${index})`;
+    const careType = child.custom_fields?.foster_care_type;
+    if (careType) {
+      const rel = child.custom_fields?.relationship_to_foster_parent;
+      if (careType === "C" && rel) {
+        displayName += ` (${careType} - ${rel})`;
+      } else {
+        displayName += ` (${careType})`;
+      }
+    }
+
+    return displayName;
   };
 
   // Pomocník pro zjištění, zda má pěstoun stejné příjmení jako jiné rodiny (pro zobrazení adresy pod jménem)
   const hasSurnameDuplicate = (lastName: string) => {
     const matches = persons.filter(p => p.role === "foster_parent" && p.last_name === lastName);
     return matches.length > 1;
+  };
+
+  // React/JSX renderování jména pěstouna s tooltipem typu péče
+  const renderFosterParentName = (parent: any) => {
+    const duplicates = persons.filter(p => 
+      p.role === "foster_parent" && 
+      p.last_name === parent.last_name
+    );
+
+    let baseName = `${parent.first_name} ${parent.last_name}`;
+
+    if (duplicates.length > 1) {
+      const sorted = [...duplicates].sort((a, b) => {
+        const nameCompare = a.first_name.localeCompare(b.first_name, "cs-CZ");
+        if (nameCompare !== 0) return nameCompare;
+        return a.id.localeCompare(b.id);
+      });
+      const index = sorted.findIndex(s => s.id === parent.id) + 1;
+      baseName += ` (${index})`;
+    }
+
+    const careType = parent.custom_fields?.foster_care_type;
+    if (careType) {
+      const rel = parent.custom_fields?.relationship_to_child;
+      const careText = careType === "C" && rel ? `${careType} - ${rel}` : careType;
+      return (
+        <span>
+          {baseName}{" "}
+          <span 
+            className="cursor-help text-primary font-bold hover:underline" 
+            title={getCareTypeDescription(careType)}
+          >
+            ({careText})
+          </span>
+        </span>
+      );
+    }
+
+    return <span>{baseName}</span>;
+  };
+
+  // React/JSX renderování jména dítěte s tooltipem typu péče
+  const renderChildName = (child: any) => {
+    const duplicates = persons.filter(p =>
+      p.role === "child" &&
+      p.household_id === child.household_id &&
+      p.first_name === child.first_name &&
+      p.last_name === child.last_name
+    );
+
+    let baseName = `${child.first_name} ${child.last_name}`;
+
+    if (duplicates.length > 1) {
+      const sorted = [...duplicates].sort((a, b) => a.id.localeCompare(b.id));
+      const index = sorted.findIndex(s => s.id === child.id) + 1;
+      baseName += ` (${index})`;
+    }
+
+    const careType = child.custom_fields?.foster_care_type;
+    if (careType) {
+      const rel = child.custom_fields?.relationship_to_foster_parent;
+      const careText = careType === "C" && rel ? `${careType} - ${rel}` : careType;
+      return (
+        <span>
+          {baseName}{" "}
+          <span 
+            className="cursor-help text-primary font-bold hover:underline" 
+            title={getCareTypeDescription(careType)}
+          >
+            ({careText})
+          </span>
+        </span>
+      );
+    }
+
+    return <span>{baseName}</span>;
+  };
+
+  // Barevný tag typů péče
+  const renderCareTypeBadge = (careType: string) => {
+    if (careType === "A") {
+      return (
+        <span className="px-2 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-200 text-[10px] font-bold uppercase tracking-wider">
+          Dlouhodobá péče
+        </span>
+      );
+    }
+    if (careType === "B") {
+      return (
+        <span className="px-2 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200 text-[10px] font-bold uppercase tracking-wider">
+          Přechodná péče
+        </span>
+      );
+    }
+    if (careType === "C") {
+      return (
+        <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-bold uppercase tracking-wider">
+          Příbuzenská péče
+        </span>
+      );
+    }
+    return null;
   };
 
   // ==========================================
@@ -453,7 +575,7 @@ export default function Home() {
                   {/* Primární pěstoun a zobrazení duplicitního příjmení */}
                   {p && (
                     <p className="text-xs text-primary font-bold">
-                      Pěstoun: {getFosterParentDisplayName(p)}
+                      Pěstoun: {renderFosterParentName(p)}
                     </p>
                   )}
 
@@ -467,9 +589,15 @@ export default function Home() {
 
                   {/* Seznam dětí v pěstounské péči (zobrazení rozdílných příjmení) */}
                   <div className="mt-2 text-xs text-slate-500">
-                    <span className="font-medium">Děti v PP: </span>
+                    <span className="font-medium">Děti: </span>
                     <span>
-                      {children.map(ch => getChildDisplayName(ch)).join(", ") || "Žádné děti"}
+                      {children.map((ch, idx) => (
+                        <React.Fragment key={ch.id}>
+                          {idx > 0 && ", "}
+                          {renderChildName(ch)}
+                        </React.Fragment>
+                      ))}
+                      {children.length === 0 && "Žádné děti"}
                     </span>
                   </div>
 
@@ -489,9 +617,14 @@ export default function Home() {
             {/* Horní lišta detailu */}
             <div className="h-20 px-8 border-b border-slate-200 flex items-center justify-between bg-white">
               <div>
-                <h3 className="text-lg font-bold text-slate-800">
-                  {primaryFosterParent ? `Spis rodiny ${primaryFosterParent.last_name}ových` : "Detail spisu"}
-                </h3>
+                <div className="flex items-center gap-3">
+                  <h3 className="text-lg font-bold text-slate-800">
+                    {primaryFosterParent ? `Spis rodiny ${primaryFosterParent.last_name}ových` : "Detail spisu"}
+                  </h3>
+                  {primaryFosterParent?.custom_fields?.foster_care_type && 
+                    renderCareTypeBadge(primaryFosterParent.custom_fields.foster_care_type)
+                  }
+                </div>
                 <p className="text-xs text-slate-500">
                   Doprovázeno pobočkou Brno • Evidenční kód: {selectedHousehold.foster_id}
                 </p>
@@ -539,9 +672,16 @@ export default function Home() {
                       )}
                     </div>
                     {primaryFosterParent && (
-                      <p className="text-xl font-bold text-slate-800 mt-2">
-                        {getFosterParentDisplayName(primaryFosterParent)}
-                      </p>
+                      <div className="mt-2 space-y-2">
+                        <p className="text-xl font-bold text-slate-800">
+                          {renderFosterParentName(primaryFosterParent)}
+                        </p>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {primaryFosterParent?.custom_fields?.foster_care_type && 
+                            renderCareTypeBadge(primaryFosterParent.custom_fields.foster_care_type)
+                          }
+                        </div>
+                      </div>
                     )}
                     <p className="text-xs text-primary font-bold mt-1">
                       Profese: {primaryFosterParent?.custom_fields?.profession || "Neuvedeno"}
@@ -575,7 +715,7 @@ export default function Home() {
 
                 {/* 3.2. Seznam dětí v pěstounské péči */}
                 <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4 col-span-2">
-                  <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Děti v pěstounské péči</h4>
+                  <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Děti</h4>
                   <div className="grid grid-cols-2 gap-4">
                     {fosterChildren.map((child) => (
                       <div key={child.id} className="p-4 rounded-lg bg-slate-50 border border-slate-200 flex items-start gap-3 justify-between">
@@ -589,7 +729,7 @@ export default function Home() {
                               />
                             )}
                             <div>
-                              <p className="text-sm font-bold text-slate-800">{getChildDisplayName(child)}</p>
+                              <p className="text-sm font-bold text-slate-800">{renderChildName(child)}</p>
                               <p className="text-[10px] text-slate-400">Státní občanství: ČR</p>
                             </div>
                           </div>
