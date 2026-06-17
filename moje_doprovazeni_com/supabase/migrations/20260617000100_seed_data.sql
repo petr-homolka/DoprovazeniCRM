@@ -35,10 +35,10 @@ VALUES (
 -- Příklad fiktivního SuperAdmina (majitele)
 INSERT INTO public.profiles (id, organization_id, branch_id, email, first_name, last_name, role, is_active)
 VALUES (
-    '00000000-0000-0000-0000-000000000001', -- Tento UUID se pak přepíše UUID přihlášeného uživatele
+    'f1520cd2-38d3-49fc-a40b-e6c4524983c8', -- Váš UID pro petr.homolka@gmail.com
     'a0e0a0e0-a0e0-a0e0-a0e0-a0e0a0e0a0e0',
     'b0b0b0b0-b0b0-b0b0-b0b0-b0b0b0b0b0b0',
-    'petr.homolka@doprovazeni.com',
+    'petr.homolka@gmail.com',
     'Petr',
     'Homolka',
     'superadmin',
@@ -48,12 +48,12 @@ VALUES (
 -- Mgr. Anna Málková (Klíčová osoba / Worker)
 INSERT INTO public.profiles (id, organization_id, branch_id, email, first_name, last_name, role, is_active)
 VALUES (
-    '00000000-0000-0000-0000-000000000002',
+    'aecbcd51-1ae6-48b3-b641-a5c639b46fe6', -- Váš UID pro test@doprovazeni.com
     'a0e0a0e0-a0e0-a0e0-a0e0-a0e0a0e0a0e0',
     'b0b0b0b0-b0b0-b0b0-b0b0-b0b0b0b0b0b0',
-    'anna.malkova@doprovazeni.com',
-    'Anna',
-    'Málková',
+    'test@doprovazeni.com',
+    'Test',
+    'Pracovník',
     'worker',
     true
 );
@@ -68,7 +68,7 @@ VALUES (
     'h1111111-1111-1111-1111-111111111111',
     'a0e0a0e0-a0e0-a0e0-a0e0-a0e0a0e0a0e0',
     'b0b0b0b0-b0b0-b0b0-b0b0-b0b0b0b0b0b0',
-    '00000000-0000-0000-0000-000000000002', -- Anna Málková
+    'aecbcd51-1ae6-48b3-b641-a5c639b46fe6', -- test@doprovazeni.com
     'FOST-2026-0001',
     'active',
     'Pěstounská rodina z Brna. Velmi dobrá spolupráce.'
@@ -80,7 +80,7 @@ VALUES (
     'h2222222-2222-2222-2222-222222222222',
     'a0e0a0e0-a0e0-a0e0-a0e0-a0e0a0e0a0e0',
     'b0b0b0b0-b0b0-b0b0-b0b0-b0b0b0b0b0b0',
-    '00000000-0000-0000-0000-000000000002', -- Anna Málková
+    'aecbcd51-1ae6-48b3-b641-a5c639b46fe6', -- test@doprovazeni.com
     'FOST-2026-0002',
     'active',
     'Pěstoun Jan Novák z Hostomic (Školní 13). Doprovázen samostatně.'
@@ -92,7 +92,7 @@ VALUES (
     'h3333333-3333-3333-3333-333333333333',
     'a0e0a0e0-a0e0-a0e0-a0e0-a0e0a0e0a0e0',
     'b0b0b0b0-b0b0-b0b0-b0b0-b0b0b0b0b0b0',
-    '00000000-0000-0000-0000-000000000002', -- Anna Málková
+    'aecbcd51-1ae6-48b3-b641-a5c639b46fe6', -- test@doprovazeni.com
     'FOST-2026-0003',
     'active',
     'Extrémní shoda jmen a adresy. V systému bude označen jako Jan Novák (2).'
@@ -320,7 +320,7 @@ INSERT INTO public.events (organization_id, household_id, author_id, type, title
 VALUES (
     'a0e0a0e0-a0e0-a0e0-a0e0-a0e0a0e0a0e0',
     'h1111111-1111-1111-1111-111111111111',
-    '00000000-0000-0000-0000-000000000002', -- Anna Málková
+    'aecbcd51-1ae6-48b3-b641-a5c639b46fe6', -- test@doprovazeni.com
     'regular_visit',
     'Pravidelná pololetní návštěva',
     '{"content": "Návštěva v rodině Novákových proběhla v poklidné atmosféře. Adéla i Lukáš vykazují stabilní chování, pěstouni spolupracují a plní všechny stanovené cíle rozvoje. Adéla se těší na prázdniny.", "summary": "Návštěva proběhla bez komplikací. Děti jsou v pořádku, pěstouni spolupracují."}'::jsonb,
@@ -332,7 +332,7 @@ INSERT INTO public.events (organization_id, household_id, author_id, type, title
 VALUES (
     'a0e0a0e0-a0e0-a0e0-a0e0-a0e0a0e0a0e0',
     'h3333333-3333-3333-3333-333333333333',
-    '00000000-0000-0000-0000-000000000002', -- Anna Málková
+    'aecbcd51-1ae6-48b3-b641-a5c639b46fe6', -- test@doprovazeni.com
     'crisis_event',
     'Pokus o kontakt biologického otce',
     '{"content": "Biologický otec Marek Pokorný se pokusil kontaktovat Elišku před školou, což je v rozporu se soudním rozhodnutím o zákazu styku. Pěstoun Jan Novák okamžitě zasáhl a kontaktoval naši klíčovou osobu. Incident byl hlášen OSPOD.", "summary": "Biologický otec porušil zákaz styku. Hlášeno na OSPOD, situace je pod kontrolou."}'::jsonb,
