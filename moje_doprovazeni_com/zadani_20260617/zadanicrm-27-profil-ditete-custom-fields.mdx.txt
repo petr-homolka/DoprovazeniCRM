@@ -29,6 +29,15 @@ Pro korektní fungování evidence v praxi platí tato business pravidla, která
 6. **Odlišení dětí se stejným jménem v jedné rodině:** Pokud by nastala situace, že dvě děti u stejného pěstouna mají shodné jméno i příjmení, systém v UI k jejich jménu připojí rozlišovací číslo v závorce (např. **`Eliška (1)`**, **`Eliška (2)`**).
 7. **Fotografie a Avatary:** Každá osoba v systému (dítě, pěstoun, člen doprovázející organizace/KO) má v profilu podporu pro fotografii/avatar (použití a chování je shodné jako v Gmailu, Google Kontaktech či Facebooku).
 
+### A.2. Pravidla pro zobrazení seznamu rodin a detailního zobrazení (Zpětná vazba Fáze 1)
+1. **Řádková tabulka:** Pro zobrazení desítek klientských rodin se nepoužije úzký sloupec s kartami, ale přehledná řádková tabulka (datagrid) v hlavní pracovní ploše. Tabulka obsahuje sloupce: Evid. číslo (Foster ID), Pěstoun (včetně indexů duplicit a typu péče), Adresa (Město, Ulice), Děti (seznam jmen), Stav (aktivní/zájemce).
+2. **Split-Screen Master-Detail (překlikávání):** Při kliknutí na řádek v tabulce se pravá část obrazovky změní v detailní panel (Foster Card) o šířce minimálně 780px (vytvoří se split-screen, kde levých cca 40 % zabírá zúžená tabulka rodin a pravých cca 60 % detail rodiny). Uživatel tak může v tabulce rychle překlikávat a měnit obsah detailu, aniž by ztrácel kontext a musel cokoliv zavírat. V detailu je tlačítko "Zavřít" (X), které detail skryje a roztáhne tabulku zpět na 100 % šířky.
+3. **Záložkový detail:** Detail rodiny na pravé straně obsahuje nahoře záložky pro přepínání pohledů:
+   - **Přehled rodiny:** Karta pěstouna, adresa, biologičtí rodiče, ostatní členové domácnosti a grid dětí.
+   - **Časová osa:** Události a incidenty na časové ose.
+   - **Dokumenty a Registry:** Školy, lékaři, dokumenty a fyziologické údaje dětí.
+4. **Odklad GDPR karantény:** Funkčnost GDPR karantény (varovná hláška o chybějícím souhlasu a maskování telefonních či rodných čísel/dokladů u osob bez souhlasu) je dočasně deaktivována a přesunuta k dořešení až na samotný konec celého projektu. Všechna data se aktuálně zobrazují nemaskovaná.
+
 ### B. Vzdělávání
 * **Typ školy:** Dropdown (MŠ, ZŠ, SŠ, speciální škola, SOU...)
 * **Název a adresa školy**
