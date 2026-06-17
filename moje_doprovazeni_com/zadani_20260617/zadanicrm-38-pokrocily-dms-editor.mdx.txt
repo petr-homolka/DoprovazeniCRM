@@ -121,6 +121,14 @@ Místo jedné obří AI vznikají profilovaní asistenti (`ai_assistant_profiles
 * **DMS Rozhraní (Disk):** Vypadá jako Google Drive. Levý sloupec obsahuje: *Můj disk, Sdílené se mnou, Nedávné, Oblíbené (Hvězdička) a Koš*. Podporuje výběr více položek najednou (Shift+Click) pro hromadné akce přesun/stažení/smazání.
 * **Editor Historie:** V editoru textů je tlačítko "Historie verzí". Otevře se postranní panel s časovou osou (`rich_text_document_versions`). Kliknutím na starou verzi se hlavní okno přepne do režimu "Pouze pro čtení" s možností kliknout na velké modré tlačítko `Obnovit tuto verzi`.
 * **AI Source Matrix:** Tabulka pro ředitele organizace. Řádky představují zdroje dokumentů, sloupce jednotlivé AI Asistenty. Zaškrtávacími políčky jednoduše (jako v matici oprávnění) konfiguruje, jaká AI smí "číst" jakou složku.
+* **Interaktivní prolinkování osob (Inline Entity Mentions):** V editoru textu (např. zápis z návštěvy, zpráva pro soud) může uživatel označit jméno nebo stisknout zkratku (např. `@`) a vybrat osobu ze seznamu doprovázené rodiny. 
+  * **Uložení v DB:** V textu se uloží jako strukturovaný JSON uzel nebo inline HTML element (např. `<span data-mention-id="uuid-osoby" class="mention">Marek Pokorný</span>`).
+  * **Zobrazení (Hover / On-Mouse tooltip):** Na frontendu se link zobrazí jako zvýrazněný klikatelný odkaz. Při najetí myší (on-mouse hover) se nad jménem otevře bublina (Tooltip) s rychlými informacemi o osobě:
+    * Role (např. *Biologický otec*)
+    * Věk a datum narození
+    * Safety Rating (např. *Rating Z – Zákaz styku!* s červeným podbarvením)
+    * Kontaktní údaje (telefon, e-mail - s respektováním případného GDPR maskování)
+    * Odkaz pro rychlý přechod na osobní kartu dítěte/pěstouna.
 
 ```
 

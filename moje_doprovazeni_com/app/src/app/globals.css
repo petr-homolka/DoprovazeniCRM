@@ -3,13 +3,25 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+
+  /* Dynamické barvy pro branding (SaaS Whitelabeling) */
+  --primary-color: #6366f1; /* Výchozí indigo */
+  --secondary-color: #0f172a; /* Výchozí slate-900 */
+
+  /* Automaticky vypočtené odstíny pro hover a active stavy */
+  --primary-hover: color-mix(in srgb, var(--primary-color) 85%, white);
+  --primary-active: color-mix(in srgb, var(--primary-color) 85%, black);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-primary: var(--primary-color);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-active: var(--primary-active);
+  --color-secondary: var(--secondary-color);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
 }
 
 @media (prefers-color-scheme: dark) {
