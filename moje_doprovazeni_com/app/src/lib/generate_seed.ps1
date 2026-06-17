@@ -174,7 +174,7 @@ for ($i = 0; $i -lt 40; $i++) {
     # Create foster children (1 to 2)
     $numFosterChildren = @(1, 1, 2)[(Get-Random -Minimum 0 -Maximum 3)]
     for ($cIdx = 0; $cIdx -lt $numFosterChildren; $cIdx++) {
-        $cId = "44444444-4444-4444-$($i.ToString('0000'))-$($cIdx.ToString('00000000'))"
+        $cId = "44444444-4444-4444-$($i.ToString('0000'))-$($cIdx.ToString('000000000000'))"
         $cGender = @("M", "Z")[(Get-Random -Minimum 0 -Maximum 2)]
         $cName = if ($cGender -eq "M") { $maleNames[(Get-Random -Minimum 0 -Maximum $maleNames.Count)] } else { $femaleNames[(Get-Random -Minimum 0 -Maximum $femaleNames.Count)] }
         
@@ -211,7 +211,7 @@ for ($i = 0; $i -lt 40; $i++) {
     # Create biological children (1 to 3)
     $numBioChildren = @(1, 2, 2, 3)[(Get-Random -Minimum 0 -Maximum 4)]
     for ($bIdx = 0; $bIdx -lt $numBioChildren; $bIdx++) {
-        $bId = "55555555-5555-5555-$($i.ToString('0000'))-$($bIdx.ToString('00000000'))"
+        $bId = "55555555-5555-5555-$($i.ToString('0000'))-$($bIdx.ToString('000000000000'))"
         $bGender = @("M", "Z")[(Get-Random -Minimum 0 -Maximum 2)]
         $bName = if ($bGender -eq "M") { $maleNames[(Get-Random -Minimum 0 -Maximum $maleNames.Count)] } else { $femaleNames[(Get-Random -Minimum 0 -Maximum $femaleNames.Count)] }
         $bSur = $lName
@@ -243,7 +243,7 @@ for ($i = 0; $i -lt 40; $i++) {
     # Create timeline events (1 to 2)
     $numEvents = @(1, 2)[(Get-Random -Minimum 0 -Maximum 2)]
     for ($eIdx = 0; $eIdx -lt $numEvents; $eIdx++) {
-        $eId = "77777777-7777-7777-$($i.ToString('0000'))-$($eIdx.ToString('00000000'))"
+        $eId = "77777777-7777-7777-$($i.ToString('0000'))-$($eIdx.ToString('000000000000'))"
         $daysAgo = Get-Random -Minimum 1 -Maximum 91
         $occurredDate = (Get-Date).AddDays(-$daysAgo).ToString("yyyy-MM-dd HH:mm:ss+02")
         

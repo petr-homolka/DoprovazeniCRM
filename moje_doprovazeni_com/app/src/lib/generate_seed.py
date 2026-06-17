@@ -163,7 +163,7 @@ VALUES ('{addr_id}', '{p_id}', 'actual', '{street} {street_num}', '{city}', '{zi
     # Vytvoření dětí v pěstounské péči (1 až 2)
     num_foster_children = random.choice([1, 1, 2])
     for child_idx in range(num_foster_children):
-        c_id = f"44444444-4444-4444-{i:04d}-{child_idx:08d}"
+        c_id = f"44444444-4444-4444-{i:04d}-{child_idx:012d}"
         c_gender = random.choice(["M", "Z"])
         c_first_name = random.choice(MALE_NAMES) if c_gender == "M" else random.choice(FEMALE_NAMES)
         
@@ -200,7 +200,7 @@ VALUES ('{c_id}', '{org_id}', '{household_id}', 'child', '{c_first_name}', '{c_l
     # Vytvoření vlastních (biologických) dětí pěstouna (1 až 3)
     num_bio_children = random.choice([1, 2, 2, 3])
     for bio_idx in range(num_bio_children):
-        b_id = f"55555555-5555-5555-{i:04d}-{bio_idx:08d}"
+        b_id = f"55555555-5555-5555-{i:04d}-{bio_idx:012d}"
         b_gender = random.choice(["M", "Z"])
         b_first_name = random.choice(MALE_NAMES) if b_gender == "M" else random.choice(FEMALE_NAMES)
         b_last_name = last_name
@@ -233,7 +233,7 @@ VALUES ('{bio_parent_id}', '{org_id}', '{household_id}', 'bio_parent', '{bp_firs
     # Vytvoření timeline událostí (1 až 2 na domácnost)
     num_events = random.choice([1, 2])
     for event_idx in range(num_events):
-        e_id = f"77777777-7777-7777-{i:04d}-{event_idx:08d}"
+        e_id = f"77777777-7777-7777-{i:04d}-{event_idx:012d}"
         days_ago = random.randint(1, 90)
         occurred_date = datetime.now() - timedelta(days=days_ago)
         occurred_str = occurred_date.strftime("%Y-%m-%d %H:%M:%S+02")
