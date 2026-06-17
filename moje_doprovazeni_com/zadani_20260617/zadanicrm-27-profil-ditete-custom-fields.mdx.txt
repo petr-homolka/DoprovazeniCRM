@@ -19,6 +19,16 @@ Při založení profilu dítěte (`persons` s kategorií `foster_child`) systém
 * **Státní občanství**
 * **FosterID** (Lidsky čitelný kód, např. `DOP-26-UL-0012-D1`, viz Kap. 35)
 
+### A.1. Pravidla pro jména, duplicity a zobrazení v UI
+Pro korektní fungování evidence v praxi platí tato business pravidla, která musí frontend i backend plně podporovat:
+1. **Rozdílnost příjmení:** V 99 % případů má dítě v pěstounské péči jiné příjmení než pěstoun. Systém toto nesmí nijak omezovat ani kontrolovat (příjmení jsou zcela nezávislá).
+2. **Kapacita rodiny:** Pěstoun může mít v péči jedno nebo více dětí. Zároveň může mít i své vlastní biologické děti – ty se evidují jako rodinné vazby pěstouna.
+3. **Individuální vazba péče:** Svěření dítěte do pěstounské péče se ze zákona váže na konkrétní fyzickou osobu pěstouna, nikoli na rodinu jako celek (i když pěstoun žije v manželství/partnerství).
+4. **Odlišení pěstounů se stejným příjmením:** Pokud mají dva pěstouni v systému stejné příjmení (např. *Novák*), v seznamech a přehledech se pod jejich jménem musí vždy zobrazit adresa (obec, ulice, číslo popisné), aby bylo na první pohled zřejmé, o koho jde (např. *Jan Novák, Hostomice, Školní 13*). Vedle adresy se zobrazuje ikona špendlíku (link na Google Maps).
+5. **Odlišení pěstounů se stejným jménem i adresou:** Ve výjimečném případě, kdy mají dva pěstouni stejné jméno a shodnou adresu, systém k jejich jménu v UI automaticky připojí rozlišovací číslo v závorce podle pořadí vytvoření, např. **`Jan Novák (1)`** a **`Jan Novák (2)`**.
+6. **Odlišení dětí se stejným jménem v jedné rodině:** Pokud by nastala situace, že dvě děti u stejného pěstouna mají shodné jméno i příjmení, systém v UI k jejich jménu připojí rozlišovací číslo v závorce (např. **`Eliška (1)`**, **`Eliška (2)`**).
+7. **Fotografie a Avatary:** Každá osoba v systému (dítě, pěstoun, člen doprovázející organizace/KO) má v profilu podporu pro fotografii/avatar (použití a chování je shodné jako v Gmailu, Google Kontaktech či Facebooku).
+
 ### B. Vzdělávání
 * **Typ školy:** Dropdown (MŠ, ZŠ, SŠ, speciální škola, SOU...)
 * **Název a adresa školy**
