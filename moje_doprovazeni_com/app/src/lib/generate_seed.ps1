@@ -79,7 +79,11 @@ $sql += "INSERT INTO public.profiles (id, organization_id, branch_id, email, fir
 $sql += "INSERT INTO public.profiles (id, organization_id, branch_id, email, first_name, last_name, role, is_active) VALUES ('$workerUid', '$orgId', '$branchId', 'test@doprovazeni.com', 'Test', 'Pracovník', 'worker', true);`n"
 
 # 3. Households & Persons
-$sql += # Explicit namesakes to test indexing
+$sql += "-- =========================================="
+$sql += "-- 3. ZALOŽENÍ DOMÁCNOSTÍ A OSOB (40 rodin)"
+$sql += "-- ==========================================`n"
+
+# Explicit namesakes to test indexing
 $explicitFosterParents = @(
     @{ FirstName = "Jan"; LastName = "Novák"; Gender = "M"; City = "Brno"; Street = "Konečného náměstí"; StreetNum = "4"; Rel = $null; CareType = "A" },
     @{ FirstName = "Jan"; LastName = "Novák"; Gender = "M"; City = "Hostomice"; Street = "Školní"; StreetNum = "13"; Rel = "dědeček"; CareType = "C" },
