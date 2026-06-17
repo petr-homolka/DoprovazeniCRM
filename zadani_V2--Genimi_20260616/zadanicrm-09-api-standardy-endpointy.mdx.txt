@@ -1,0 +1,113 @@
+---
+title: "Kapitola 9: API Standardy a architektura endpointů"
+description: "Pravidla pro návrh RESTful API, specifikace standardních odpovědí, zabezpečení a synchronizačních endpointů pro PWA."
+icon: "brackets-curly"
+---
+
+<Warning>
+**Instrukce pro AI programátora:** Všechny frontendové interakce (desktop i mobil) komunikují se Supabase a backendovým serverem výhradně přes toto unifikované API. API musí striktně dodržovat bezpečnostní pravidla (RBAC, dotační limity, tenant isolation) a validovat veškeré vstupy před zápisem do databáze.
+</Warning>
+
+## 1. Obecné standardy a formát odpovědí
+
+API je navrženo jako **RESTful JSON API**. Každý endpoint komunikuje v kódování UTF-8 a vyžaduje hlavičku `Content-Type: application/json`.
+
+### Jednotný formát úspěšných odpovědí (Success payload)
+Každá úspěšná odpověď vrací status kód `200 OK` (nebo `201 Created` při úspěšném zápisu) a má tuto strukturu:
+
+```json
+{
+  "success": true,
+  "data": {
+    // Vrácená data (objekt nebo pole)
+  },
+  "timestamp": "2026-06-17T15:10:00Z"
+}
+```
+
+### Jednotný formát chybových odpovědí (Error payload)
+Chybové stavy vrací odpovídající HTTP status kód (např. 400, 401, 403, 404, 422, 500) a detailní chybový objekt:
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "LIMIT_EXCEEDED", // Strojově zpracovatelný kód chyby
+    "message": "Byl překročen maximální počet aktivních rodin pro váš tarif.", // Lidsky čitelná zpráva pro frontend
+    "details": {
+      "limit": 20,
+      "current": 20
+    }
+  },
+  "timestamp": "2026-06-17T15:10:00Z"
+}
+```
+
+---
+
+## 2. Zabezpečení a Middleware
+
+1. **JWT Autentizace:** Každý požadavek (kromě veřejných auth endpointů) musí obsahovat hlavičku `Authorization: Bearer <JWT_TOKEN>`. Token je generován Supabase Auth (nebo naším vlastním auth serverem).
+2. **Tenant Isolation (Vynucená izolace):** Backendový middleware dekóduje JWT token, vybere z něj `organization_id` a automaticky jej aplikuje na všechny databázové dotazy. Uživatel nemůže manuálně změnit `organization_id` v těle požadavku na cizí organizaci.
+3. **Rate Limiting:** Ochrana API před zneužitím (např. max 120 požadavků za minutu na jednoho uživatele, u kritických jako nahrávání souborů max 5 za minutu).
+4. **Validation Middleware:** Před zpracováním dat (např. u `/api/events`) middleware zvaliduje payload vůči JSON schématu z katalogu událostí (Kap. 24). Pokud validace selže, vrací `400 Bad Request` s popisem chybějících/neplatných polí.
+
+---
+
+## 3. Přehled klíčových endpointů (Core Registry)
+
+### A. Autentizace (`/api/auth`)
+* `POST /api/auth/login` – Vygenerování a odeslání jednorázového přihlašovacího odkazu (Magic Link) na e-mail uživatele.
+* `POST /api/auth/verify` – Ověření tokenu z Magic Linku, založení session a vrácení JWT tokenu.
+* `POST /api/auth/logout` – Zneplatnění aktuální session.
+
+### B. Domácnosti a Osoby (`/api/households` & `/api/persons`)
+* `GET /api/households` – Seznam aktivních domácností (stránkovaný, podporuje vyhledávání a filtrování podle poboček).
+* `POST /api/households` – Vytvoření nové rodiny. *Middleware:* Kontroluje dotační limit podle aktivního tarifu předplatného (Kap. 42).
+* `GET /api/persons/:id` – Kompletní detail osoby (dítěte, pěstouna, bio rodiče) včetně standardních karet, historie adres/kontaktů a dynamic custom fields.
+* `PUT /api/persons/:id` – In-place editace údajů (standardních i vlastních polí).
+
+### C. Časová osa a Události (`/api/events`)
+* `GET /api/households/:id/events` – Načtení chronologické časové osy (Timeline) pro danou rodinu.
+* `POST /api/events` – Zápis nové události na časovou osu. 
+  * *Middleware 1:* Validace payloadu podle typu události.
+  * *Middleware 2 (Post-Save Hook):* Pokud má událost definované `post_actions` (Workflow Lite, Kap. 26), asynchronně vygeneruje úkoly nebo odešle notifikace.
+
+### D. Dokumenty (`/api/documents`)
+* `POST /api/documents/upload` – Nahrání nového souboru (Drag & Drop na desktopu / Fotoaparát na mobilu). Spouští asynchronní OCR a Document AI pro vytěžení metadat (Kap. 5).
+* `GET /api/documents/:id/download` – Bezpečné stahování souboru s dočasně platnou signovanou URL adresou (zabránění neoprávněnému stahování PDF spisů).
+
+---
+
+## 4. Offline Synchronizace (`POST /api/sync`)
+
+Terénní Worker aplikace (mobilní PWA) pracuje v režimu offline. Jakmile se KO připojí k internetu, Service Worker odešle nashromážděné operace na tento synchronizační endpoint:
+
+### Formát požadavku (Sync payload)
+```json
+{
+  "device_id": "phone-ko-12",
+  "operations": [
+    {
+      "sequence_id": 1,
+      "table": "events",
+      "action": "INSERT",
+      "payload": {
+        "household_id": "c1a2b3-...",
+        "type": "visit_log",
+        "payload": {
+          "location": "doma",
+          "ai_summary": "Návštěva proběhla v pořádku..."
+        }
+      },
+      "created_at": "2026-06-17T12:00:00Z"
+    }
+  ]
+}
+```
+
+### Řešení konfliktů (Conflict Resolution)
+Při synchronizaci se uplatňuje pravidlo **Last-Write-Wins (LWW)** na základě časové značky z klientského zařízení (`created_at`). 
+* Pokud KO offline změní adresu trvalého bydliště dítěte a mezitím ji na desktopu změnila ekonomka, systém porovná časy. 
+* Adresa s novějším časem přepisuje starší.
+* Stará hodnota se však nevymaže, nýbrž se přesune do historie adres (`person_address_history`), takže žádná data nejsou ztracena.

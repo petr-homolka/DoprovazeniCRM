@@ -1,0 +1,92 @@
+---
+title: "Kapitola 27: Profil dítěte a systém vlastních polí (Custom Fields)"
+description: "Detailní přehled evidovaných údajů u dětí a technický návrh flexibilních polí ve stylu Google Kontaktů."
+icon: "user-gear"
+---
+
+<Warning>
+**Instrukce pro AI programátora:** Dítě v pěstounské péči je ústředním bodem sociálně-právní ochrany (SPOD). Evidované údaje obsahují vysoce citlivé osobní údaje. Zároveň každá doprovázející organizace sleduje mírně odlišné parametry. Datový model proto nesmí být rigidní. Musí kombinovat pevně daná zákonná pole a plně dynamický systém vlastních polí (Custom Fields).
+</Warning>
+
+## 1. Standardně evidovaná data u dítěte
+
+Při založení profilu dítěte (`persons` s kategorií `foster_child`) systém nabízí tyto standardní strukturované karty:
+
+### A. Základní identifikační údaje
+* **Jméno a příjmení**
+* **Rodné číslo** (RČ – z důvodu legislativního vyúčtování vůči Úřadu práce)
+* **Datum narození a pohlaví**
+* **Státní občanství**
+* **FosterID** (Lidsky čitelný kód, např. `DOP-26-UL-0012-D1`, viz Kap. 35)
+
+### B. Vzdělávání
+* **Typ školy:** Dropdown (MŠ, ZŠ, SŠ, speciální škola, SOU...)
+* **Název a adresa školy**
+* **Třída a ročník**
+* **Třídní učitel:** Jméno, telefon, e-mail.
+* **Školní psycholog / speciální pedagog:** Jméno, kontakt.
+
+### C. Zdravotní péče a omezení
+* **Zdravotní pojišťovna:** Dropdown (české kódy pojišťoven, např. 111, 201, 205...)
+* **Registrující pediatr:** Jméno lékaře, adresa ordinace, kontakt (telefon, e-mail).
+* **Odborní lékaři:** Seznam specialistů (neurolog, psychiatr, oční...), kam dítě pravidelně dochází.
+* **Alergie, diety a omezení:** Textové pole s rychlými tagy.
+* **Pravidelně užívané léky:** Dávkování a název léků.
+* **Zdravotní status:** Dropdown (zdravé, zdravotní znevýhodnění, ZTP, ZTP/P).
+
+### D. Právní status a OSPOD
+* **Forma péče:** Dropdown (Dlouhodobá pěstounská péče - DPP, Přechodná pěstounská péče - PPPD, Poručnictví s osobní péčí, Svěření do péče jiné osoby).
+* **Soudní rozhodnutí:** Odkaz na aktivní případ (`court_cases` z Kap. 11).
+* **Přidělený pracovník OSPOD:** Vazba na `person_ospod_links` (Jméno kurátora, e-mail, telefon, spádový úřad).
+
+---
+
+## 2. Technický návrh vlastních polí (Custom Fields)
+
+Aby mohl uživatel přidat libovolné pole (např. *"Velikost bot"*, *"Oblíbený sport"*, *"Specifický zvyk dítěte při usínání"*), implementujeme systém vlastních polí inspirovaný **Google Kontakty**.
+
+### Databázová struktura (SQL Úprava)
+Do tabulky `persons` přidáme sloupec `custom_fields` typu `JSONB`. Spusťte v Supabase SQL Editoru.
+
+```sql
+-- Přidání sloupce pro dynamická vlastní pole
+ALTER TABLE persons ADD COLUMN custom_fields JSONB DEFAULT '[]'::jsonb;
+
+-- Příklad struktury JSONB uložené v databázi:
+-- [
+--   {"id": "c1a2b3-u4", "label": "Velikost bot", "value": "38", "type": "text"},
+--   {"id": "d5e6f7-v8", "label": "Alergie na potraviny", "value": "Arašídy, jahody", "type": "text"},
+--   {"id": "h9i0j1-w2", "label": "Pravidelný kroužek", "value": "Fotbal (Út/Čt)", "type": "text"}
+-- ]
+```
+
+### Typy vlastních polí (Custom Field Types)
+Uživatel si při zakládání vlastního pole může vybrat z těchto typů:
+1. `text` – běžná jednořádková textová hodnota.
+2. `number` – číselná hodnota (např. výška dítěte v cm).
+3. `date` – specifické datum (např. datum posledního očkování).
+4. `boolean` – přepínač Ano/Ne (např. *"Má povolení jezdit na tábory?"*).
+
+---
+
+## 3. Uživatelské rozhraní (UI/UX pro Vlastní pole)
+
+Pro zachování prémiového vzhledu a vysoké použitelnosti (UX) zavedeme následující designové chování na desktopu i mobilu:
+
+### A. Zobrazení na detailu dítěte (Read Mode)
+* Vlastní pole se zobrazují na samostatné kartě `Ostatní údaje` nebo jsou plynule vykreslena pod standardními kartami jako dvousloupcový grid (Štítek: Hodnota).
+* Pokud pole nemá vyplněnou hodnotu, v režimu čtení se vůbec **nezobrazuje** (aby se šetřilo negativním prostorem).
+
+### B. Editace a přidávání (Edit Mode – In-place)
+* Po kliknutí na `Upravit profil` se pod seznamem polí zobrazí tlačítko **`+ Přidat vlastní pole`** (stejně jako v Google Contacts).
+* **Kliknutím na tlačítko se přímo v řádku vykreslí:**
+  1. Input pro *Název pole* (s našeptávačem dříve použitých názvů v organizaci, např. *Velikost oblečení*).
+  2. Input pro *Hodnotu*.
+  3. Výběr typu (ikona ozubeného kola nebo malý dropdown: Text, Číslo, Datum, Ano/Ne).
+  4. Ikona *Popelnice* (pro smazání pole).
+* **Uložení:** Změny se ukládají inline na pozadí. Frontend zvaliduje typy (např. u typu `date` nepovolí zadat text) a odešle aktualizovaný JSONB objekt na backend.
+
+### C. Organizací definovaná šablona (Global Fields)
+Aby se zabránilo tomu, že každá KO pojmenuje stejné pole jinak (např. jedna KO napíše *"Pojišťovna"*, druhá *"Zdravotní pojišťovna"*):
+* V nastavení organizace (sekce `Šablony polí`) může administrátor definovat seznam **povinných nebo doporučených vlastních polí**.
+* Tato pole se pak automaticky zobrazí jako předpřipravené (ale prázdné) kolonky u každého nově zakládaného dítěte v organizaci, což sjednotí zadávání dat napříč celou firmou.

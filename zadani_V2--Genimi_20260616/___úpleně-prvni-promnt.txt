@@ -1,0 +1,3 @@
+___úpleně-prvni-promnt
+
+Ahoj, přečti si soubor .cursorrules a nastuduj si složku /docs. Dnes začínáme programovat Fázi 1. Tvým prvním úkolem je nainstalovat čistý Next.js projekt (použij shadcn/ui a Tailwind) a vygenerovat první SQL migrační skript, který v Supabase vytvoří základní tabulky z Kapitoly 2 a RBAC z Kapitoly 25. Nic víc zatím nedělej, jen inicializuj projekt a připrav databázi.

@@ -1,0 +1,100 @@
+---
+title: "Kapitola 42: SaaS předplatné a dotační limity"
+description: "Definice úrovní přístupů (SaaS Tiers), omezení počtu rodin/uživatelů a business pravidla pro 7denní zkušební verzi."
+icon: "credit-card"
+---
+
+<Warning>
+**Instrukce pro AI programátora:** Omezení předplatného (Limits enforcement) musí být ošetřeno jak na frontendu (skrytí tlačítek, zobrazení výzev k upgradu), tak na backend API. Pokud se organizace s limitem 20 rodin pokusí přes API (`POST /api/households`) vytvořit 21. rodinu, backend musí požadavek zamítnout s chybou HTTP 402 (Payment Required) a zprávou o překročení limitu.
+</Warning>
+
+## 1. Databázový model (SQL)
+
+Tento model zavádí tabulky pro sledování předplatného, aktivních balíčků a limitů jednotlivých organizací. Spusťte v Supabase SQL Editoru.
+
+```sql
+-- 1. Úrovně tarifů (Tiers)
+CREATE TYPE subscription_tier AS ENUM (
+    'free_trial',    -- 7denní testovací verze (plná funkčnost, omezený rozsah)
+    'tier_1_basic',  -- Malá doprovázející organizace
+    'tier_2_pro',    -- Střední doprovázející organizace
+    'tier_3_ultra',  -- Velká doprovázející organizace
+    'tier_custom'    -- "Zavolejte nám" - individuálně nastavené parametry a hosting
+);
+
+-- 2. Evidence předplatného organizací
+CREATE TABLE organization_subscriptions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID REFERENCES organizations(id) ON DELETE CASCADE UNIQUE NOT NULL,
+    tier subscription_tier NOT NULL DEFAULT 'free_trial',
+    
+    -- Dotační a kapacitní limity (Zkopírují se při aktivaci tarifu, u tier_custom se nastaví ručně)
+    max_households INT NOT NULL DEFAULT 3,
+    max_ko_users INT NOT NULL DEFAULT 1,
+    
+    -- Feature Flags (Povolení modulů)
+    feature_branding_allowed BOOLEAN DEFAULT FALSE, -- Možnost změnit logo a barvy (Kap. 41)
+    feature_ai_allowed BOOLEAN DEFAULT FALSE,       -- Speech-to-text zápisy, Document OCR (Kap. 5)
+    feature_ai_rag_allowed BOOLEAN DEFAULT FALSE,   -- Knowledge Base chat, Crawler (Kap. 5, 37)
+    feature_bank_matching_allowed BOOLEAN DEFAULT FALSE, -- AI párování bankovních výpisů (Kap. 31)
+    
+    -- Platnost
+    trial_ends_at TIMESTAMP WITH TIME ZONE, -- Vyplněno u free_trial
+    subscription_ends_at TIMESTAMP WITH TIME ZONE, -- Konec placeného období
+    is_active BOOLEAN DEFAULT TRUE,
+    
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 3. Auditní trigger
+CREATE TRIGGER audit_organization_subscriptions AFTER INSERT OR UPDATE OR DELETE ON organization_subscriptions FOR EACH ROW EXECUTE FUNCTION process_audit_log();
+```
+
+---
+
+## 2. Definice úrovní tarifů (Subscription Tiers)
+
+| Parametr / Funkce | 1. Free Trial | 2. Tier 1 (Basic) | 3. Tier 2 (Pro) | 4. Tier 3 (Ultra) | 5. Tier Custom ("Zavolejte") |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Název v UI** | Zkušební verze | Malá organizace | Střední organizace | Velká organizace | Individuální konfigurace |
+| **Doba platnosti** | 7 dní | Měsíční/Roční | Měsíční/Roční | Měsíční/Roční | Dle smlouvy |
+| **Max. rodin (Households)** | 3 rodiny | Max. 20 rodin | Max. 100 rodin | Neomezeně | Nastavitelné (např. 250) |
+| **Max. pracovníků (KOs)** | 1 KO | Max. 2 KO | Max. 10 KO | Neomezeně | Nastavitelné (např. 30) |
+| **Vlastní Branding (Kap. 41)** | ❌ Ne (default vzhled)| ❌ Ne (default vzhled)|  Ano (pouze Logo) |  Ano (Logo + Barvy) |  Ano (Full Whitelabeling) |
+| **AI Záznamník & OCR (Kap. 5)**|  Ano | ❌ Ne |  Ano (střední limity) |  Ano (vysoké limity) |  Ano (Dle dohody) |
+| **AI RAG & Crawler (Kap. 37)** |  Ano | ❌ Ne | ❌ Ne |  Ano |  Ano |
+| **Banka & Schvalování (Kap. 31)**| ❌ Ne | ❌ Ne | ❌ Ne |  Ano |  Ano |
+| **Podpora** | Fórum / E-mail | Standardní e-mail | E-mail + Telefon (9-17)| SLA podpora (24/7) | Dedikovaný account manager |
+
+---
+
+## 3. Byznys pravidla a chování systému
+
+### Životní cyklus 7denní zkušební verze (Free Trial)
+1. **Registrace:** Při založení nové organizace v systému se automaticky vytvoří záznam v `organization_subscriptions` s hodnotami: `tier = 'free_trial'`, `trial_ends_at = NOW() + INTERVAL '7 days'`.
+2. **Konec lhůty (Zámek):** Jakmile aktuální čas překročí `trial_ends_at`:
+   * Systém **uzamkne všechny zapisovací operace** (`INSERT`, `UPDATE`). Při pokusu o zápis vrátí API chybu.
+   * Uživatelé se mohou přihlásit a číst historická data (Read-only režim), aby nepřišli o to, co si během 7 dnů zapsali.
+   * Na hlavní obrazovce (a v hlavičce) se zobrazí nepřehlédnutelný červený banner: *"Zkušební verze vypršela. Pro pokračování a odemčení zápisu prosím aktivujte předplatné."*
+
+### Vynucování limitů (Constraint Enforcement)
+* **Při zakládání rodiny (`households`):**
+  ```sql
+  -- Kontrola před vložením rodiny
+  SELECT COUNT(*) FROM households WHERE organization_id = current_org_id AND status = 'active';
+  -- Pokud je COUNT >= max_households, transakce se přeruší
+  ```
+* **Při zakládání zaměstnance (`profiles`):**
+  ```sql
+  -- Kontrola před vložením uživatele s rolí 'ko'
+  SELECT COUNT(*) FROM profiles WHERE organization_id = current_org_id AND role = 'ko';
+  -- Pokud je COUNT >= max_ko_users, transakce se přeruší
+  ```
+
+### Tier Custom ("Zavolejte nám") – Možnosti individuálního nastavení
+Tento plán je určen pro specifické doprovázející organizace, které vyžadují:
+* **Hostování v ČR:** Běh na vlastním vyhrazeném serveru (např. Webglobe VPS) z důvodu přísné interní politiky GDPR.
+* **Integrace na Datové schránky (ISDS):** Přímé odesílání soudních zpráv.
+* **Vlastní šablony a napojení:** Integrace s místním docházkovým nebo ekonomickým systémem organizace.
+* U tohoto plánu se parametry v `organization_subscriptions` nastavují manuálně přes superadministrátorské rozhraní naší organizace.

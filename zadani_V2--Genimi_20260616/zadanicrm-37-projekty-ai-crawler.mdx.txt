@@ -1,0 +1,110 @@
+
+---
+title: "Kapitola 37: Projektové řízení a Inteligentní AI Crawler"
+description: "Hierarchické úkoly, kalendářní pohledy a automatická synchronizace znalostní báze z externích webů."
+icon: "spider"
+---
+
+<Warning>
+**Instrukce pro AI programátora:** Modul úkolů musí podporovat nekonečné zanořování (stromovou strukturu Parent-Child). Modul pro AI (Knowledge Base) nesmí být statický. Musí obsahovat asynchronní web scraper (Crawler), který hlídá změny na definovaných URL adresách. RAG (Retrieval-Augmented Generation) vyhledávání musí striktně filtrovat vektorovou databázi podle aktuálního kontextu (Globální zákony vs. Data konkrétní rodiny) pomocí RLS politik.
+</Warning>
+
+## 1. Databázový model (SQL)
+
+Spusťte v Supabase SQL Editoru.
+
+```sql
+-- 1. Rozšířený Task Manager (Nahrazuje původní jednoduché Tasks)
+CREATE TABLE projects (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID REFERENCES organizations(id) NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    state_term_id UUID REFERENCES taxonomy_terms(id), -- Vazba na dynamický číselník
+    start_date DATE,
+    end_date DATE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Úprava tabulky tasks pro podporu podúkolů a vazeb
+ALTER TABLE tasks ADD COLUMN parent_task_id UUID REFERENCES tasks(id) ON DELETE CASCADE;
+ALTER TABLE tasks ADD COLUMN project_id UUID REFERENCES projects(id) ON DELETE CASCADE;
+ALTER TABLE tasks ADD COLUMN household_id UUID REFERENCES households(id);
+ALTER TABLE tasks ADD COLUMN person_id UUID REFERENCES persons(id);
+ALTER TABLE tasks ADD COLUMN state_term_id UUID REFERENCES taxonomy_terms(id); -- Nahrazuje tvrdý ENUM
+
+-- 2. Dynamické zdroje pro AI (Knowledge Base Manager)
+CREATE TYPE ai_source_scope AS ENUM ('global', 'household_specific');
+
+CREATE TABLE knowledge_base_sources (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID REFERENCES organizations(id) NOT NULL,
+    
+    source_name TEXT NOT NULL,
+    source_url TEXT, -- Např. [https://www.mpsv.cz/web/cz/pestounska-pece](https://www.mpsv.cz/web/cz/pestounska-pece)
+    document_id UUID REFERENCES documents(id), -- Pokud je zdrojem nahrané PDF
+    
+    scope ai_source_scope DEFAULT 'global',
+    household_id UUID REFERENCES households(id), -- Vyplněno pouze pokud je scope 'household_specific'
+    
+    is_active BOOLEAN DEFAULT TRUE,
+    sync_interval_hours INT DEFAULT 24, -- Jak často crawler web prochází
+    last_synced_at TIMESTAMP WITH TIME ZONE,
+    last_content_hash TEXT, -- Hash obsahu pro detekci změn
+    
+    created_by UUID REFERENCES profiles(id)
+);
+
+-- 3. Log změn ve zdrojích (Upozornění pro Admina)
+CREATE TABLE knowledge_base_sync_logs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    source_id UUID REFERENCES knowledge_base_sources(id) ON DELETE CASCADE,
+    sync_status TEXT NOT NULL, -- 'unchanged', 'updated', 'source_missing', 'error'
+    detected_changes_summary TEXT, -- Krátký souhrn (např. "Přidán nový odstavec do sekce Dotace")
+    requires_admin_approval BOOLEAN DEFAULT FALSE, -- Pokud se obsah radikálně změnil, čeká na schválení metodikem
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 4. Úprava vektorové tabulky (pro RAG s RBAC izolací)
+ALTER TABLE knowledge_base_articles ADD COLUMN source_id UUID REFERENCES knowledge_base_sources(id) ON DELETE CASCADE;
+ALTER TABLE knowledge_base_articles ADD COLUMN household_id UUID REFERENCES households(id);
+
+```
+
+## 2. Architektura a Byznys logika
+
+### Tříúrovňový Kalendář a Task Manager
+
+Zanoření funguje následovně: `Projekt (Zajištění letních táborů)` -> `Úkol (Vybrat tábor pro Jana)` -> `Podúkol (Podepsat přihlášku)`.
+
+* Úkoly obsahují explicitní ID (`household_id`, `person_id`), což umožňuje v UI zobrazit kalendář rodiny a vidět všechny termíny soudů, uzávěrky IPOD a běžné úkoly na jedné časové ose.
+* Backend automaticky agreguje stavy – pokud jsou všechny podúkoly hotové, systém se může (přes Workflow Lite) zeptat, zda má uzavřít celý rodičovský úkol.
+
+### AI Crawler a Management zdrojů
+
+Metodik přidá URL adresu MPSV do `knowledge_base_sources` jako Globální zdroj.
+
+1. **Asynchronní Scraper:** Supabase Edge Function (nebo externí worker jako *Browserless.io*) stáhne obsah HTML.
+2. **Detekce změn:** Systém odstraní balast (menu, patičky) a vypočítá SHA-256 hash čistého textu. Pokud se hash shoduje s `last_content_hash`, scraper se ukončí.
+3. **Zpracování změny:** Pokud je text jiný (MPSV vydalo novou metodiku), systém změnu stáhne, ale nepropíše ji rovnou AI. Nastaví v `knowledge_base_sync_logs` flag `requires_admin_approval = TRUE`.
+4. Metodikovi vyskočí notifikace: *"Zdroj MPSV se změnil, zkontrolujte změny"*. Metodik klikne na schválit a až poté systém rozseká nový text, převede ho na vektory (Embeddings) a uloží.
+
+### Striktní izolace kontextu AI (Context Routing)
+
+Když se Klíčová osoba v chatu zeptá AI: *"Jak se vyvíjí vztah s bio rodinou u Nováků?"*
+
+* Backend do vektorového vyhledávání pošle filtr: `WHERE scope = 'global' OR household_id = [ID_Novákovi]`.
+* AI vyhledá odpověď v metodikách (globální) a ve spisu Novákových. Nemůže nijak nasát data z dokumentů rodiny Dvořákových, i kdyby byla sebelépe zaindexovaná, protože jí to databázový filtr (RLS) zakáže.
+
+## 3. Uživatelské rozhraní (UI/UX)
+
+* **Task & Calendar Views:** Kancelářský pracovník má v záhlaví přepínač pohledů (View Toggle). Stejná data z tabulky `tasks` může zobrazit jako:
+1. **List (Seznam):** Řádky s možností filtrovat a řadit.
+2. **Kanban:** Sloupce tažené z dynamického číselníku `task_states` (např. *K řešení, Probíhá, Čekám na OSPOD*). Kartičky lze přesouvat myší (Drag & Drop).
+3. **Kalendář:** Klasický měsíční/týdenní pohled pro deadliny.
+
+
+* **Knowledge Base Dashboard:** Obrazovka pro Metodika. Vidí seznam všech sledovaných zdrojů. U URL odkazů je "Semafor" – zelená (Synchronizováno), žlutá (Čeká na schválení změny), červená (Chyba 404 - stránka byla zrušena).
+
+```
+

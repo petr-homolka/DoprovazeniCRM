@@ -1,0 +1,110 @@
+
+---
+title: "Kapitola 35: Globální identifikátory a správa dokumentů"
+description: "Lidsky čitelná GDPR-safe ID (FosterID), čísla jednací a pokročilé verzování souborů."
+icon: "barcode"
+---
+
+<Warning>
+**Instrukce pro AI programátora:** Systém i nadále používá `UUID v4` jako primární klíče pro vazby v databázi. Lidsky čitelné identifikátory (např. `FF-26-UL-0012`) slouží **výhradně** pro uživatelské rozhraní, vyhledávání a generování čárových kódů. Pro generování sekvenčních čísel (čísla jednací, pořadí rodin) nespoléhejte na výpočet typu `MAX(id) + 1` na frontendu (hrozí kolize při souběžném zápisu), použijte bezpečné PostgreSQL sekvence nebo zamykání řádků.
+</Warning>
+
+## 1. Databázový model (SQL)
+
+Tento model doplňuje chybějící prvky do existujících tabulek (rodiny, osoby, dokumenty) a zavádí bezpečný generátor číselných řad. Spusťte v Supabase SQL Editoru.
+
+```sql
+-- 1. Generátor číselných řad (Sequence Tracker)
+-- Zajišťuje bezpečné číslování bez duplicit, oddělené pro každý rok a typ entity
+CREATE TABLE organization_sequences (
+    organization_id UUID REFERENCES organizations(id) NOT NULL,
+    sequence_type TEXT NOT NULL, -- např. 'household_id', 'outgoing_ref_number'
+    year INT NOT NULL, -- Rok, pro který sekvence platí (od ledna se nuluje)
+    current_value INT DEFAULT 0,
+    PRIMARY KEY (organization_id, sequence_type, year)
+);
+
+-- 2. Přidání FosterID k hlavním entitám
+-- Formát: PREFIX-ROK-KRAJ-SEKVENCE (např. DOP-26-UL-0158)
+ALTER TABLE households ADD COLUMN human_readable_id TEXT UNIQUE;
+ALTER TABLE persons ADD COLUMN human_readable_id TEXT UNIQUE;
+
+-- 3. Evidence odchozí pošty (Čísla jednací)
+CREATE TABLE outgoing_communications (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID REFERENCES organizations(id) NOT NULL,
+    reference_number TEXT NOT NULL UNIQUE, -- Číslo jednací organizace (např. DOP-2026/045)
+    
+    recipient_name TEXT NOT NULL, -- Komu se posílá (Soud Teplice, OSPOD...)
+    recipient_type TEXT NOT NULL, -- 'urad', 'soud', 'klient', 'jine'
+    
+    subject TEXT NOT NULL,
+    dispatched_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    dispatched_by UUID REFERENCES profiles(id) NOT NULL,
+    
+    related_household_id UUID REFERENCES households(id), -- Nullable (může to být obecná pošta)
+    document_id UUID REFERENCES documents(id) -- Odkaz na konkrétní odeslané PDF
+);
+
+-- 4. Rozšíření dokumentů o verzování
+ALTER TABLE documents ADD COLUMN version_number INT DEFAULT 1;
+ALTER TABLE documents ADD COLUMN supersedes_document_id UUID REFERENCES documents(id); -- Odkaz na starou verzi
+ALTER TABLE documents ADD COLUMN entry_channel TEXT DEFAULT 'manual_upload'; -- Kudy soubor přišel ('mobile_camera', 'desktop_drag_drop', 'email_hook')
+
+-- 5. Stored Procedure pro bezpečné přidělení čísla (Předchází Race Conditions)
+CREATE OR REPLACE FUNCTION get_next_sequence_value(org_id UUID, seq_type TEXT, seq_year INT)
+RETURNS INT AS $$
+DECLARE
+    next_val INT;
+BEGIN
+    INSERT INTO organization_sequences (organization_id, sequence_type, year, current_value)
+    VALUES (org_id, seq_type, seq_year, 1)
+    ON CONFLICT (organization_id, sequence_type, year)
+    DO UPDATE SET current_value = organization_sequences.current_value + 1
+    RETURNING current_value INTO next_val;
+    
+    RETURN next_val;
+END;
+$$ LANGUAGE plpgsql;
+
+```
+
+## 2. Architektura a Byznys logika
+
+### Koncept "FosterID" (GDPR-Safe)
+
+Když pěstounka zavolá do kanceláře, už nemusí diktovat své rodné číslo ani vyslovovat příjmení biologického dítěte do telefonu.
+
+* Systém při založení rodiny vytvoří kód. Příklad struktury: `DOP-26-UL-0012`
+* `DOP`: Zkratka organizace (Doprovázení).
+* `26`: Rok vstupu (2026).
+* `UL`: Identifikátor kraje (Ústecký kraj).
+* `0012`: Pořadové číslo přidělené databází.
+
+
+* Na složkách a obálkách je toto ID navíc vygenerováno jako **QR kód / Barcode 128**. Když pracovník vezme do ruky fyzický šanon, naskenuje ho mobilem a FosterFlow Worker (PWA) okamžitě otevře kartu příslušné rodiny.
+
+### Unifikovaný Upload a Verzování dokumentů
+
+Abychom eliminovali zmatek, kdy jedna rodina má nahráno "Rozsudek_final.pdf", "Rozsudek_oprava.pdf" a "Rozsudek_fakt_uz_posledni.pdf", systém využívá verzování.
+
+1. Frontend používá jedno centrální API (`/api/documents/upload`), nezávisle na tom, zda KO fotí v terénu mobilem, nebo ředitel přetahuje PDF do prohlížeče.
+2. Pokud uživatel nahrává opravený dokument, nekliká na "Nahrát nový", ale na existujícím dokumentu zvolí **"Nahrát novou verzi"**.
+3. Backend soubor uloží do Storage, přidělí mu nové ID, ale nastaví mu `supersedes_document_id = [stare_ID]` a `version_number = 2`.
+4. Původní verze se z pohledu (UI) skryje pod tlačítko "Historie verzí", takže na časové ose i v seznamu svítí vždy jen ta aktuálně platná, ale historická stopa zůstává zachována pro auditory.
+
+## 3. Uživatelské rozhraní (UI/UX)
+
+* **FosterID Štítkovač (Label Printer):**
+* V desktopové aplikaci v detailu rodiny je ikona tiskárny.
+* Po kliknutí systém vygeneruje tiskové PDF formátu standardních nalepovacích štítků (např. Avery Zweckform). Obsahuje pouze velké číslo `DOP-26-UL-0012` a odpovídající čárový kód (žádná jména).
+
+
+* **Evidence Čísel jednacích:**
+* Modul v hlavní navigaci (Spisová služba).
+* Obsahuje tabulku odchozí komunikace. Když chce metodik odeslat Zprávu o průběhu pěstounské péče na OSPOD, klikne na "Nové číslo jednací". Systém okamžitě zavolá databázovou funkci `get_next_sequence_value`, vygeneruje číslo (např. `DOP-2026/045`) a uzamkne ho. Toto číslo se pak automaticky propíše do vygenerovaného PDF dokumentu (Kapitola 17) do pole "Naše č.j.".
+
+
+
+```
+

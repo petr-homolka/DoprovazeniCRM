@@ -1,0 +1,72 @@
+---
+title: "Kapitola 43: Statistická nadstavba a globální benchmarking"
+description: "Pravidla pro agregaci dat, srovnávací grafy (benchmarks) a hierarchické statistické pohledy pro vedení a provozovatele."
+icon: "chart-line"
+---
+
+<Warning>
+**Instrukce pro AI programátora:** Statistická nadstavba pracuje s agregovanými daty. Abychom neporušili GDPR a Need-to-Know princip, **žádný uživatel nesmí vidět detailní osobní údaje (jména, rodná čísla, textové zápisy) z jiných tenantů (organizací)**. Provozovatel systému vidí globální statistiky celého systému, ale pouze v plně agregované, anonymizované formě, pokud mu konkrétní organizace neudělí přístup pro audit.
+</Warning>
+
+## 1. Hierarchie přístupu ke statistikám
+
+Statistický modul respektuje víceúrovňovou viditelnost dat definovanou v Kapitole 40:
+
+```mermaid
+graph TD
+    Op[1. Provozovatel - My] -->|Agregovaná anonymní data celé ČR| OpStats[Celorepublikové trendy & Benchmarking]
+    Dir[2. Ředitel DO] -->|Kompletní data své DO| BranchStats[Srovnání poboček & Srovnání s průměrem ČR]
+    BM[3. Vedoucí pobočky] -->|Data své pobočky| KOStats[Srovnání KOs & Přehled rodin pobočky]
+    KO[4. Klíčová osoba] -->|Své rodiny| PersonalStats[Osobní výkonnostní dashboard]
+```
+
+### Úroveň 1: Provozovatel systému (Globální pohled)
+* **Co vidí:** Celorepublikové statistiky agregované za všechny doprovázející organizace v systému.
+* **Metriky:** Celkový počet doprovázených rodin v ČR, průměrné náklady na jedno dítě, celorepublikový vývoj krizových stavů, průměrná naplněnost kapacit.
+* **Účel:** Identifikace systémových trendů (např. celorepublikový nárůst krizí typu sebepoškozování u dospívajících) a marketingová/obchodní analýza pro rozšiřování systému.
+
+### Úroveň 2: Ředitel doprovázející organizace (DO)
+* **Co vidí:** Statistiky za celou svou organizaci s možností rozpadu na pobočky a porovnání s celorepublikovým (anonymním) průměrem.
+* **Metriky:** Výkon pobočky A vs. pobočky B, průměrné čerpání rozpočtů SPVPP, procentuální plnění vzdělávání pěstounů v rámci DO.
+* **Benchmarking:** Srovnání vlastní organizace s průměrem všech ostatních (např. *"Vaše průměrná doba vyřešení krizového incidentu je 18 hodin, celorepublikový průměr v systému je 28 hodin"*).
+
+### Úroveň 3: Vedoucí pobočky
+* **Co vidí:** Agregovaná data rodin a KOs spadajících pod jeho pobočku.
+* **Metriky:** Vytížení sociálních pracovníků na pobočce, průměrný počet návštěv na rodinu v daném regionu, stav neuzavřených úkolů.
+
+### Úroveň 4: Klíčová osoba
+* **Co vidí:** Osobní dashboard týkající se výhradně její vlastní práce (read-only statistika).
+* **Metriky:** Počet aktivních rodin, plnění vlastních úkolů, stav splněných hodin vzdělávání u pěstounů, které doprovází.
+
+---
+
+## 2. Definice klíčových metrik (KPIs)
+
+Systém automaticky počítá a vizualizuje následující čtyři oblasti metrik:
+
+### A. Klientské a demografické metriky (Client Portfolio)
+1. **Doba setrvání v doprovázení:** Průměrný počet měsíců od podpisu dohody po její ukončení.
+2. **Struktura pěstounů:** Poměr příbuzenské (prarodiče, tety) vs. nepříbuzenské pěstounské péče.
+3. **Věková pyramida dětí:** Rozdělení dětí do věkových kohort (0-3 roky, 4-6 let, 7-12 let, 13-15 let, 16-18 let, zletilí).
+
+### B. Výkonnostní a provozní metriky (Operations)
+1. **Zátěžový index KO (Workload Index):** Výpočet reálné zátěže KO (přiřazené rodiny vážené krizemi a soudními spory).
+2. **Úspěšnost kontaktů s bio-rodinou:** Procento realizovaných kontaktů z celkového počtu naplánovaných styků. Sledování nejčastějších důvodů zrušení (chyba na straně bio-rodiče vs. pěstouna).
+3. **Rychlost řešení krizí:** Průměrný čas od nahlášení krizového incidentu (`crisis_cases.reported_at`) do jeho stabilizace a uzavření.
+
+### C. Dotační a ekonomické metriky (Finance)
+1. **Index čerpání SPVPP:** Procento vyčerpané roční dotace v poměru k alokované částce.
+2. **Kategoriální split výdajů:** Distribuce nákladů (procentuální podíl výdajů na respit, vzdělávání pěstounů, terapie, a provozní režii organizace).
+3. **Efektivita nákupů:** Průměrná cena za hodinu odlehčovací služby/terapie napříč různými poskytovateli (identifikace předražených služeb).
+
+### D. Compliance a plnění zákonných standardů (Audits)
+1. **Standard 6 (Vzdělávání pěstounů):** Procento pěstounů, kteří mají v aktuálním roce splněno plných 24 hodin vzdělávání.
+2. **Standard 7 (Supervize):** Počet hodin supervize absolvovaných jednotlivými KO za rok.
+3. **Plnění IPOD:** Procento včasně revidovaných Individuálních plánů ochrany dítěte.
+
+---
+
+## 3. Technické řešení a anonymizace
+
+* **Materializované pohledy pro agregaci:** Statistiky se počítají asynchronně přes noční databázové joby do agregovaných tabulek (`organization_statistics_daily`, `global_statistics_daily`). Tím se zabrání přetěžování databáze při renderování grafů během dne.
+* **Anonymizační transformace (Globální srovnání):** Při výpočtu celorepublikového průměru systém provádí dotaz nad všemi organizacemi, ale do výsledného JSONu pro benchmarking zařadí pouze zprůměrované hodnoty. ID ostatních organizací jsou skryta (maskována jako *"Organizace 1"*, *"Organizace 2"* atd.), aby nebylo možné špehovat konkurenci.

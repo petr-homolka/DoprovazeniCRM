@@ -1,0 +1,126 @@
+
+---
+title: "Kapitola 30: Poskytovatelé a strukturované doklady"
+description: "Evidence platebních partnerů, strukturovaná správa faktur/účtenek a pravidla pro refundace."
+icon: "money-check-dollar"
+---
+
+<Warning>
+**Instrukce pro AI programátora:** Finanční doklady (faktury, účtenky) nesmí být v systému uloženy pouze jako pasivní PDF přílohy navěšené na transakci. Každý doklad musí existovat jako samostatná datová entita se strukturou položek (Line Items), vlastním stavovým cyklem a vazbou na ověřeného poskytovatele služeb. Finanční operace podléhají striktní kontrole oprávnění.
+</Warning>
+
+## 1. Databázový model (SQL)
+
+Tento model rozšiřuje finanční vrstvu o evidenci poskytovatelů služeb (tábory, terapeuti, asistenti) a rozpad dokladů na položky, což je nezbytné pro účetní audity. Spusťte v Supabase SQL Editoru.
+
+```sql
+-- 1. Stavový cyklus finančního dokladu
+CREATE TYPE financial_document_status AS ENUM (
+    'draft',              -- Rozpracovaný doklad (např. KO v terénu vyfotila účtenku)
+    'pending_approval',   -- Čeká na schválení schvalovacím řetězcem
+    'approved',           -- Schváleno věcně i finančně, předáno k proplacení
+    'paid',               -- Proplaceno organizací (připojeno potvrzení z banky)
+    'partially_accepted', -- Uznána a proplacena pouze část dokladu
+    'rejected'            -- Zamítnuto
+);
+
+-- 2. Evidence poskytovatelů služeb (Platební partneři)
+CREATE TABLE providers (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID REFERENCES organizations(id) NOT NULL,
+    company_name TEXT NOT NULL,
+    ico TEXT NOT NULL,
+    dic TEXT,
+    bank_account TEXT NOT NULL, -- Formát IBAN / standardní český účet
+    contract_date DATE, -- Datum uzavření rámcové smlouvy s naší DO
+    is_registered_with_region BOOLEAN DEFAULT FALSE, -- Registrace na krajském úřadě (vyžadováno u specifických služeb)
+    contact_email TEXT,
+    contact_phone TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(organization_id, ico)
+);
+
+-- 3. Hlavní tabulka finančních dokladů
+CREATE TABLE financial_documents (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID REFERENCES organizations(id) NOT NULL,
+    provider_id UUID REFERENCES providers(id), -- NULL pokud jde o výjimku (refundace pěstounovi)
+    household_id UUID REFERENCES households(id) NOT NULL,
+    
+    document_number TEXT, -- Číslo faktury / dokladu dodavatele
+    variable_symbol TEXT,
+    status financial_document_status DEFAULT 'draft',
+    
+    issue_date DATE NOT NULL,
+    due_date DATE,
+    paid_at TIMESTAMP WITH TIME ZONE,
+    
+    total_amount_czk NUMERIC(12, 2) NOT NULL CHECK (total_amount_czk > 0),
+    approved_amount_czk NUMERIC(12, 2), -- Vyplní ekonomka při schválení
+    
+    -- Explicitní ošetření výjimky (Refundace pěstounovi)
+    is_foster_reimbursement BOOLEAN DEFAULT FALSE,
+    reimbursement_reason TEXT, -- Povinné odůvodnění, proč se neplatí přímo dodavateli
+    foster_parent_id UUID REFERENCES profiles(id), -- Kterému pěstounovi se peníze vrací
+    
+    document_file_id UUID REFERENCES documents(id) NOT NULL, -- Vazba na fyzické PDF/sken na Drive
+    created_by UUID REFERENCES profiles(id) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 4. Položky dokladu (Line Items) - Důležité pro částečné uznání nákladů
+CREATE TABLE financial_document_items (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    financial_document_id UUID REFERENCES financial_documents(id) ON DELETE CASCADE NOT NULL,
+    description TEXT NOT NULL, -- Název položky (např. "Celodenní respitní pobyt - Jan Novák")
+    person_id UUID REFERENCES persons(id) NOT NULL, -- Ke kterému dítěti se položka váže (ZSPOD compliance)
+    category service_type NOT NULL, -- respit, vzdelavani, poradenstvi, jine
+    quantity NUMERIC(10, 2) NOT NULL DEFAULT 1,
+    unit TEXT DEFAULT 'ks',
+    price_per_unit_czk NUMERIC(12, 2) NOT NULL,
+    total_item_amount_czk NUMERIC(12, 2) NOT NULL, -- Spočteno jako quantity * price_per_unit
+    is_approved BOOLEAN DEFAULT TRUE
+);
+
+-- 5. Propojení se stávající tabulkou service_transactions (Zpětná kompatibilita s časovou osou)
+ALTER TABLE service_transactions ADD COLUMN financial_document_id UUID REFERENCES financial_documents(id);
+
+-- 6. Audit triggery
+CREATE TRIGGER audit_providers AFTER INSERT OR UPDATE OR DELETE ON providers FOR EACH ROW EXECUTE FUNCTION process_audit_log();
+CREATE TRIGGER audit_financial_documents AFTER INSERT OR UPDATE OR DELETE ON financial_documents FOR EACH ROW EXECUTE FUNCTION process_audit_log();
+CREATE TRIGGER audit_financial_document_items AFTER INSERT OR UPDATE OR DELETE ON financial_document_items FOR EACH ROW EXECUTE FUNCTION process_audit_log();
+
+```
+
+## 2. Architektura a Byznys logika
+
+### Workflow zpracování dokladu (Data-First)
+
+1. **Zadání (Draft):** Klíčová osoba (KO) nebo pěstoun přes portál nahraje účtenku. Vzniká záznam ve `financial_documents` se statusem `draft`. Fyzický soubor se uloží a Document AI z něj vytěží základní metadata.
+2. **Položkový rozpad:** Systém vyžaduje přiřazení každé položky dokladu (`financial_document_items`) ke konkrétnímu dítěti a kategorii čerpání SPVPP. Bez určení vazby na dítě nelze doklad odeslat ke schválení.
+3. **Zápis do transakcí:** Po finálním schválení ekonomkou se stav změní na `approved` a systém automaticky vygeneruje odpovídající řádky do tabulky `service_transactions` (pro každé dítě a kategorii zvlášť), které jsou pevně provázané přes `financial_document_id`.
+
+### Pravidlo pro výjimku: Refundace pěstounovi (Foster Reimbursement)
+
+Standardní byznys proces striktně vyžaduje platbu na účet poskytovatele (`provider_id` NOT NULL). Pokud pěstoun musel službu uhradit hotově/předem, platí tato pravidla:
+
+* Příznak `is_foster_reimbursement` musí být nastaven na `TRUE`.
+* Pole `provider_id` může být v tomto případě `NULL`.
+* Pole `reimbursement_reason` a `foster_parent_id` jsou **technicky povinná**. Pokud uživatel neponechá textové vysvětlení (např. *"Provozovatel tábora neakceptuje fakturaci na organizace"*), backend API odmítne doklad uložit (HTTP 400).
+* V uživatelském rozhraní ekonomky je tento doklad označen výrazným oranžovým štítkem "REFUNDACE PĚSTOUNOVI" a vyžaduje explicitní schválení ředitele organizace bez ohledu na výši částky.
+
+## 3. Uživatelské rozhraní (UI/UX)
+
+* **FosterFlow Organization (Desktop - Kancelář ekonomky):**
+* Samostatný modul **"Fakturace a partneři"**. Hlavní zobrazení tvoří tabulka dokladů čekajících na zpracování (`pending_approval`).
+* *Detail dokladu (Split-pane):* V levé části obrazovky se zobrazuje interaktivní PDF náhled faktury. V pravé části jsou editovatelná datová pole.
+* Ekonomka má možnost u jednotlivých položek v `financial_document_items` odškrtnout check-box `is_approved`. Pokud například tábor stál 5 000 Kč, ale 1 000 Kč tvořilo neuznatelné penále za pozdní přihlášení, ekonomka položku penále zamítne. Systém automaticky přepočítá `approved_amount_czk` na 4 000 Kč a stav dokladu nastaví na `partially_accepted`.
+
+
+* **FosterFlow Worker (Mobilní PWA):**
+* V terénním rozhraní KO vidí jednoduchý formulář `Nahrát doklad k proplacení`. Po vyfocení účtenky telefonem systém na pozadí spustí asynchronní proces OCR a KO pouze potvrdí přiřazení k rodině a dítěti.
+
+
+

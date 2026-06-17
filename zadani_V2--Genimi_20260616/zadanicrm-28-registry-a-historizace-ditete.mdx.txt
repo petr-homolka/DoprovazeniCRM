@@ -1,0 +1,284 @@
+---
+title: "Kapitola 28: Shared Registry (Registry subjektů) a historizace dítěte"
+description: "Návrh databázové struktury pro centrální registry (školy, lékaři, soudci) a historizovanou evidenci dítěte v čase."
+icon: "address-book"
+---
+
+<Warning>
+**Instrukce pro AI programátora:** Dítě v pěstounské péči prochází systémem dlouhodobě (často od narození do zletilosti). Data jako škola, učitel, pediatr nebo i příjmení a občanství se v čase mění. Systém **nesmí** tyto údaje pouze přepisovat. Musí udržovat kompletní historii („od kdy – do kdy“) pro účely soudních zpráv a auditů a využívat sdílené registry subjektů k zamezení duplicity.
+</Warning>
+
+## 1. Centrální registry subjektů (Shared Registries)
+
+Abychom zabránili tomu, že každá Klíčová osoba (KO) zadá stejnou školu nebo stejného lékaře pod jiným názvem, systém disponuje **centrálními registry**. Tyto subjekty mají svou samostatnou kartu v administraci organizace a v profilech dětí se na ně pouze odkazuje:
+
+```mermaid
+erDiagram
+    PERSONS ||--o{ PERSON_EDUCATION_HISTORY : "má historii"
+    SCHOOLS ||--o{ PERSON_EDUCATION_HISTORY : "navštěvuje"
+    SCHOOLS ||--o{ SCHOOL_TEACHERS : "má učitele"
+    SCHOOL_TEACHERS ||--o{ PERSON_EDUCATION_HISTORY : "učí v období"
+    
+    PERSONS ||--o{ PERSON_MEDICAL_HISTORY : "má historii"
+    DOCTORS ||--o{ PERSON_MEDICAL_HISTORY : "léčí v období"
+```
+
+### Registr Škol a Učitelů
+* `schools` – Seznam školských zařízení v ČR (název, IČO, adresa, web).
+* `school_teachers` – Seznam učitelů navázaných na konkrétní školy (jméno, e-mail, telefon).
+
+### Registr Lékařů a Specialistů
+* `doctors` – Seznam pediatrů, psychiatrů, psychologů, neurologů a jiných specialistů (jméno, specializace, adresa, telefon, e-mail).
+
+### Registr OSPOD a Úředníků (Zavedeno v Kap. 2)
+* `ospod_offices` – Pobočky OSPOD (město, datová schránka).
+* `ospod_workers` – Konkrétní kurátoři/úředníci OSPOD (jméno, e-mail, telefon).
+
+### Registr Soudů a Soudců / Soudních úředníků (Rozšíření Kap. 11)
+* `court_judges` – Seznam soudců a soudních úředníků navázaných na soudy (jméno, e-mail, telefon).
+
+### Registr Pořadatelů Mimoškolních Aktivit
+* `extracurricular_providers` – Domy dětí a mládeže (DDM), sportovní kluby, pořadatelé letních táborů, umělecké školy (název, IČO, bankovní účet, adresa, kontakt).
+
+---
+
+## 2. Datový model historizace a dokumentů (SQL)
+
+Tento model rozšiřuje databázi o historizované tabulky pro profily dětí. Spusťte v Supabase SQL Editoru.
+
+```sql
+-- 1. CENTRÁLNÍ REGISTRY
+
+CREATE TABLE schools (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID REFERENCES organizations(id) NOT NULL,
+    name TEXT NOT NULL,
+    address_street TEXT,
+    address_city TEXT NOT NULL,
+    address_zip TEXT,
+    website TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE school_teachers (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    school_id UUID REFERENCES schools(id) ON DELETE CASCADE NOT NULL,
+    name TEXT NOT NULL,
+    email TEXT,
+    phone TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE doctors (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID REFERENCES organizations(id) NOT NULL,
+    name TEXT NOT NULL,
+    specialization TEXT NOT NULL, -- 'pediatr', 'psycholog', 'psychiatr', 'neurolog', 'jiny_specialista'
+    address TEXT,
+    phone TEXT,
+    email TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE court_judges (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    court_id UUID REFERENCES courts(id) ON DELETE CASCADE NOT NULL,
+    name TEXT NOT NULL,
+    email TEXT,
+    phone TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE extracurricular_providers (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID REFERENCES organizations(id) NOT NULL,
+    name TEXT NOT NULL,
+    provider_type TEXT NOT NULL, -- 'sport_club', 'camp_organizer', 'hobby_center', 'art_school'
+    bank_account TEXT,
+    address TEXT,
+    phone TEXT,
+    email TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+
+-- 2. HISTORIZACE A SPECIFICKÉ ÚDAJE DÍTĚTE (A DALŠÍCH OSOB)
+
+-- Změny jmen v čase
+CREATE TABLE person_past_names (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    person_id UUID REFERENCES persons(id) ON DELETE CASCADE NOT NULL,
+    first_name TEXT NOT NULL,
+    last_name TEXT NOT NULL,
+    valid_until DATE NOT NULL,
+    change_reason_notes TEXT
+);
+
+-- Vícečetné občanství
+CREATE TABLE person_citizenships (
+    person_id UUID REFERENCES persons(id) ON DELETE CASCADE NOT NULL,
+    country_code VARCHAR(3) NOT NULL, -- ISO kód, např. 'CZE', 'SVK', 'GBR'
+    PRIMARY KEY (person_id, country_code)
+);
+
+-- Historie státní příslušnosti / pobytu (UK, ČR atd. kvůli sociálním dávkám)
+CREATE TABLE person_residency_history (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    person_id UUID REFERENCES persons(id) ON DELETE CASCADE NOT NULL,
+    country_code VARCHAR(3) NOT NULL,
+    from_date DATE NOT NULL,
+    to_date DATE, -- NULL = aktuální pobyt
+    notes TEXT
+);
+
+-- Historie kontaktních údajů (telefon, email, datová schránka, sociální sítě a chatovací aplikace)
+CREATE TABLE person_contacts (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    person_id UUID REFERENCES persons(id) ON DELETE CASCADE NOT NULL,
+    contact_type TEXT NOT NULL, -- 'phone', 'email', 'data_box', 'facebook', 'instagram', 'whatsapp', 'telegram', 'signal', 'snapchat'
+    contact_value TEXT NOT NULL, -- např. "+420123456789", "profile_url", "username"
+    from_date DATE NOT NULL,
+    to_date DATE, -- NULL = aktuálně platný kontakt
+    is_active BOOLEAN DEFAULT TRUE,
+    notes TEXT
+);
+
+-- Historie adres (Trvalé vs. Skutečné bydliště s detaily a časovou platností)
+CREATE TABLE person_address_history (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    person_id UUID REFERENCES persons(id) ON DELETE CASCADE NOT NULL,
+    address_type TEXT NOT NULL, -- 'permanent' (Trvalé), 'actual' (Skutečné)
+    street TEXT NOT NULL,
+    city TEXT NOT NULL,
+    zip TEXT NOT NULL,
+    
+    -- Specifické detaily bydlení (např. 3. patro, u babičky, u pěstounů apod.)
+    housing_details TEXT, 
+    
+    from_date DATE NOT NULL,
+    to_date DATE, -- NULL = aktuálně platná adresa
+    notes TEXT
+);
+
+-- Historie vzdělávání (školy, ročníky, učitelé)
+CREATE TABLE person_education_history (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    person_id UUID REFERENCES persons(id) ON DELETE CASCADE NOT NULL,
+    school_id UUID REFERENCES schools(id) NOT NULL,
+    teacher_id UUID REFERENCES school_teachers(id) ON DELETE SET NULL,
+    grade_class TEXT NOT NULL, -- např. "3.B" nebo "přípravná třída"
+    from_date DATE NOT NULL,
+    to_date DATE, -- NULL = aktuálně navštěvovaná škola
+    notes TEXT
+);
+
+-- Evidence vysvědčení
+CREATE TABLE person_report_cards (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    person_id UUID REFERENCES persons(id) ON DELETE CASCADE NOT NULL,
+    school_year VARCHAR(9) NOT NULL, -- např. "2025/2026"
+    term INT NOT NULL CHECK (term IN (1, 2)), -- 1. nebo 2. pololetí
+    document_id UUID REFERENCES documents(id) NOT NULL, -- Odkaz na PDF/sken vysvědčení
+    grades JSONB NOT NULL, -- Strukturované známky, např. {"Matematika": 1, "Český jazyk": 2}
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Historie lékařské péče
+CREATE TABLE person_medical_history (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    person_id UUID REFERENCES persons(id) ON DELETE CASCADE NOT NULL,
+    doctor_id UUID REFERENCES doctors(id) NOT NULL,
+    from_date DATE NOT NULL,
+    to_date DATE, -- NULL = aktuální lékař
+    is_primary BOOLEAN DEFAULT FALSE, -- Pediatr
+    notes TEXT
+);
+
+-- Fyziologické údaje v čase (Výška, váha)
+CREATE TABLE person_physiological_metrics (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    person_id UUID REFERENCES persons(id) ON DELETE CASCADE NOT NULL,
+    height_cm INT,
+    weight_kg NUMERIC(4, 1),
+    record_date DATE NOT NULL,
+    recorded_by UUID REFERENCES profiles(id),
+    notes TEXT
+);
+
+-- Průkazy totožnosti dítěte (OP, Pas)
+CREATE TABLE person_identity_documents (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    person_id UUID REFERENCES persons(id) ON DELETE CASCADE NOT NULL,
+    doc_type TEXT NOT NULL, -- 'id_card' (OP), 'passport' (Cestovní pas)
+    doc_number TEXT NOT NULL,
+    issued_by TEXT NOT NULL,
+    valid_from DATE NOT NULL,
+    valid_to DATE NOT NULL,
+    document_id UUID REFERENCES documents(id) -- Odkaz na naskenovaný průkaz
+);
+
+-- Souhlasy zákonných zástupců / soudu (vycestování, lékařské zákroky)
+CREATE TABLE person_consents (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    person_id UUID REFERENCES persons(id) ON DELETE CASCADE NOT NULL,
+    subject TEXT NOT NULL, -- např. "Souhlas s vycestováním mimo EU (Velká Británie)"
+    signed_by TEXT NOT NULL, -- např. "Biologická matka", "Soud Teplice"
+    valid_from DATE NOT NULL,
+    valid_to DATE NOT NULL,
+    document_id UUID REFERENCES documents(id) NOT NULL,
+    notes TEXT
+);
+
+-- Opatrovník (Jmenovaný soudem)
+CREATE TABLE person_guardians (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    person_id UUID REFERENCES persons(id) ON DELETE CASCADE NOT NULL,
+    guardian_name TEXT NOT NULL,
+    relationship TEXT, -- např. "Teta", "Město Ústí nad Labem (veřejný opatrovník)"
+    appointed_by_court_id UUID REFERENCES courts(id),
+    court_case_id UUID REFERENCES court_cases(id), -- Odkaz na soudní spor z Kap. 11
+    from_date DATE NOT NULL,
+    to_date DATE,
+    reason TEXT
+);
+
+-- Fotodokumentace podoby dítěte v čase a místě
+CREATE TABLE person_photo_documentation (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    person_id UUID REFERENCES persons(id) ON DELETE CASCADE NOT NULL,
+    document_id UUID REFERENCES documents(id) NOT NULL, -- Odkaz na soubor v cloudovém úložišti
+    date_taken DATE NOT NULL,
+    location_taken TEXT,
+    age_at_photo_months INT, -- Vypočteno automaticky systémem
+    notes TEXT
+);
+```
+
+---
+
+## 3. Integrace AI (Vytěžování vysvědčení)
+
+Aby KO nemusela ručně přepisovat známky z vysvědčení do JSONB struktury v `person_report_cards`:
+
+1. **OCR a Extrakce:** KO vyfotí vysvědčení. Document AI převede obrázek na text.
+2. **Gemini syntéza:** Text se pošle do modelu Gemini s promptem:
+   > "Analyzuj přepis vysvědčení. Vytáhni předměty a k nim přiřazené známky. Ignoruj chování a slovní hodnocení. Odpověz výhradně ve formátu JSON: `{"predmety": {"Matematika": 1, "Český jazyk": 2}}`"
+3. **Schválení:** Výsledek se zobrazí KO k rychlému odsouhlasení a uloží se jako strukturovaná data do sloupce `grades`.
+
+---
+
+## 4. Uživatelské rozhraní (UI/UX)
+
+* **Registr Subjektů (Samostatná správa):** V desktopové verzi (kancelář) existuje sekce `Adresář a Registry`. Zde může administrátor zakládat školy, lékaře nebo kurátory. Při psaní jména školy v profilu dítěte se nabízí našeptávač z tohoto registru. Pokud škola v registru neexistuje, uživatel ji může jedním kliknutím založit přímo z formuláře dítěte (in-place create).
+* **Historické časové osy na kartě dítěte:** Karta školy a lékaře v profilu dítěte ukazuje aktuálního lékaře/školu výrazně nahoře. Pod tím je rozbalovací historie (Timeline) se šedivými řádky: *"Minulá škola: ZŠ Teplická (1. 9. 2023 – 30. 6. 2025), Třídní učitel: Mgr. Novák"*.
+* **Vizuální časová osa podoby (Fotogalerie):** Fotogalerie na profilu dítěte se renderuje chronologicky od nejnovější po nejstarší. Každá fotka má popisek s věkem dítěte v té době (např. *"Věk: 6 let a 3 měsíce, Lokalita: Letní tábor Děčín"*).
+* **Růstový graf:** V sekci Zdraví systém na základě dat z `person_physiological_metrics` automaticky generuje spojnicový graf výšky a váhy dítěte, který KO pomáhá monitorovat správný fyzický vývoj dítěte.
+* **Historizace kontaktů a sociálních sítí (UI):** V detailu kontaktů se zobrazují aktuálně aktivní kanály (Telefon, E-mail, Datová schránka, Facebook, atd.). Vedle každého z nich je ikonka hodin, na kterou když uživatel klikne, rozbalí se časová osa se starými kontakty: *"Staré číslo: +420 777 123 456 (platné do 15. 4. 2026)"*. To zabraňuje ztrátě spojení a umožňuje dohledat historickou komunikaci.
+* **Historizace adres a propojování obyvatel:** 
+  * V detailu adresy dítě/dospělý jasně rozlišuje *Trvalé bydliště* (legální adresa) a *Skutečné bydliště* (kde se fyzicky zdržuje, s detaily jako *3. patro, byt č. 5* nebo poznámkou *u babičky*).
+  * **Chytré propojování (Address Linkage):** Pokud systém detekuje, že na stejné adrese (ulice, město, PSČ) bydlí další aktivní osoby v systému (např. sourozenci, jiní pěstouni), na kartě adresy se zobrazí widget: **`Na této adrese také bydlí:`** se seznamem jmen a prokliky na jejich karty. KO tak ihned vidí rodinné či spolubydlící vazby bez ohledu na formální rozdělení do domácností.

@@ -1,0 +1,127 @@
+
+---
+title: "Kapitola 38: Pokročilý DMS, Vlastní Editor a AI Zdroje"
+description: "Plnohodnotná správa dokumentů, verzování textů, polymorfní vazby úkolů a izolace AI botů."
+icon: "server"
+---
+
+<Warning>
+**Instrukce pro AI programátora:** Tento modul zásadně rozšiřuje Kapitoly 36 a 37. Strom úkolů omezte na maximálně 3 úrovně (nikoliv nekonečně). Úložiště dokumentů (DMS) musí implementovat funkce jako "Koš" (Trash) a "Oblíbené", soubory se při smazání nesmí fyzicky odstranit ihned. Webový crawler musí nové (nebo chybějící) soubory z externích zdrojů umístit do karantény ke schválení.
+</Warning>
+
+## 1. Databázový model (SQL)
+
+Tento model upravuje předchozí návrhy, zavádí polymorfní vazby a odděluje jednotlivé AI asistenty. Spusťte v Supabase SQL Editoru.
+
+```sql
+-- 1. Aktualizace podporovaných cloudových úložišť (Přidán Yandex)
+CREATE TYPE external_cloud_provider AS ENUM ('google_drive', 'onedrive', 'yandex_disk');
+
+-- 2. Plnohodnotný DMS (Document Management System)
+-- Úprava složek pro podporu externích adresářů a koše
+ALTER TABLE document_folders ADD COLUMN external_provider external_cloud_provider;
+ALTER TABLE document_folders ADD COLUMN external_drive_folder_id TEXT; -- Pokud je složka napojená celá
+ALTER TABLE document_folders ADD COLUMN is_trashed BOOLEAN DEFAULT FALSE;
+ALTER TABLE document_folders ADD COLUMN trashed_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE document_folders ADD COLUMN trashed_by UUID REFERENCES profiles(id);
+
+-- Úprava souborů pro podporu koše, oblíbených a exportních formátů
+ALTER TABLE documents ADD COLUMN is_trashed BOOLEAN DEFAULT FALSE;
+ALTER TABLE documents ADD COLUMN trashed_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE documents ADD COLUMN trashed_by UUID REFERENCES profiles(id);
+ALTER TABLE documents ADD COLUMN is_favorite BOOLEAN DEFAULT FALSE;
+ALTER TABLE documents ADD COLUMN file_extension TEXT; -- 'pdf', 'docx', 'xlsx', 'png', 'jpg'
+
+-- 3. Verzování textových dokumentů (Google Docs styl)
+CREATE TABLE rich_text_document_versions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    rich_text_document_id UUID REFERENCES rich_text_documents(id) ON DELETE CASCADE,
+    version_number INT NOT NULL,
+    content_json JSONB NOT NULL,
+    saved_by UUID REFERENCES profiles(id) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    commit_message TEXT -- Např. "Doplněn posudek psychologa"
+);
+
+-- 4. Polymorfní vazby Kalendáře a Úkolů (Nahrazuje natvrdo zadané household_id)
+-- Umožňuje navázat úkol na cokoliv (Soud, Dítě, OSPOD, Fakturu...)
+CREATE TABLE task_entity_links (
+    task_id UUID REFERENCES tasks(id) ON DELETE CASCADE,
+    entity_type TEXT NOT NULL, -- 'court_case', 'household', 'person', 'organization', 'document'
+    entity_id UUID NOT NULL,
+    PRIMARY KEY (task_id, entity_type, entity_id)
+);
+
+-- Odstranění starých pevných sloupců z tasks
+ALTER TABLE tasks DROP COLUMN IF EXISTS household_id;
+ALTER TABLE tasks DROP COLUMN IF EXISTS person_id;
+
+-- 5. Karanténa a schvalování pro AI Crawler (Nové a chybějící soubory)
+CREATE TYPE crawler_asset_status AS ENUM ('pending_approval', 'approved', 'rejected', 'missing_waiting_approval');
+
+CREATE TABLE crawler_discovered_assets (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    source_id UUID REFERENCES knowledge_base_sources(id) ON DELETE CASCADE,
+    asset_url TEXT NOT NULL,
+    asset_title TEXT,
+    discovery_status crawler_asset_status DEFAULT 'pending_approval',
+    discovered_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    resolved_at TIMESTAMP WITH TIME ZONE,
+    resolved_by UUID REFERENCES profiles(id)
+);
+
+-- 6. AI Chat Source Manager (Profily asistentů a jejich oprávnění)
+CREATE TABLE ai_assistant_profiles (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID REFERENCES organizations(id),
+    name TEXT NOT NULL, -- Např. "Právní asistent", "Asistent pro Novákovy"
+    description TEXT,
+    system_prompt TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Mapovací tabulka: Který asistent smí používat které zdroje
+CREATE TABLE ai_assistant_sources (
+    ai_assistant_id UUID REFERENCES ai_assistant_profiles(id) ON DELETE CASCADE,
+    source_id UUID REFERENCES knowledge_base_sources(id) ON DELETE CASCADE,
+    PRIMARY KEY (ai_assistant_id, source_id)
+);
+
+```
+
+## 2. Architektura a Byznys logika
+
+### Plnohodnotný DMS a Import/Export souborů
+
+* **Životní cyklus smazání:** Pokud uživatel smaže dokument, nastaví se `is_trashed = TRUE`. Soubor mizí z běžných výpisů, ale zůstává v modulu "Koš". CRON úloha fyzicky maže z cloudu (a z databáze) pouze soubory, kde `trashed_at` je starší než 30 dní. Lze provádět operace jako `Move` (změna `folder_id`) a `Copy` (duplikace záznamu a souboru).
+* **Konverze formátů:** Systém plně podporuje formáty (`.docx`, `.xlsx`, `.pdf`). Vlastní interní editor (`rich_text_documents`) umí pomocí backendových knihoven (např. `mammoth.js` pro Word, `puppeteer` pro PDF) exportovat JSON obsah zpět do nativních formátů pro snadné stažení a odeslání.
+
+### AI Crawler: Karanténa dokumentů
+
+Když metodik napojí složku z *Google Drive* nebo URL z *MPSV*, systém nedělá slepé kopírování.
+
+1. **Nový nález:** Crawler najde 10 nových PDF. Uloží je do `crawler_discovered_assets` se stavem `pending_approval`. AI boti k nim nemají přístup. Metodikovi vyskočí tabulka "Nalezeny nové zdroje", kde u každého zaklikne `Schválit` nebo `Ignorovat`.
+2. **Zmizení souboru:** Pokud MPSV smaže metodiku z webu, systém soubor nesmaže (mohlo jít o dočasný výpadek webu). Přepne jeho stav na `missing_waiting_approval` a čeká, zda metodik potvrdí jeho odstranění z vektoru znalostí.
+
+### Striktní omezení úkolů a Polymorfní vazby
+
+* **3 Úrovně:** Omezujeme tvorbu na `Projekt` -> `Úkol` -> `Podúkol/Checklist`. Backend odmítne uložit `parent_task_id`, pokud by tím vznikla čtvrtá úroveň zanoření.
+* **Univerzální vazby:** Místo přidávání sloupců do kalendáře používáme tabulku `task_entity_links`. Jeden soudní úkol typu "Příprava na líčení" může být zároveň navázán na entitu `court_case` (Líčení č. 123), `household` (Rodina Nováků) i `person` (Zástupce OSPOD). V UI se pak tento úkol zobrazí v detailu kohokoliv z nich.
+
+### AI Chat Source Manager
+
+Místo jedné obří AI vznikají profilovaní asistenti (`ai_assistant_profiles`).
+
+* Administrátor může vytvořit bota jménem "Právní poradce MPSV". V mapovací tabulce mu přiřadí pouze zdroje typu *Zákony* a *Judikatura*. Tento bot absolutně nezná klientské spisy.
+* Může vzniknout "Bot Rodiny Novákových", který má přes RBAC přidělený pouze zdroj *Složka rodiny Novákových*.
+* Toto rozdělení extrémně snižuje riziko tzv. "Data Leakage" (úniku informací mezi spisy) a snižuje spotřebu tokenů, protože LLM prohledává jen úzkou, vysoce relevantní skupinu vektorů.
+
+## 3. Uživatelské rozhraní (UI/UX)
+
+* **DMS Rozhraní (Disk):** Vypadá jako Google Drive. Levý sloupec obsahuje: *Můj disk, Sdílené se mnou, Nedávné, Oblíbené (Hvězdička) a Koš*. Podporuje výběr více položek najednou (Shift+Click) pro hromadné akce přesun/stažení/smazání.
+* **Editor Historie:** V editoru textů je tlačítko "Historie verzí". Otevře se postranní panel s časovou osou (`rich_text_document_versions`). Kliknutím na starou verzi se hlavní okno přepne do režimu "Pouze pro čtení" s možností kliknout na velké modré tlačítko `Obnovit tuto verzi`.
+* **AI Source Matrix:** Tabulka pro ředitele organizace. Řádky představují zdroje dokumentů, sloupce jednotlivé AI Asistenty. Zaškrtávacími políčky jednoduše (jako v matici oprávnění) konfiguruje, jaká AI smí "číst" jakou složku.
+
+```
+
+```

@@ -1,0 +1,115 @@
+
+---
+title: "Kapitola 36: Dynamické číselníky a Vlastní DMS"
+description: "Správa uživatelsky definovaných tagů/stavů, virtuální diskový prostor, anotace PDF a interní textový editor."
+icon: "folder-tree"
+---
+
+<Warning>
+**Instrukce pro AI programátora:** Odstraňte závislost na tvrdě zakódovaných databázových typech (ENUM) u položek, které se mohou v čase měnit (kategorie, tagy, stavy). Implementujte modul *System Taxonomies*. Dále vytvořte plnohodnotný Document Management System (DMS) – virtuální adresářovou strukturu, která izoluje uživatelské rozhraní od fyzického úložiště (Supabase Storage, Google Drive atd.).
+</Warning>
+
+## 1. Databázový model (SQL)
+
+Tento model zavádí dynamické číselníky, virtuální složky pro "vlastní Google Disk", evidenci anotací nad PDF soubory a strukturu pro interní textový editor. Spusťte v Supabase SQL Editoru.
+
+```sql
+-- 1. Dynamické číselníky (Taxonomies) - Nahrazuje tvrdé ENUMy
+CREATE TABLE system_taxonomies (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID REFERENCES organizations(id), -- NULL = systémový (nelze smazat)
+    machine_name TEXT NOT NULL UNIQUE, -- např. 'document_categories', 'task_states'
+    human_name TEXT NOT NULL,
+    is_hierarchical BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE taxonomy_terms (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    taxonomy_id UUID REFERENCES system_taxonomies(id) ON DELETE CASCADE,
+    parent_term_id UUID REFERENCES taxonomy_terms(id), -- Pro zanořené kategorie
+    label TEXT NOT NULL, -- např. 'Rozsudek', 'Běží', 'Pozastaveno'
+    color_code TEXT, -- Pro barevné štítky v UI
+    is_active BOOLEAN DEFAULT TRUE,
+    sort_order INT DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 2. Vlastní DMS: Virtuální složky (Vlastní "Google Disk")
+CREATE TABLE document_folders (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID REFERENCES organizations(id) NOT NULL,
+    parent_folder_id UUID REFERENCES document_folders(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    household_id UUID REFERENCES households(id), -- Složka může patřit konkrétní rodině
+    created_by UUID REFERENCES profiles(id),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 3. Rozšíření tabulky documents (z Kapitoly 8) o externí zdroje a synchronizaci
+ALTER TABLE documents ADD COLUMN folder_id UUID REFERENCES document_folders(id);
+ALTER TABLE documents ADD COLUMN document_category_term_id UUID REFERENCES taxonomy_terms(id);
+ALTER TABLE documents ADD COLUMN source_type TEXT DEFAULT 'local_upload'; -- 'local_upload', 'url_sync', 'external_drive'
+ALTER TABLE documents ADD COLUMN external_source_url TEXT;
+ALTER TABLE documents ADD COLUMN sync_interval_minutes INT; -- Jak často kontrolovat změny na URL (např. 43200 = 1 měsíc)
+ALTER TABLE documents ADD COLUMN last_synced_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE documents ADD COLUMN external_drive_provider TEXT; -- 'google_drive', 'onedrive'
+ALTER TABLE documents ADD COLUMN external_drive_file_id TEXT;
+
+-- 4. Anotace dokumentů (Komentáře přímo v PDF)
+CREATE TABLE document_annotations (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    document_id UUID REFERENCES documents(id) ON DELETE CASCADE,
+    author_id UUID REFERENCES profiles(id) NOT NULL,
+    page_number INT NOT NULL,
+    -- JSON definující souřadnice vyznačeného textu/obdélníku v PDF (např. {"x": 100, "y": 200, "width": 50, "height": 20})
+    bounding_box JSONB NOT NULL, 
+    comment_text TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 5. Interní Textový Editor (Alternativa ke Google Docs)
+CREATE TABLE rich_text_documents (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID REFERENCES organizations(id) NOT NULL,
+    folder_id UUID REFERENCES document_folders(id),
+    household_id UUID REFERENCES households(id),
+    title TEXT NOT NULL,
+    content_json JSONB NOT NULL, -- Pro editory typu TipTap / Lexical (ukládá se jako strukturovaný JSON, ne HTML)
+    author_id UUID REFERENCES profiles(id) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Vazba: Vložené PDF/obrázky uvnitř Rich Text dokumentu
+CREATE TABLE rich_text_attachments (
+    rich_text_id UUID REFERENCES rich_text_documents(id) ON DELETE CASCADE,
+    document_id UUID REFERENCES documents(id) ON DELETE CASCADE,
+    PRIMARY KEY (rich_text_id, document_id)
+);
+
+```
+
+## 2. Architektura a Byznys logika
+
+### Správa číselníků (Taxonomy Engine)
+
+Když administrátor potřebuje přidat nový stav úkolu, nevolá vývojáře. V administraci (v sekci `Číselníky a Tagy`) otevře taxonomii `task_states` a přidá nový řádek (`taxonomy_terms`). Každý dropdown (výběrové menu) v aplikaci si dynamicky stahuje možnosti přes API z těchto tabulek. Lze tak tvořit vlastní tagy pro děti, rodiny i dokumenty.
+
+### Vlastní DMS a Externí úložiště
+
+Aplikace má vlastní adresářovou strukturu (`document_folders`), která vizuálně připomíná Průzkumník Windows nebo Google Disk.
+
+* **Soubory:** Fyzicky leží v Supabase Storage (nebo na S3).
+* **Vazba na OneDrive/Google Disk:** Pokud uživatel "přidá soubor z Google Disku", fyzický soubor se nekopíruje. Uloží se jen odkaz (`external_drive_file_id`). Aplikace se pak při kliknutí dotáže přes API Googlu na aktuální verzi.
+* **URL Synchronizace (Cron):** Pokud uživatel přidá dokument z adresy `https://mpsv.cz/metodika.pdf` a nastaví kontrolu na "Jednou za měsíc", CRON job pravidelně stahuje hlavičky souboru (HTTP HEAD). Pokud se změní `ETag` nebo `Last-Modified`, stáhne novou verzi a vytvoří v systému nový verzovaný záznam dokumentu.
+
+## 3. Uživatelské rozhraní (UI/UX)
+
+* **Upload Modální okno:** Podporuje Drag & Drop. Během nahrávání zobrazuje procentuální progress bar. Okamžitě nabízí pole pro přejmenování souboru a dynamické Dropdowny pro výběr kategorie/tagů tažených z tabulky `taxonomy_terms`. Nabízí záložky: *Nahrát z disku / Vložit z URL / Propojit z Google Drive*.
+* **Prohlížeč PDF s anotacemi:** Využívá knihovnu (např. *PDF.js* nebo *PSPDFKit*). Uživatel může kurzorem označit žlutě odstavec v PDF. Na pravé straně obrazovky (Sidebar) se vytvoří vlákno komentářů. Souřadnice zvýraznění se uloží do `document_annotations`.
+* **Interní Editor (Znalostní báze / Zápisy):** Využívá framework *TipTap* (nebo *Lexical*). Rozhraní vypadá jako čistý Google Doc. Uživatel píše text, generuje nadpisy, tabulky a přes tlačítko "Vložit přílohu" může přímo do textu vložit interaktivní odkaz na jakýkoliv PDF dokument uložený v `documents` modulu.
+
+```
+

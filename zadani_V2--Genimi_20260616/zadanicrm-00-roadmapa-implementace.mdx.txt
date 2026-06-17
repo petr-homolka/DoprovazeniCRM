@@ -1,0 +1,82 @@
+---
+title: "Kapitola 00: Roadmapa implementace a fáze projektu"
+description: "Strategie nasazení modulů. Co tvoří MVP (Minimum Viable Product) a co počká na V2."
+icon: "map"
+---
+
+<Warning>
+**Kritická instrukce pro vývojáře (AI i člověka):** Systém FosterFlow je rozsáhlý enterprise projekt (popsaný v kapitolách 1–35). **Nesmíte začít programovat všechny moduly najednou.** Ztratili byste kontext a stabilita jádra by se zhroutila. Vývoj musí probíhat striktně ve fázích popsaných v tomto dokumentu. Moduly označené pro Fázi 3 a 4 ignorujte, dokud nejsou předchozí fáze plně otestovány a nasazeny.
+</Warning>
+
+## Cíle fázování
+Cílem není dodat dokonalý systém za rok, ale funkční jádro (MVP) za pár týdnů, které převezme operativu organizace, a následně systém postupně rozšiřovat bez narušení běhu.
+
+---
+
+## FÁZE 1: Jádro systému (MVP - Osa rodiny)
+*Tato fáze tvoří absolutní minimum. Bez ní systém neexistuje. Zaměřuje se na základní databázi, bezpečnost, evidenci rodin a časovou osu událostí.*
+
+**Požadované kapitoly pro implementaci:**
+* **01 Architektura:** (Základní pravidla, výběr stacku)
+* **02 Datový model & 03 Vztahy:** (Tabulky `organizations`, `households`, `persons`, `events`)
+* **27 Profil dítěte & Vlastní pole:** (Evidované údaje dětí, custom fields ve stylu Google)
+* **28 Shared Registry & Historizace dítěte:** (Registry škol/lékařů/soudů, historie pobytů/škol, doklady, fyziologické grafy a fotogalerie)
+* **29 Biologická rodina, sociální prostor & GDPR:** (Vazby na biologické příbuzné, kamarády, rating vztahů, karanténa dat a PDF GDPR souhlasy)
+* **40 Hierarchie systému & Multi-Tenancy:** (Šestistupňové vrstvení, pobočky, superadmini)
+* **25 Granulární oprávnění (RBAC):** (Bezpečnost RLS, tabulky `roles`, `permissions`)
+* **04 Frontendy a API:** (Rozdělení na Worker / Organization)
+* **10 Životní cyklus (State Machine):** (Přepínání stavů `lead` -> `active`...)
+* **24 Katalog událostí (Event Engine):** (Flexibilní JSONB struktura pro `events`)
+* **35 Globální identifikátory (Část 1):** (Vygenerování čitelného FosterID)
+
+---
+
+## FÁZE 2: Provozní a finanční nezbytnosti
+*Organizace už v systému eviduje rodiny. Nyní přidáme moduly, které řeší legislativní požadavky (ZSPOD), soudy, dokumenty a základní finance. Bez této fáze systém nelze nasadit do ostrého provozu.*
+
+**Požadované kapitoly pro implementaci:**
+* **11 OSPOD a IPOD:** (Plánování a cíle)
+* **12 Soudní agenda a 13 Bio-rodina:** (Právní entity)
+* **14 Krizový management:** (Oddělené řízení rizikových případů)
+* **15 Úkolový systém a 16 Supervize/Vzdělávání**
+* **30 Poskytovatelé a doklady:** (Strukturovaná evidence `financial_documents`)
+* **32 SPVPP Kategorie:** (Rozdělení dotace podle zákona, dohled nad procenty)
+* **08 Dokumenty a Cloud Storage:** (Nahrávání PDF bez OCR)
+* **35 Správa dokumentů (Část 2):** (Čísla jednací a verzování souborů)
+
+---
+
+## FÁZE 3: Automatizace a první AI (Smart Organization)
+*Data jsou v systému stabilní. Pracovníci umí systém používat. Zde nastupuje automatizace procesů a první vrstvy umělé inteligence pro úsporu času.*
+
+**Požadované kapitoly pro implementaci:**
+* **26 Workflow Lite:** (Automatické generování úkolů na základě událostí z terénu)
+* **19 Notifikace:** (Modul zvonečku, e-maily)
+* **05 AI RAG a Knowledge Base:** (Dotazování nad interními metodikami)
+* **21 Audit AI a Trasování:** (Důkazní stopa AI)
+* **07 Offline režim:** (Podpora pro terénní pracovníky bez signálu)
+* **17 Dokumentové šablony:** (Automatické generování PDF zpráv pro soud)
+
+---
+
+## FÁZE 4: Enterprise funkce a Externí integrace (V2.0)
+*Systém běží ve velké organizaci. Přidáváme analytické a pokročilé moduly, které nejsou nezbytné pro každodenní běh, ale drasticky šetří čas vedení a ekonomům.*
+
+**Požadované kapitoly pro implementaci:**
+* **22 Měření výkonu a KPI:** (Materializované pohledy pro rychlé dashboardy ředitele)
+* **33 Výstupní adaptéry:** (Exporty CSV pro Úřad práce a účetní program POHODA)
+* **23 Migrace a Exporty (Spisová služba):** (Přenos ZIP spisu do jiné organizace)
+* **18 Retenční politika a GDPR:** (Automatické mazání a anonymizace dat)
+* **20 Klientská zóna (Portal):** (Samostatná aplikace pro pěstouny)
+* **31 Schvalování plateb:** (Plnohodnotný Approval Engine a AI párování banky)
+* **34 Konverzační AI a BI:** (Analýza dat přes chat - Text-to-SQL)
+* **41 Whitelabeling a Custom Branding:** (Nahrání loga, nastavení barev organizace)
+* **42 SaaS předplatné a dotační limity:** (7denní trial, tarify Basic/Pro/Ultra/Custom)
+
+---
+
+## FÁZE 5: Rozšířená analytika a globální statistiky (V3.0)
+*Systém je celorepublikově rozšířen. Tato fáze se zaměřuje na vytěžení hodnoty z velkých agregovaných dat a srovnávání organizací.*
+
+**Požadované kapitoly pro implementaci:**
+* **43 Statistická nadstavba a globální benchmarking:** (Celorepublikové srovnání, regionální analýzy, anonymizované statistiky a KPI)

@@ -1,0 +1,97 @@
+
+---
+title: "Kapitola 34: Konverzační AI a BI analytika"
+description: "Chatbot pro ad-hoc reporty (Text-to-SQL), vizualizace dat a RBAC mantinely pro umělou inteligenci."
+icon: "message-bot"
+---
+
+<Warning>
+**Instrukce pro AI programátora:** Toto je kritický bod z hlediska bezpečnosti dat. LLM (např. Gemini) **nesmí mít přímý přístup k databázi**. AI funguje pouze jako překladač – překládá přirozený jazyk do jazyka SQL. Vygenerovaný SQL dotaz následně spouští backendový server pod kontextem přihlášeného uživatele (Supabase RLS). Díky tomu je zaručeno, že i když si pěstoun nebo řadová KO vyžádá přes AI report všech financí, databáze dotaz sice provede, ale vrátí pouze ty řádky, na které má daný uživatel podle tabulky `role_permissions` právo.
+</Warning>
+
+## 1. Databázový model (SQL)
+
+Tento model nezavádí nové byznys entity, ale vytváří bezpečné databázové pohledy (Views), na které může AI dotazovat, a loguje veškeré analytické interakce pro účely auditu. Spusťte v Supabase SQL Editoru.
+
+```sql
+-- 1. Bezpečné pohledy pro AI (Data Marts)
+-- AI nedostane celé schéma databáze, ale pouze tyto vyhrazené pohledy (abstrahují složité JOINy)
+CREATE OR REPLACE VIEW ai_bi_finance_view AS
+SELECT 
+    fd.id, fd.household_id, h.name AS household_name, 
+    fd.total_amount_czk, fd.status, fd.issue_date,
+    p.company_name AS provider_name
+FROM financial_documents fd
+LEFT JOIN households h ON fd.household_id = h.id
+LEFT JOIN providers p ON fd.provider_id = p.id;
+
+CREATE OR REPLACE VIEW ai_bi_events_view AS
+SELECT 
+    e.id, e.household_id, h.name AS household_name,
+    e.event_type, e.category, e.created_at,
+    pr.full_name AS created_by_name
+FROM events e
+LEFT JOIN households h ON e.household_id = h.id
+LEFT JOIN profiles pr ON e.created_by = pr.id;
+
+-- 2. Auditní log AI analytiky (Sledování toho, na co se uživatelé ptají)
+CREATE TABLE ai_bi_query_logs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID REFERENCES organizations(id) NOT NULL,
+    user_id UUID REFERENCES profiles(id) NOT NULL,
+    
+    natural_language_prompt TEXT NOT NULL, -- "Kolik stály tábory v roce 2026?"
+    generated_sql_query TEXT NOT NULL,     -- "SELECT SUM(...) FROM ai_bi_finance_view WHERE..."
+    
+    execution_successful BOOLEAN DEFAULT TRUE,
+    error_message TEXT, -- Pokud SQL selhalo nebo bylo zablokováno RLS
+    returned_row_count INT,
+    
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- RLS pro analytické logy (Ředitel vidí vše, pracovník jen své dotazy)
+CREATE POLICY "View AI logs based on RBAC"
+ON ai_bi_query_logs FOR SELECT
+USING (auth.uid() = user_id OR has_permission('admin.view_audit_logs'));
+
+```
+
+## 2. Architektura a Byznys logika (Text-to-SQL Workflow)
+
+Architektura odděluje generování dotazu od jeho exekuce. LLM funguje pouze jako "psací stroj".
+
+1. **Vstup uživatele a Context Injection:**
+Ředitel napíše do chatu: *"Vypiš mi všechny neschválené faktury za respit pro rodiny, které má na starosti Jana Nováková. Výsledek chci jako tabulku."*
+Backend tento prompt odešle do LLM (Gemini Pro) společně s pevným systémovým promptem, který obsahuje **pouze DDL strukturu** povolených pohledů (`ai_bi_finance_view`, `ai_bi_events_view`).
+
+
+2. **Překlad na SQL (Gemini):**
+AI model vygeneruje čistý PostgreSQL dotaz (např. využívající `SELECT`, `WHERE`, `GROUP BY`) směřující výhradně na povolené pohledy. Systém backendu zkontroluje, zda dotaz neobsahuje zakázané klauzule (např. `DROP`, `UPDATE`, `INSERT`, `GRANT`) - povoleno je pouze `SELECT`.
+
+
+3. **Bezpečná exekuce pod RLS:**
+Zásadní krok: Backend nespustí dotaz pod administrátorským účtem. Pomocí Supabase klienta nastaví hlavičky aktuálního uživatele (Auth Token). Když se spustí `SELECT * FROM ai_bi_finance_view`, databázový engine (PostgreSQL) automaticky aplikuje pravidla Row Level Security (RLS) z tabulky `financial_documents`.
+
+* Pokud se ptá **Ředitel**, databáze vrátí všechny řádky.
+* Pokud se ptá **Pěstoun**, databáze vyfiltruje výsledek tak, aby vrátil 0 řádků (nebo jen finance jeho vlastní rodiny), bez ohledu na to, jak chytrý SQL dotaz AI vymyslela.
+
+
+4. **Renderování a Logování:**
+Backend obdrží JSON s daty z databáze. Zároveň se do `ai_bi_query_logs` uloží originální prompt i vygenerované SQL. Výsledek se odešle na frontend k vizualizaci.
+
+
+## 3. Uživatelské rozhraní (UI/UX)
+
+* **FosterFlow Organization (Desktop - BI Assistant):**
+* Okno chatu se nachází v pravém postranním panelu (Drawer) a je dostupné odkudkoliv v aplikaci.
+* Uživatel nepíše jen textové zprávy. Rozhraní podporuje tzv. **Rich Output Components**.
+* Pokud výsledek obsahuje více řádků, chatová bublina od AI nevykreslí dlouhý nepřehledný text, ale vygeneruje interaktivní komponentu **Data Grid** (tabulku), ve které lze řadit sloupce.
+* U každé vygenerované tabulky je k dispozici tlačítko `Stáhnout jako CSV` nebo `Kopírovat do schránky`, což umožňuje data okamžitě přenést např. do e-mailu pro OSPOD.
+* Pokud se uživatel zeptá např. *"Jaký je poměr čerpání na vzdělávání vs. respit v roce 2026?"*, AI instrukcí na frontendu nevyvolá tabulku, ale komponentu **Pie Chart (Koláčový graf)** pro okamžitou vizuální analýzu.
+
+
+
+```
+
+```

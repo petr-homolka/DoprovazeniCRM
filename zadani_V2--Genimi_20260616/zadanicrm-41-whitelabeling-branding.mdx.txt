@@ -1,0 +1,71 @@
+---
+title: "Kapitola 41: Whitelabeling a Custom Branding"
+description: "Pravidla pro nahrávání loga organizace, nastavení vlastních barev a dynamické generování témat."
+icon: "palette"
+---
+
+<Warning>
+**Instrukce pro AI programátora:** Vlastní branding (logo, barvy) je placenou funkcí (součástí tarifů Pro a Enterprise). Systém musí před aplikací vlastního vzhledu ověřit, zda má organizace aktivní předplatné s touto funkcí. Pokud ne, rozhraní se vykreslí ve výchozích barvách a s výchozím logem FosterFlow.
+</Warning>
+
+## 1. Konfigurace brandingu v databázi
+
+Tabulka `organizations` se rozšiřuje o pole pro uložení cesty k nahranému logu a konfiguračnímu JSONB pro barvy. Spusťte v Supabase SQL Editoru.
+
+```sql
+-- 1. Rozšíření tabulky organizations o whitelabeling parametry
+ALTER TABLE organizations ADD COLUMN logo_url TEXT; -- Odkaz na uložený soubor (SVG/PNG/JPG) v Supabase Storage
+ALTER TABLE organizations ADD COLUMN brand_colors JSONB DEFAULT '{
+    "primary": "#6366F1",
+    "primaryForeground": "#FFFFFF",
+    "sidebarBackground": "#131523",
+    "sidebarForeground": "#FFFFFF",
+    "accent": "#4F46E5"
+}'::jsonb;
+
+-- 2. Komentář k parametrům
+COMMENT ON COLUMN organizations.brand_colors IS 'JSON obsahující HEX kódy pro dynamické CSS proměnné.';
+```
+
+---
+
+## 2. Architektura a Byznys logika
+
+### Nahrávání loga (Asset Storage)
+* **Formáty:** Systém akceptuje `image/svg+xml`, `image/png` a `image/jpeg`. Maximální velikost souboru je **2 MB**.
+* **Uložení:** Soubory se ukládají do Supabase Storage bucketu `organization-assets` pod cestou `[organization_id]/logo.[ext]`. Nahráním nového loga se přepíše to stávající.
+* **Fallback:** Pokud `logo_url` je `NULL` nebo organizace nemá zaplacenou funkci brandingu, v hlavičce i sidebaru se vykreslí výchozí fialové logo **FosterFlow**.
+
+### Dynamické generování témat (Tailwind CSS Injection)
+Next.js aplikace generuje barevné schéma dynamicky na základě přihlášeného uživatele.
+
+1. **Načtení profilu:** Po přihlášení uživatele systém načte data jeho organizace včetně sloupce `brand_colors` a aktuálního předplatného (viz Kap. 42).
+2. **Dynamic CSS Variables:** V kořenovém layoutu (`layout.tsx`) se do hlavičky dokumentu (`<head>`) vyrenderuje inline `<style>` tag, který přepíše CSS proměnné Tailwindu:
+
+```html
+<style>
+  :root {
+    --primary: ${org.brand_colors.primary};
+    --primary-foreground: ${org.brand_colors.primaryForeground};
+    --sidebar-background: ${org.brand_colors.sidebarBackground};
+    --sidebar-foreground: ${org.brand_colors.sidebarForeground};
+    --accent: ${org.brand_colors.accent};
+  }
+</style>
+```
+
+3. **Tailwind integrace:** Třídy Tailwindu (např. `bg-primary`, `text-sidebar-foreground`) automaticky převezmou tyto dynamicky vložené barvy, což změní vzhled celého CRM (tlačítek, aktivních stavů, postranního panelu) bez nutnosti rekompilace kódu.
+
+---
+
+## 3. Uživatelské rozhraní (UI/UX Settings Page)
+
+* **Sekce v administraci:** `Nastavení organizace` -> `Vzhled a branding`.
+* **Prvky nastavení:**
+  * **Sekce Logo:** Přetahovací plocha (Drag & Drop) pro upload souboru s okamžitým náhledem (Live Preview) v záhlaví simulovaného dashboardu.
+  * **Sekce Barvy:** Vizuální kapátka (Color Pickers) pro:
+    1. *Hlavní barva (Primary)* – barva tlačítek, aktivních záložek.
+    2. *Pozadí bočního panelu (Sidebar)* – barva navigace.
+    3. *Barva písma v sidebaru* – kontrastní barva k pozadí.
+* **Live Sandbox:** Na stránce nastavení se zobrazuje miniatura dashboardu (maketa), která v reálném čase (při pohybu posuvníků v color pickeru) mění své barvy, aby uživatel viděl výsledek ještě před uložením.
+* **Tlačítko Uložit změny:** Po uložení se data zapíší do DB, vyčistí se cache na straně klienta a téma se okamžitě plošně aplikuje.

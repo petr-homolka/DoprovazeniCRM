@@ -1,0 +1,113 @@
+
+---
+title: "Kapitola 33: Výstupní adaptéry a exporty"
+description: "Flexibilní exportní vrstva pro úřady, formáty XLSX/CSV/XML a bezpečné sdílení pro externí účetní."
+icon: "brackets-curly"
+---
+
+<Warning>
+**Instrukce pro AI programátora:** Generování datových exportů (pro Úřad práce, Finanční úřad nebo účetní software) nesmí být řešeno psaním ad-hoc SQL dotazů přímo v kontroleru konkrétní stránky. Systém musí implementovat vzor **Output Adapter**. Databáze poskytuje čistá normalizovaná data, adaptér (konfigurace) definuje transformaci polí, formátování hodnot (např. český formát data, oddělovače) a cílový souborový kontejner.
+</Warning>
+
+## 1. Databázový model (SQL)
+
+Tento model zavádí evidenci exportních šablon, auditní stopu vygenerovaných souborů a systém časově omezených tokenů pro bezpečný přístup externích účetních bez nutnosti plné registrace v CRM. Spusťte v Supabase SQL Editoru.
+
+```sql
+-- 1. Definice podporovaných formátů a příjemců
+CREATE TYPE export_format AS ENUM ('csv', 'xlsx', 'xml', 'json');
+CREATE TYPE export_recipient AS ENUM ('urad_prace', 'krajsky_urad', 'mpsv', 'financni_urad', 'externi_ucetni');
+
+-- 2. Konfigurace výstupních adaptérů (Mapování polí)
+CREATE TABLE export_templates (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID REFERENCES organizations(id), -- NULL znamená globální systémová šablona
+    name TEXT NOT NULL, -- např. "Vyúčtování SPVPP - Vzor 2026"
+    recipient export_recipient NOT NULL,
+    format export_format NOT NULL,
+    
+    -- JSON definující strukturu. Např. [{"csv_column": "IČO", "db_field": "providers.ico", "formatter": "string"}]
+    mapping_configuration JSONB NOT NULL, 
+    
+    version INT NOT NULL DEFAULT 1,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(organization_id, recipient, name, version)
+);
+
+-- 3. Evidence vygenerovaných datových exportů (Auditní log)
+CREATE TABLE export_logs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID REFERENCES organizations(id) NOT NULL,
+    template_id UUID REFERENCES export_templates(id) NOT NULL,
+    generated_by UUID REFERENCES profiles(id) NOT NULL,
+    generated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    file_name TEXT NOT NULL,
+    file_path TEXT NOT NULL, -- Cesta v Supabase Storage k vygenerovanému souboru
+    file_hash TEXT NOT NULL, -- SHA-256 hash souboru pro ověření nezměnitelnosti
+    parameters_used JSONB NOT NULL -- Uložené parametry generování, např. {"rok": 2026, "kvartal": 2}
+);
+
+-- 4. Bezpečné tokeny pro externí účetní (Časově omezený pasivní přístup)
+CREATE TABLE accountant_access_tokens (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID REFERENCES organizations(id) NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE, -- SHA-256 hash tokenu předaného v URL
+    description TEXT NOT NULL, -- Poznámka (např. "Měsíční uzávěrka - paní Horáková, externí účetní")
+    valid_from TIMESTAMP WITH TIME ZONE NOT NULL,
+    valid_to TIMESTAMP WITH TIME ZONE NOT NULL,
+    allowed_recipients export_recipient[] DEFAULT '{externi_ucetni}',
+    sms_verification_phone TEXT, -- Volitelné dvoufaktorové ověření přes SMS kód
+    created_by UUID REFERENCES profiles(id) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 5. Audit triggery
+CREATE TRIGGER audit_export_templates AFTER INSERT OR UPDATE OR DELETE ON export_templates FOR EACH ROW EXECUTE FUNCTION process_audit_log();
+CREATE TRIGGER audit_accountant_access_tokens AFTER INSERT OR UPDATE OR DELETE ON accountant_access_tokens FOR EACH ROW EXECUTE FUNCTION process_audit_log();
+
+```
+
+## 2. Architektura a Byznys logika
+
+### Koncept "Šablona × Příjemce" (Decoupling)
+
+Pokud Úřad práce změní formát XML schématu nebo Finanční úřad nařídí nový sloupec v Excelu, metodik organizace pouze upraví JSON strukturu v `export_templates.mapping_configuration` pro daného příjemce a inkrementuje verzi. Backendový kód aplikace (`export-engine`) zůstává netknutý.
+
+Engine při spuštění exportu:
+
+1. Načte data z tabulek (např. `financial_documents`, `service_transactions`).
+2. Projde konfigurační matici šablony a transformuje názvy sloupců (např. interní `company_name` přejmenuje na požadovaný název `"NazevDodavatele"`).
+3. Aplikuje vestavěné formátovače (české oddělovače tisíců, nahrazení teček u desetinných čísel čárkami v případě CSV exportů).
+
+### Účetní exporty (POHODA / Money S3)
+
+Pro účetní programy (nejčastěji Pohoda) systém generuje specifickou strukturu.
+
+* **CSV formát:** Využívá kódování `Windows-1250` (standard českého účetnictví) a středník `;` jako oddělovač.
+* **Párovací symboly:** Systém do exportu pro účetní software mapuje interní `variable_symbol` a jako číslo dokladu dosazuje `document_number` ověřeného poskytovatele služeb.
+
+### Zabezpečená zóna pro externí účetní (Data Protection)
+
+Externí účetní nepotřebuje (a z pohledu GDPR **nesmí**) mít přístup do plného CRM. Nesmí vidět citlivé zápisy z krizových intervencí ani detaily o psychologických profilech dětí.
+
+1. Ekonomka vygeneruje balíček exportů (CSV pro Pohodu, XLSX přehled čerpání) za daný měsíc.
+2. Vygeneruje přístupový odkaz (`accountant_access_tokens`), kde nastaví platnost (např. 48 hodin) a zadá telefonní číslo účetní.
+3. Účetní obdrží odkaz (obsahující bezpečný kryptografický token). Po kliknutí na odkaz jí systém zašle jednorázový SMS PIN.
+4. Po zadání PINu se účetní zobrazí izolovaná webová stránka, kde vidí pouze schválené finanční soubory ke stažení. Systém zaznamená stažení do `audit_logs`.
+
+## 3. Uživatelské rozhraní (UI/UX)
+
+* **FosterFlow Organization (Desktop - Exportní centrum):**
+* Samostatná záložka v ekonomickém modulu: **"Úřední a účetní exporty"**.
+* Uživatelské rozhraní tvoří přehledný průvodce. Uživatel vybere *Příjemce* (např. Úřad práce), zvolí *Období* (např. 2. kvartál 2026) a klikne na tlačítko `Vygenerovat exportní balíček`.
+* Po dokončení generování se zobrazí zelená karta s informací o úspěšném uložení, SHA-256 hashem souboru pro kontrolu integrity a tlačítkem `Vytvořit přístup pro externí účetní`.
+
+
+* **Portál externí účetní (Zjednodušené pasivní rozhraní):**
+* Minimalistická stránka bez postranního menu. Obsahuje pouze logo organizace, informaci o platnosti odkazu (*"Platnost tohoto odkazu vyprší za 14 hodin"*) a tabulku souborů (např. `faktury_pohoda_05_2026.csv`, `spvpp_vypis_05_2026.xlsx`) s velkými ikonami pro stažení.
+
+
+
+```
+

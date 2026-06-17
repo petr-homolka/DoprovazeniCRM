@@ -1,0 +1,99 @@
+---
+title: "Kapitola 40: Hierarchie systému a Multi-Tenancy"
+description: "Strukturované vrstvení dat od provozovatele až po detail dítěte v multi-tenant prostředí."
+icon: "sitemap"
+---
+
+<Warning>
+**Instrukce pro AI programátora:** Systém FosterFlow je od prvního řádku kódu navrhován jako **B2B SaaS multi-tenant aplikace**. Data různých organizací musí být stoprocentně izolována na úrovni PostgreSQL RLS (Row Level Security). Tato kapitola definuje hierarchické vrstvení, které musí datový model a API striktně respektovat.
+</Warning>
+
+## 1. Šestistupňová hierarchie systému
+
+Data v systému jsou strukturována do šesti hierarchických úrovní. Každý dotaz do databáze a každé oprávnění se vyhodnocuje vzhledem k této struktuře:
+
+```mermaid
+graph TD
+    Level1[1. Provozovatel systému - My] --> Level2[2. Doprovázející organizace]
+    Level2 --> Level3[3. Pobočka doprovázející organizace]
+    Level3 --> Level4[4. Klíčová osoba - KO]
+    Level4 --> Level5[5. Pěstounská rodina - Domácnost]
+    Level5 --> Level6[6. Dítě]
+```
+
+### Úroveň 1: Provozovatel systému (SuperAdmin)
+* **Kdo to je:** My (autoři / vlastníci FosterFlow).
+* **Role v systému:** `superadmin` / `it`.
+* **Práva:** Globální správa všech doprovázejících organizací, nastavování dotačních parametrů, konfigurace globálních šablon, monitoring chyb a správa fakturace/předplatného. Vidí anonymizovaná celková čísla (statistiky), ale z pohledu GDPR nemá přístup k textovým spisům konkrétních dětí, pokud mu to organizace explicitně nepovolí (zástup při IT podpoře).
+
+### Úroveň 2: Doprovázející organizace (Tenant)
+* **Kdo to je:** Konkrétní doprovázející organizace (např. *Doprovázení.com*).
+* **Vazba v DB:** `organization_id` (UUID) – tato hodnota je přítomna v každé tabulce.
+* **Charakteristika:** Má vlastní IČO, bankovní účty, vlastní složku na Google Drive, vlastní nastavení loga a barev (viz Kap. 41) a vlastní sadu zaměstnanců.
+
+### Úroveň 3: Pobočka organizace (Branch)
+* **Kdo to je:** Regionální pobočka jedné organizace (např. *Pobočka Ústí nad Labem*, *Pobočka Teplice*).
+* **Vazba v DB:** `branch_id` (UUID, nullable). Pokud organizace pobočky nemá, tato vazba se nevyužívá.
+* **Charakteristika:** Umožňuje sdílet zaměstnance, ale omezit jim viditelnost rodin pouze na rodiny spravované danou pobočkou.
+
+### Úroveň 4: Klíčová osoba (KO / Sociální pracovník)
+* **Kdo to je:** Zaměstnanec organizace s rolí `ko` přiřazený k rodinám.
+* **Vazba v DB:** `assigned_ko_id` (UUID v tabulce `households`).
+* **Charakteristika:** Vytváří události na časové ose, plní úkoly, provádí doprovázení v terénu.
+
+### Úroveň 5: Pěstounská rodina / Domácnost (Household)
+* **Kdo to je:** Společná jednotka tvořená pěstouny (primárními pečovateli) a dětmi.
+* **Vazba v DB:** Tabulka `households` a vazební tabulka `household_members`.
+* **Charakteristika:** Drží dohodu o doprovázení, celkový rozpočet státního příspěvku (SPVPP) a klientskou zónu.
+
+### Úroveň 6: Dítě (Foster Child)
+* **Kdo to je:** Dítě svěřené do pěstounské péče.
+* **Vazba v DB:** Tabulka `persons` s kategorií `foster_child`.
+* **Charakteristika:** Nejnižší a nejdůležitější úroveň. Každé čerpání peněz (respit, vzdělávání, terapie) a každá omluvenka se váže na konkrétní dítě z důvodu vyúčtování vůči Úřadu práce.
+
+---
+
+## 2. Databázový model (SQL Úprava)
+
+Tento skript rozšiřuje databázi o podporu poboček a systémových rolí provozovatele. Spusťte v Supabase SQL Editoru.
+
+```sql
+-- 1. Tabulka poboček (Branches)
+CREATE TABLE organization_branches (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID REFERENCES organizations(id) ON DELETE CASCADE NOT NULL,
+    name TEXT NOT NULL,
+    city TEXT NOT NULL,
+    address TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 2. Přidání vazby na pobočku do uživatelských profilů a domácností
+ALTER TABLE profiles ADD COLUMN branch_id UUID REFERENCES organization_branches(id) ON DELETE SET NULL;
+ALTER TABLE households ADD COLUMN branch_id UUID REFERENCES organization_branches(id) ON DELETE SET NULL;
+
+-- 3. Flag pro globálního administrátora systému (Provozovatel)
+ALTER TABLE profiles ADD COLUMN is_system_operator BOOLEAN DEFAULT FALSE;
+
+-- 4. Auditní triggery
+CREATE TRIGGER audit_organization_branches AFTER INSERT OR UPDATE OR DELETE ON organization_branches FOR EACH ROW EXECUTE FUNCTION process_audit_log();
+```
+
+---
+
+## 3. Pravidla izolace dat (RLS)
+
+Základní pravidlo pro multi-tenancy v PostgreSQL:
+
+```sql
+-- Všichni uživatelé vidí pouze data své vlastní organizace
+CREATE POLICY "Multi-tenant isolation policy" 
+ON households FOR ALL
+USING (
+    (organization_id = (SELECT organization_id FROM profiles WHERE id = auth.uid()))
+    OR 
+    ((SELECT is_system_operator FROM profiles WHERE id = auth.uid()) = TRUE)
+);
+```
+
+* *Poznámka:* Pokud je uživatel označen jako `is_system_operator = TRUE`, RLS mu umožní náhled pro účely podpory, ale každé takové zobrazení je striktně zaznamenáno v `audit_logs`.

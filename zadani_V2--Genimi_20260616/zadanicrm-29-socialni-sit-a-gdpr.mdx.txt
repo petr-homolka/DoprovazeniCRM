@@ -1,0 +1,127 @@
+---
+title: "Kapitola 29: Biologická rodina, sociální prostor a GDPR souhlasy"
+description: "Vazby na biologické příbuzné, širší sociální síť dítěte, rating vztahů a automatické generování GDPR souhlasů."
+icon: "users-viewfinder"
+---
+
+<Warning>
+**Instrukce pro AI programátora:** Jakákoliv osoba zapsaná v systému (včetně babičky, kamaráda ze školy nebo nepokrevního strýce) podléhá GDPR. Do databáze nesmíme ukládat jejich data (zejména rodná čísla a pasy) bez jejich podepsaného souhlasu. Systém musí u každé externí osoby evidovat stav GDPR souhlasu a umožnit jeho okamžité vygenerování do PDF k tisku a podpisu.
+</Warning>
+
+## 1. Architektura osob a vztahů (Polymorfní řešení)
+
+Abychom zabránili duplicitě (např. abychom nemuseli psát tabulku `social_contacts` s duplicitními sloupci pro adresy a telefony), **všechny osoby v biologické rodině a sociálním kruhu jsou uloženy v centrální tabulce `persons`** (zavedené v Kap. 2). 
+
+Tím automaticky dědí veškeré historizované kontaktní údaje (`person_contacts`), adresy (`person_address_history`) a doklady (`person_identity_documents`) zavedené v Kap. 28.
+
+### Rozšíření typů osob (SQL Úprava)
+Rozšiřujeme číselník `person_category` o nové typy a vytváříme novou tabulku pro detailní vazby dítěte na jeho okolí. Spusťte v Supabase SQL Editoru.
+
+```sql
+-- 1. Rozšíření enumu o biologickou rodinu a sociální kruh
+-- V PostgreSQL nelze snadno měnit ENUM za běhu v transakci, proto doplňujeme příkazem ALTER TYPE
+ALTER TYPE person_category ADD VALUE IF NOT EXISTS 'biological_family_member'; -- Člen biologické rodiny
+ALTER TYPE person_category ADD VALUE IF NOT EXISTS 'social_circle_member';      -- Kamarád, nepokrevní teta, soused...
+
+-- 2. 10stupňový rating kvality/bezpečnosti vztahu k dítěti
+CREATE TYPE relationship_rating AS ENUM (
+    'A', -- Výborný vztah, maximální podpora dítěte
+    'B', -- Velmi dobrý vztah, stabilní kontakt
+    'C', -- Dobrý vztah, občasný kontakt bez problémů
+    'D', -- Neutrální vztah, pasivní postoj
+    'E', -- Slabý vztah, nestabilní nebo chladný kontakt
+    'F', -- Problematický vztah, vyžaduje asistovaný styk
+    'N', -- Neznámý vztah / Neprozkoumáno
+    'X', -- Rizikový vztah, nevhodné chování příbuzného
+    'Y', -- Vysoce rizikový vztah, hrozí ohrožení vývoje
+    'Z'  -- ZÁKAZ STYKU (Nařízeno soudně / OSPODem)
+);
+
+-- 3. Vazební tabulka sociální a biologické sítě dítěte (Social Network Matrix)
+CREATE TABLE child_relationships (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID REFERENCES organizations(id) NOT NULL,
+    child_id UUID REFERENCES persons(id) ON DELETE CASCADE NOT NULL, -- Dítě (foster_child)
+    relative_id UUID REFERENCES persons(id) ON DELETE CASCADE NOT NULL, -- Příbuzný / kamarád
+    
+    -- Vazba na dynamický číselník vztahů (Kap. 36 Taxonomy, např. 'partner_matky', 'dedecek', 'kamarad')
+    relationship_type_term_id UUID REFERENCES taxonomy_terms(id) NOT NULL,
+    relationship_notes TEXT, -- Poznámka o vztahu (např. "Pravidelně jezdí na víkendy, ale matka žárlí")
+    
+    -- Bezpečnostní hodnocení
+    rating relationship_rating DEFAULT 'N',
+    
+    -- GDPR Compliance
+    gdpr_consent_signed BOOLEAN DEFAULT FALSE,
+    gdpr_consent_document_id UUID REFERENCES documents(id), -- Odkaz na podepsané a naskenované PDF
+    
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    
+    UNIQUE(child_id, relative_id)
+);
+
+-- 4. Auditní trigger
+CREATE TRIGGER audit_child_relationships AFTER INSERT OR UPDATE OR DELETE ON child_relationships FOR EACH ROW EXECUTE FUNCTION process_audit_log();
+```
+
+---
+
+## 2. Evidence sociálního a biologického prostoru
+
+### Biologická rodina (Příbuzenské vazby)
+KO na kartě dítěte může sestavit kompletní rodokmen. Typické předdefinované vazby v taxonomii jsou:
+* `otec` + `partnerka_otce` (macecha)
+* `matka` + `partner_matky` (otčím)
+* `dedecek_pat` (z otcovy strany), `babička_pat`
+* `dedecek_mat` (z matčiny strany), `babička_mat`
+* `stryc`, `teta` a jejich partneři
+* `sourozenec` (vlastní, polorodý)
+
+### Sociální prostor (Nepříbuzenské vazby)
+Evidence lidí, kteří mají vliv na život dítěte, ale nejsou pokrevní příbuzní:
+* `kamarad`, `kamaradka` (např. nejlepší kamarád ze školy pro případ útěku/krize)
+* `nepokrevni_teta` / `nepokrevni_stryc` (sousedé, blízcí přátelé pěstounské rodiny)
+* `vedouci_krouzku` / `trener`
+
+---
+
+## 3. GDPR a Generování souhlasů s evidencí (Consent Flow)
+
+Protože systém eviduje u těchto osob citlivá data (IČO, Rodné číslo, OP, Pas, telefon), musíme mít pro případnou kontrolu ze strany ÚOOÚ podepsaný fyzický papír.
+
+```mermaid
+sequenceDiagram
+    KO->>Systém: Zadá babičku (Jméno, RČ, Adresa)
+    Systém-->>KO: Upozornění: Chybí GDPR souhlas!
+    KO->>Systém: Klikne na "Generovat GDPR Souhlas"
+    Systém->>Systém: Zkompiluje PDF z šablony
+    KO->>Tiskárna: Vytiskne PDF a babička ho podepíše
+    KO->>Mobil/PWA: Vyfotí podepsaný souhlas
+    PWA->>Systém: Uloží sken do documents a přepne status na "Signed"
+```
+
+### Automatické generování PDF (GDPR Template)
+Po stisknutí tlačítka `Generovat GDPR Souhlas` systém na základě šablony (Kapitola 17) vygeneruje PDF, které obsahuje:
+1. Hlavičku naší doprovázející organizace (Název, IČO, adresa).
+2. Prohlášení o zpracování osobních údajů podle čl. 6 a 9 GDPR.
+3. Vyplněná data subjektu (Jméno, Příjmení, Datum narození / Rodné číslo, Adresa trvalého bydliště).
+4. Seznam evidovaných údajů (kontakty, doklady) a účel (evidence kontaktů pro doprovázení pěstounské rodiny dítěte [Jméno dítěte]).
+5. Místo pro podpis, datum a jméno KO, která souhlas převzala.
+
+### Karanténa citlivých dat (GDPR Lock)
+* Dokud je v `child_relationships.gdpr_consent_signed = FALSE`, systém **maskuje citlivá data** v uživatelském rozhraní (např. zobrazuje rodné číslo babičky jako `******-****` a telefon jako `+420 *** *** ***`).
+* Jakmile KO nahraje podepsaný souhlas (přepne se flag na `TRUE`), maskování se zruší a data jsou plně čitelná pro sociální práci.
+
+---
+
+## 4. Uživatelské rozhraní (UI/UX)
+
+* **Vztahová síť (Network Grid):** Na detailu rodiny/dítěte se zobrazuje samostatný blok **"Lidé kolem dítěte"**. 
+  * Je vizuálně rozdělen na **Biologická rodina** a **Sociální síť**.
+  * Každá osoba je zobrazena jako malá kartička obsahující jméno, vazbu (např. *Babička z matčiny strany*), barevný štítek s ratingem (např. zelené `A` nebo červené `Z - Zákaz styku`) a indikátor GDPR souhlasu (zelená fajfka vs. červený vykřičník).
+* **Rating Selector (Semafor vztahů):** Výběr ratingu (`A` až `Z`) v editaci vztahu využívá barvy:
+  * `A`, `B` - Světle zelené.
+  * `C`, `D`, `E` - Šedé/Neutrální.
+  * `F`, `N` - Žluté/Oranžové.
+  * `X`, `Y`, `Z` - Červené (při nastavení `Z` se nad kartou rodiny ve Worker aplikaci okamžitě zobrazí červený banner: *"Pozor: Babička XY má soudní zákaz styku s dítětem!"*).

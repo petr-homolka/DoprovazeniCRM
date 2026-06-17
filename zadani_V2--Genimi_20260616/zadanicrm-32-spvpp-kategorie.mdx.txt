@@ -1,0 +1,95 @@
+
+---
+title: "Kapitola 32: SPVPP – Kategorie, limity a temporální split"
+description: "Pravidla čerpání dotace podle ZSPOD, procentuální limity a rozdělení výpočtu při změně legislativy."
+icon: "pie-chart"
+---
+
+<Warning>
+**Instrukce pro AI programátora:** Finanční částky a minimální/maximální procentní limity pro čerpání státního příspěvku (SPVPP) nesmí být v kódu nastaveny natvrdo. Parametry musí číst z databázové tabulky s přesným časovým vymezením (`valid_from`, `valid_to`). Modul reportingu musí obsahovat logiku **Temporálního splitu** – pokud organizace generuje roční zprávu pro Úřad práce a limit se změnil k 1. červenci, report musí automaticky vypočítat poměrné částky zvlášť pro první a druhé pololetí.
+</Warning>
+
+## 1. Databázový model (SQL)
+
+Tento model zavádí verzované parametry státního příspěvku podle zákona o SPOD (§ 47d) a kalendář pro hlídání dotačních termínů. Spusťte v Supabase SQL Editoru.
+
+```sql
+-- 1. Parametry státního příspěvku (Verzované v čase)
+CREATE TABLE spvpp_parameters (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    valid_from DATE NOT NULL,
+    valid_to DATE, -- NULL znamená aktuálně platný stav
+    
+    base_annual_amount_czk NUMERIC(12, 2) NOT NULL, -- Základní částka na 1 dohodu (např. 60 000 Kč)
+    
+    -- Procentuální rozpad podle zákona (Vynucená struktura čerpání)
+    min_respite_percentage INT NOT NULL DEFAULT 0, -- Minimální hranice na odlehčovací služby
+    min_education_percentage INT NOT NULL DEFAULT 0, -- Minimální hranice na vzdělávání
+    min_counseling_percentage INT NOT NULL DEFAULT 0, -- Minimální hranice na psychologickou pomoc
+    max_administration_percentage INT NOT NULL DEFAULT 100, -- Maximální možný přesun do provozu organizace
+    
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    created_by UUID REFERENCES profiles(id)
+);
+
+-- 2. Kalendář zákonných termínů (Zabudovaný hlídač)
+CREATE TABLE statutory_deadlines (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID REFERENCES organizations(id), -- NULL pro celostátně platné termíny
+    event_name TEXT NOT NULL, -- např. "Roční vyúčtování SPVPP"
+    deadline_month INT NOT NULL CHECK (deadline_month BETWEEN 1 AND 12),
+    deadline_day INT NOT NULL CHECK (deadline_day BETWEEN 1 AND 31),
+    warning_days_ahead INT[] DEFAULT '{30, 14, 7}', -- Kdy spouštět notifikační urgence
+    is_active BOOLEAN DEFAULT TRUE
+);
+
+-- 3. Rozšíření účetních záznamů o přesnou kategorii SPVPP (vazba na service_transactions)
+CREATE TYPE spvpp_category AS ENUM ('respite', 'education', 'counseling', 'administration', 'unrecognized');
+
+ALTER TABLE service_transactions ADD COLUMN spvpp_category spvpp_category DEFAULT 'unrecognized';
+
+-- 4. Audit triggery
+CREATE TRIGGER audit_spvpp_parameters AFTER INSERT OR UPDATE OR DELETE ON spvpp_parameters FOR EACH ROW EXECUTE FUNCTION process_audit_log();
+
+```
+
+## 2. Architektura a Byznys logika
+
+### Matematika Temporálního splitu (Rozpad při změně zákona)
+
+Běžný roční cyklus počítá limit jako $100\%$ z `base_annual_amount_czk`. Pokud však 1. září vyjde novela měnící základní částku, systém musí uplatnit alikvotní výpočet.
+
+Výpočet probíhá na pozadí pomocí PostgreSQL nebo Edge Function podle vzorce:
+$$ Limit = \left( Base_A \times \frac{Days_A}{Days_{Year}} \right) + \left( Base_B \times \frac{Days_B}{Days_{Year}} \right) $$
+
+Při generování "Výkazu o čerpání pro krajský úřad" systém:
+
+1. Rozdělí report na sekce podle dat z tabulky `spvpp_parameters` spadajících do reportovaného okna.
+2. Ukáže rozpočítané poměrné části pro Kategorie (Respit, Vzdělávání, Poradenství).
+3. Vypíše upozornění na hlavičce reportu: *"Ve vybraném období došlo ke změně legislativních parametrů. Výpočet byl rozdělen."*
+
+### Hlídač deadlinů (Notifikační kalendář)
+
+Modul se napojuje přímo na `Notification Dispatcher` (Kapitola 19).
+
+1. Každou noc se spustí CRON úloha.
+2. Systém se podívá do `statutory_deadlines` a porovná aktuální datum s `deadline_month` a `deadline_day`.
+3. Pokud do termínu zbývá přesný počet dní odpovídající některému číslu v poli `warning_days_ahead` (např. 30 dní před 15. únorem – termínem vrácení nevyčerpané dotace), vygeneruje úkol pro roli `director` a `economist` se statusem `high_priority`.
+
+## 3. Uživatelské rozhraní (UI/UX)
+
+* **FosterFlow Organization (Dashboard pro vedení):**
+* Zobrazení rozpočtu každé rodiny nevyužívá jen jedno číslo "Zbývá", ale komponentu **Skládaný sloupcový graf (Stacked Bar Chart)**.
+* Osa Y ukazuje celkovou roční dotaci pro danou rodinu (např. 60 000 Kč).
+* Sloupec je barevně rozdělen na sekce (Respit, Vzdělávání, Poradenství, Provoz).
+* Vizuální rysky (červené linky) na sloupci jasně ukazují `min_respite_percentage` a další zákonné hranice nařízené parametrem pro daný rok. Uživatel na první pohled vidí, že i když rodina celkově nevyčerpala peníze, porušuje zákon tím, že podkročila hranici určenou pro odborné poradenství.
+
+
+* **Sekce Parametry systému:**
+* Administrátor má přehlednou tabulku historie částek a procent s možností přidat budoucí změnu předem (systém se na nový výpočet přepne o půlnoci v den platnosti novely).
+
+
+
+```
+
+

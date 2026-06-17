@@ -1,0 +1,324 @@
+**---**
+
+**title: "Kapitola 31: Schvalování plateb a párování banky"**
+
+**description: "Konfigurovatelné schvalovací řetězce, eskalace při nečinnosti a AI párování bankovních výpisů."**
+
+**icon: "route"**
+
+**---**
+
+
+
+**<Warning>**
+
+**\*\*Instrukce pro AI programátora:\*\* Schvalovací řetězce (Approval Workflows) nesmí být pevně zapsány v programovém kódu pomocí podmínek typu `if (amount > 10000)`. Systém musí vyhodnocovat schvalovací kroky dynamicky na základě dat v tabulkách pravidel. Modul pro zpracování bankovních výpisů musí běžet asynchronně jako izolovaný worker (Edge Function), aby zpracování velkých souborů (ABO/GPC) neblokovalo uživatelské rozhraní.**
+
+**</Warning>**
+
+
+
+**## 1. Databázový model (SQL)**
+
+
+
+**Tento model implementuje flexibilní schvalovací matici a evidenci transakcí z bankovních výpisů připravených pro automatické párování. Spusťte v Supabase SQL Editoru.**
+
+
+
+**```sql**
+
+**-- 1. Stavový cyklus schvalovacího kroku a transakce**
+
+**CREATE TYPE approval\_step\_status AS ENUM ('pending', 'approved', 'rejected', 'escalated', 'timeout');**
+
+
+
+**-- 2. Definice schvalovacích řetězců (Šablony pravidel)**
+
+**CREATE TABLE approval\_workflows (**
+
+&#x20;   **id UUID PRIMARY KEY DEFAULT uuid\_generate\_v4(),**
+
+&#x20;   **organization\_id UUID REFERENCES organizations(id) NOT NULL,**
+
+&#x20;   **name TEXT NOT NULL, -- např. "Standardní schvalování faktur"**
+
+&#x20;   **is\_active BOOLEAN DEFAULT TRUE,**
+
+&#x20;   **created\_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()**
+
+**);**
+
+
+
+**-- 3. Konkrétní kroky v řetězci (Série schvalovatelů)**
+
+**CREATE TABLE approval\_steps (**
+
+&#x20;   **id UUID PRIMARY KEY DEFAULT uuid\_generate\_v4(),**
+
+&#x20;   **workflow\_id UUID REFERENCES approval\_workflows(id) ON DELETE CASCADE NOT NULL,**
+
+&#x20;   **step\_number INT NOT NULL, -- Pořadí kroku (1, 2, 3...)**
+
+&#x20;   
+
+&#x20;   **-- Kdo schvaluje (Vazba buď na konkrétní roli z RBAC, nebo na specifický profil)**
+
+&#x20;   **required\_role\_id UUID REFERENCES roles(id),** 
+
+&#x20;   **required\_profile\_id UUID REFERENCES profiles(id),**
+
+&#x20;   
+
+&#x20;   **-- Podmínka pro spuštění kroku (0 znamená, že krok běží vždy)**
+
+&#x20;   **min\_amount\_czk NUMERIC(12, 2) DEFAULT 0.00,** 
+
+&#x20;   
+
+&#x20;   **timeout\_hours INT DEFAULT 48, -- Časový limit pro schválení před eskalací**
+
+&#x20;   **created\_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),**
+
+&#x20;   **UNIQUE(workflow\_id, step\_number)**
+
+**);**
+
+
+
+**-- 4. Instance schvalovacího procesu pro konkrétní doklad**
+
+**CREATE TABLE document\_approvals (**
+
+&#x20;   **id UUID PRIMARY KEY DEFAULT uuid\_generate\_v4(),**
+
+&#x20;   **financial\_document\_id UUID REFERENCES financial\_documents(id) ON DELETE CASCADE NOT NULL,**
+
+&#x20;   **current\_step\_number INT NOT NULL DEFAULT 1,**
+
+&#x20;   **status approval\_step\_status DEFAULT 'pending',**
+
+&#x20;   **created\_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),**
+
+&#x20;   **updated\_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()**
+
+**);**
+
+
+
+**-- 5. Historický log schvalování (Auditní stopa pro auditory)**
+
+**CREATE TABLE approval\_history\_logs (**
+
+&#x20;   **id UUID PRIMARY KEY DEFAULT uuid\_generate\_v4(),**
+
+&#x20;   **document\_approval\_id UUID REFERENCES document\_approvals(id) ON DELETE CASCADE NOT NULL,**
+
+&#x20;   **step\_number INT NOT NULL,**
+
+&#x20;   **executed\_by UUID REFERENCES profiles(id), -- NULL v případě systémového timeoutu**
+
+&#x20;   **status approval\_step\_status NOT NULL,**
+
+&#x20;   **notes TEXT, -- Vyjádření schvalovatele (např. důvod zamítnutí)**
+
+&#x20;   **executed\_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()**
+
+**);**
+
+
+
+**-- 6. Evidence importovaných bankovních výpisů**
+
+**CREATE TABLE bank\_statements (**
+
+&#x20;   **id UUID PRIMARY KEY DEFAULT uuid\_generate\_v4(),**
+
+&#x20;   **organization\_id UUID REFERENCES organizations(id) NOT NULL,**
+
+&#x20;   **document\_file\_id UUID REFERENCES documents(id) NOT NULL, -- Odkaz na Drive na původní soubor (ABO, GPC, PDF)**
+
+&#x20;   **statement\_number TEXT NOT NULL,**
+
+&#x20;   **period\_start DATE NOT NULL,**
+
+&#x20;   **period\_end DATE NOT NULL,**
+
+&#x20;   **uploaded\_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()**
+
+**);**
+
+
+
+**-- 7. Jednotlivé transakce z bankovního výpisu**
+
+**CREATE TABLE bank\_transactions (**
+
+&#x20;   **id UUID PRIMARY KEY DEFAULT uuid\_generate\_v4(),**
+
+&#x20;   **statement\_id UUID REFERENCES bank\_statements(id) ON DELETE CASCADE NOT NULL,**
+
+&#x20;   **booking\_date DATE NOT NULL,**
+
+&#x20;   **amount NUMERIC(12, 2) NOT NULL, -- Kladné (příjem - dotace), záporné (výdej - platba poskytovateli)**
+
+&#x20;   **variable\_symbol TEXT,**
+
+&#x20;   **counterparty\_account TEXT NOT NULL, -- Číslo účtu protistrany**
+
+&#x20;   **counterparty\_name TEXT,**
+
+&#x20;   **remittance\_info TEXT, -- Zpráva pro příjemce**
+
+&#x20;   
+
+&#x20;   **-- Výsledek párování**
+
+&#x20;   **paired\_financial\_document\_id UUID REFERENCES financial\_documents(id), -- Vazba na naši interní fakturu**
+
+&#x20;   **is\_manually\_paired BOOLEAN DEFAULT FALSE,**
+
+&#x20;   **paired\_by UUID REFERENCES profiles(id),**
+
+&#x20;   **created\_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()**
+
+**);**
+
+
+
+**-- Indexy pro rychlé vyhodnocování schvalování a párování**
+
+**CREATE INDEX idx\_approval\_steps\_lookup ON approval\_steps(workflow\_id, step\_number);**
+
+**CREATE INDEX idx\_bank\_tx\_matching ON bank\_transactions(variable\_symbol, amount) WHERE paired\_financial\_document\_id IS NULL;**
+
+
+
+**-- 8. Audit triggery**
+
+**CREATE TRIGGER audit\_approval\_workflows AFTER INSERT OR UPDATE OR DELETE ON approval\_workflows FOR EACH ROW EXECUTE FUNCTION process\_audit\_log();**
+
+**CREATE TRIGGER audit\_approval\_steps AFTER INSERT OR UPDATE OR DELETE ON approval\_steps FOR EACH ROW EXECUTE FUNCTION process\_audit\_log();**
+
+**CREATE TRIGGER audit\_document\_approvals AFTER INSERT OR UPDATE OR DELETE ON document\_approvals FOR EACH ROW EXECUTE FUNCTION process\_audit\_log();**
+
+**CREATE TRIGGER audit\_bank\_statements AFTER INSERT OR UPDATE OR DELETE ON bank\_statements FOR EACH ROW EXECUTE FUNCTION process\_audit\_log();**
+
+**CREATE TRIGGER audit\_bank\_transactions AFTER INSERT OR UPDATE OR DELETE ON bank\_transactions FOR EACH ROW EXECUTE FUNCTION process\_audit\_log();**
+
+
+
+**```**
+
+
+
+**## 2. Architektura a Byznys logika**
+
+
+
+**### Dynamické schvalovací workflow (Evaluation Engine)**
+
+
+
+**Když doklad přejde ze stavu `draft` do `pending\_approval`:**
+
+
+
+**1. Systém vyhledá aktivní `approval\_workflows` pro danou organizaci.**
+
+**2. Načte všechny kroky seřazené podle `step\_number`.**
+
+**3. Pro každý krok vyhodnotí podmínku: Pokud je `total\_amount\_czk` na dokladu větší nebo rovno `min\_amount\_czk`, krok se stává aktivním.**
+
+**4. \*Příklad nastavení:\* \* Krok 1: Schvaluje role `ko` (Vždy - limit 0 Kč).**
+
+**\* Krok 2: Schvaluje role `director` (Pouze pokud je částka $\\ge$ 20 000 Kč).**
+
+
+
+
+
+**5. Pokud krok 1 proběhne úspěšně (`status = 'approved'`), `current\_step\_number` se inkrementuje a proces se přesune na další platný krok. Pokud další krok neexistuje, stav celého dokladu v `financial\_documents` se automaticky přepne na `approved`.**
+
+
+
+**### Pravidlo eskalace a timeoutu (CRON)**
+
+
+
+**Pokud schvalovatel nereaguje do limitu určeného v `timeout\_hours`:**
+
+
+
+**1. Systémový noční job detekuje zpoždění.**
+
+**2. Záznam v `document\_approvals` přepne do stavu `escalated`.**
+
+**3. Do `approval\_history\_logs` zapíše systémovou poznámku o vypršení limitu.**
+
+**4. Modul notifikací (Kapitola 19) odešle urgentní upozornění nadřízené roli (např. řediteli), že v systému visí neodbavený finanční doklad po splatnosti schvalování.**
+
+
+
+**### AI Párování bankovních výpisů (Bank Matcher)**
+
+
+
+**Po nahrání bankovního výpisu (např. ve formátu ABO / .gpc standardu českých bank) spustí backend parser. Pro každý řádek transakce se spustí vyhodnocovací matice:**
+
+
+
+**1. \*\*Kryptografické a exaktní párování (100% shoda):\*\***
+
+**Systém hledá v `financial\_documents` neproplacený doklad (`status = 'approved'`), kde se \*\*přesně shoduje Variabilní symbol AND Částka AND Číslo účtu protistrany\*\* s údaji v `bank\_transactions`. Pokud najde, automaticky prováže ID dokladu a přepne stav faktury na `paid`.**
+
+
+
+
+
+**2. \*\*AI Heuristické párování (Gemini Heuristics):\*\***
+
+**Pokud exaktní shoda selže (pěstoun zapomněl uvést VS, nebo udělal překlep v jedné číslici):**
+
+
+
+**1. Systém vezme řádek transakce (jméno protistrany, textová zpráva pro příjemce) a vybere top 5 neproplacených dokladů s podobnou částkou ($\\pm$ 5 %).**
+
+**2. Data předá modelu \*\*Gemini Pro\*\* s promptem: \*"Porovnej text z bankovního výpisu \[X] s těmito pěti fakturami. Urči s procentuální jistotou, zda se jedná o stejný obchodní případ. Odpověz výhradně v JSON formátu s uvedením důvodu."\***
+
+
+
+
+
+**3. \*\*Návrhová vrstva pro ekonomku:\*\***
+
+**Pokud AI určí shodu s jistotou vyšší než 85 %, transakci automaticky neprováže, ale označí ji příznakem `pending\_verification` a ekonomce v rozhraní nabídne žlutou pilulku s doporučením: \*"AI navrhuje spárovat s fakturou č. 20260012 (shoda jména a částky, chybí VS)"\*. Ekonomka shodu potvrdí jedním kliknutím.**
+
+
+
+
+
+**## 3. Uživatelské rozhraní (UI/UX)**
+
+
+
+**\* \*\*FosterFlow Organization (Desktop - Přehled schvalování):\*\***
+
+**\* \*\*Workflow Designer:\*\* Jednoduché tabulkové rozhraní, kde ředitel organizace definuje pravidla. Vidí řádky schvalovací matice a může přidávat úrovně (např. \*"Pro částky nad 50 000 Kč přidej krok: Schvaluje Externí auditor"\*).**
+
+**\* \*\*Bankovní dispečink:\*\* Obrazovka rozdělená na dvě části. Vlevo je seznam transakcí z importovaného výpisu. Zelené řádky jsou automaticky spárované (netřeba řešit). Žluté řádky obsahují AI doporučení. Kliknutím na žlutý řádek se uprostřed zobrazí detail transakce a doporučená faktura s velkým zeleným tlačítkem `Potvrdit shodu`. Šedé řádky vyžadují plně ruční dohledání.**
+
+
+
+
+
+
+
+**```**
+
+
+
+
+
