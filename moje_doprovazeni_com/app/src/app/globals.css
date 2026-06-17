@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f8fafc; /* Slate-50 pro čisté pozadí dashboardu */
+  --foreground: #0f172a; /* Slate-900 pro text */
 
   /* Dynamické barvy pro branding (SaaS Whitelabeling) */
   --primary-color: #6366f1; /* Výchozí indigo */
@@ -22,13 +22,6 @@
   --color-secondary: var(--secondary-color);
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 body {

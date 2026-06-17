@@ -319,10 +319,10 @@ export default function Home() {
 
   // RENDER: HLAVNÍ METADATA DASHBOARDU
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-slate-900 text-slate-100 font-sans">
+    <div className="flex h-screen w-full overflow-hidden bg-slate-50 text-slate-900 font-sans">
       
       {/* 1. ŠPIČKOVÝ SIDEBAR */}
-      <aside className="w-64 bg-slate-950 flex flex-col border-r border-slate-800">
+      <aside className="w-64 bg-slate-950 flex flex-col border-r border-slate-900">
         {/* Logo a Organizace */}
         <div className="p-6 border-b border-slate-800 flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shadow-lg shadow-primary/20">
@@ -387,11 +387,11 @@ export default function Home() {
       </aside>
 
       {/* 2. STŘEDNÍ SLOUPCOVÝ SEZNAM RODIN */}
-      <section className="w-96 bg-slate-900 flex flex-col border-r border-slate-800">
+      <section className="w-96 bg-slate-50 flex flex-col border-r border-slate-200">
         {/* Hlavička sloupce a Hledání */}
-        <div className="p-6 border-b border-slate-800 space-y-4">
+        <div className="p-6 border-b border-slate-200 bg-white space-y-4">
           <div className="flex justify-between items-center">
-            <h2 className="text-xl font-bold text-white tracking-tight">Klientské spisy</h2>
+            <h2 className="text-xl font-bold text-slate-800 tracking-tight">Klientské spisy</h2>
             <button className="p-2 bg-primary hover:bg-primary-hover text-white rounded-lg transition-colors shadow-md">
               <Plus className="w-4 h-4" />
             </button>
@@ -404,7 +404,7 @@ export default function Home() {
               placeholder="Hledat rodinu, pěstouna, ID..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-2.5 bg-slate-950 border border-slate-850 rounded-lg text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+              className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary focus:bg-white transition-all"
             />
           </div>
         </div>
@@ -433,16 +433,18 @@ export default function Home() {
                   onClick={() => setSelectedFamilyId(h.id)}
                   className={`p-4 rounded-xl cursor-pointer border transition-all ${
                     selectedFamilyId === h.id 
-                      ? "bg-primary/10 border-primary/50 shadow-md shadow-primary/5" 
-                      : "bg-slate-950/40 border-slate-850 hover:bg-slate-850/50"
+                      ? "bg-white border-primary shadow-sm shadow-primary/5" 
+                      : "bg-white border-slate-200 hover:bg-slate-50 shadow-sm"
                   }`}
                 >
                   <div className="flex justify-between items-start mb-1">
-                    <h3 className="font-semibold text-sm text-white">
+                    <h3 className="font-bold text-sm text-slate-800">
                       {p ? `Rodina ${p.last_name}ových` : "Rodina bez pěstouna"}
                     </h3>
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-wide uppercase ${
-                      h.status === "active" ? "bg-emerald-500/10 text-emerald-400" : "bg-amber-500/10 text-amber-400"
+                      h.status === "active" 
+                        ? "bg-emerald-50 text-emerald-700 border border-emerald-200" 
+                        : "bg-amber-50 text-amber-700 border border-amber-200"
                     }`}>
                       {h.status === "active" ? "Aktivní" : "Zájemce"}
                     </span>
@@ -450,14 +452,14 @@ export default function Home() {
                   
                   {/* Primární pěstoun a zobrazení duplicitního příjmení */}
                   {p && (
-                    <p className="text-xs text-primary font-medium">
+                    <p className="text-xs text-primary font-bold">
                       Pěstoun: {getFosterParentDisplayName(p)}
                     </p>
                   )}
 
                   {/* Adresa pod jménem v případě stejných příjmení v databázi */}
                   {p && hasDup && pAddress && (
-                    <p className="text-[11px] text-slate-400 flex items-center gap-1 mt-1 bg-slate-900/60 p-1.5 rounded border border-slate-850/40">
+                    <p className="text-[11px] text-slate-600 flex items-center gap-1 mt-1 bg-slate-50 p-1.5 rounded border border-slate-200">
                       <MapPin className="w-3 h-3 text-primary" />
                       <span>{pAddress.city}, {pAddress.street}</span>
                     </p>
@@ -481,21 +483,21 @@ export default function Home() {
       </section>
 
       {/* 3. DETAILNÍ PANEL */}
-      <main className="flex-1 bg-slate-900/50 flex flex-col overflow-hidden">
+      <main className="flex-1 bg-slate-50 flex flex-col overflow-hidden">
         {selectedHousehold ? (
           <>
             {/* Horní lišta detailu */}
-            <div className="h-20 px-8 border-b border-slate-800 flex items-center justify-between bg-slate-900">
+            <div className="h-20 px-8 border-b border-slate-200 flex items-center justify-between bg-white">
               <div>
-                <h3 className="text-lg font-bold text-white">
+                <h3 className="text-lg font-bold text-slate-800">
                   {primaryFosterParent ? `Spis rodiny ${primaryFosterParent.last_name}ových` : "Detail spisu"}
                 </h3>
-                <p className="text-xs text-slate-400">
+                <p className="text-xs text-slate-500">
                   Doprovázeno pobočkou Brno • Evidenční kód: {selectedHousehold.foster_id}
                 </p>
               </div>
               <div className="flex gap-3">
-                <button className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-sm transition-colors border border-slate-700">
+                <button className="px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 rounded-lg text-sm transition-colors border border-slate-200 shadow-sm">
                   Vygenerovat PDF spis
                 </button>
                 <button className="px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg text-sm transition-colors shadow-md">
@@ -509,11 +511,11 @@ export default function Home() {
               
               {/* GDPR Karanténa Alert (pokud jakákoli osoba nemá souhlas) */}
               {selectedFamilyPersons.some(p => !p.gdpr_consent_signed) && (
-                <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 flex gap-3 text-amber-400">
-                  <ShieldAlert className="w-6 h-6 shrink-0 animate-pulse" />
+                <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 flex gap-3 text-amber-800">
+                  <ShieldAlert className="w-6 h-6 shrink-0 text-amber-600 animate-pulse" />
                   <div>
-                    <h4 className="font-semibold text-sm">GDPR Karanténa aktivní</h4>
-                    <p className="text-xs text-amber-400/80 leading-relaxed mt-1">
+                    <h4 className="font-bold text-sm">GDPR Karanténa aktivní</h4>
+                    <p className="text-xs text-amber-800/80 leading-relaxed mt-1">
                       U některých evidovaných příbuzných nebo kontaktů nebyl podepsán a naskenován souhlas se zpracováním osobních údajů. Jejich telefonní čísla, rodná čísla a osobní doklady jsou z bezpečnostních důvodů maskovány.
                     </p>
                   </div>
@@ -524,7 +526,7 @@ export default function Home() {
               <div className="grid grid-cols-3 gap-6">
                 
                 {/* 3.1. Karta pěstouna */}
-                <div className="bg-slate-950/40 p-6 rounded-xl border border-slate-850 space-y-4 flex flex-col justify-between">
+                <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4 flex flex-col justify-between">
                   <div>
                     <div className="flex justify-between items-start">
                       <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Hlavní Pěstoun</span>
@@ -532,27 +534,27 @@ export default function Home() {
                         <img 
                           src={primaryFosterParent.custom_fields.avatar_url} 
                           alt="avatar" 
-                          className="w-10 h-10 rounded-full border border-slate-800 object-cover"
+                          className="w-10 h-10 rounded-full border border-slate-200 object-cover"
                         />
                       )}
                     </div>
                     {primaryFosterParent && (
-                      <p className="text-xl font-bold text-white mt-2">
+                      <p className="text-xl font-bold text-slate-800 mt-2">
                         {getFosterParentDisplayName(primaryFosterParent)}
                       </p>
                     )}
-                    <p className="text-xs text-primary font-medium mt-1">
+                    <p className="text-xs text-primary font-bold mt-1">
                       Profese: {primaryFosterParent?.custom_fields?.profession || "Neuvedeno"}
                     </p>
                   </div>
 
                   {/* Adresa pěstouna a odkaz na Google Maps */}
-                  <div className="space-y-3 pt-4 border-t border-slate-900 text-xs">
+                  <div className="space-y-3 pt-4 border-t border-slate-100 text-xs">
                     {primaryParentAddress && (
                       <div className="space-y-1.5">
-                        <span className="text-slate-500 font-semibold block uppercase text-[10px]">Aktuální adresa:</span>
-                        <div className="flex items-center justify-between bg-slate-900/60 p-2.5 rounded-lg border border-slate-850">
-                          <span className="text-slate-300">
+                        <span className="text-slate-500 font-bold block uppercase text-[10px]">Aktuální adresa:</span>
+                        <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                          <span className="text-slate-700">
                             {primaryParentAddress.street}, {primaryParentAddress.city}
                             {primaryParentAddress.floor_details && <span className="block text-[10px] text-slate-500">{primaryParentAddress.floor_details}</span>}
                           </span>
@@ -561,7 +563,7 @@ export default function Home() {
                             target="_blank"
                             rel="noopener noreferrer"
                             title="Otevřít v Google Maps"
-                            className="p-1.5 hover:bg-slate-800 rounded-md text-primary hover:text-primary-hover transition-colors"
+                            className="p-1.5 hover:bg-slate-200 rounded-md text-primary transition-colors"
                           >
                             <Map className="w-4 h-4" />
                           </a>
@@ -572,35 +574,35 @@ export default function Home() {
                 </div>
 
                 {/* 3.2. Seznam dětí v pěstounské péči */}
-                <div className="bg-slate-950/40 p-6 rounded-xl border border-slate-850 space-y-4 col-span-2">
+                <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4 col-span-2">
                   <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Děti v pěstounské péči</h4>
                   <div className="grid grid-cols-2 gap-4">
                     {fosterChildren.map((child) => (
-                      <div key={child.id} className="p-4 rounded-lg bg-slate-900/60 border border-slate-850 flex items-start gap-3 justify-between">
+                      <div key={child.id} className="p-4 rounded-lg bg-slate-50 border border-slate-200 flex items-start gap-3 justify-between">
                         <div className="space-y-2">
                           <div className="flex items-center gap-2">
                             {child.custom_fields?.avatar_url && (
                               <img 
                                 src={child.custom_fields.avatar_url} 
                                 alt="child" 
-                                className="w-8 h-8 rounded-full object-cover border border-slate-800"
+                                className="w-8 h-8 rounded-full object-cover border border-slate-200"
                               />
                             )}
                             <div>
-                              <p className="text-sm font-bold text-white">{getChildDisplayName(child)}</p>
-                              <p className="text-[10px] text-slate-500">Státní občanství: ČR</p>
+                              <p className="text-sm font-bold text-slate-800">{getChildDisplayName(child)}</p>
+                              <p className="text-[10px] text-slate-400">Státní občanství: ČR</p>
                             </div>
                           </div>
                           
-                          <div className="text-[11px] text-slate-400 pt-2 space-y-1">
-                            <p><span className="text-slate-500">Hobby:</span> {child.custom_fields?.hobby || "Neuvedeno"}</p>
-                            <p><span className="text-slate-500">Škola:</span> {child.custom_fields?.school || "Neuvedeno"}</p>
+                          <div className="text-[11px] text-slate-650 pt-2 space-y-1">
+                            <p><span className="text-slate-400 font-medium">Hobby:</span> {child.custom_fields?.hobby || "Neuvedeno"}</p>
+                            <p><span className="text-slate-400 font-medium">Škola:</span> {child.custom_fields?.school || "Neuvedeno"}</p>
                           </div>
                         </div>
 
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide ${
-                          child.safety_rating === "A" ? "bg-emerald-500/10 text-emerald-400" :
-                          child.safety_rating === "B" ? "bg-blue-500/10 text-blue-400" : "bg-red-500/10 text-red-400"
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide border ${
+                          child.safety_rating === "A" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                          child.safety_rating === "B" ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-red-50 text-red-700 border-red-200"
                         }`}>
                           Rating {child.safety_rating}
                         </span>
@@ -615,23 +617,23 @@ export default function Home() {
               <div className="grid grid-cols-3 gap-6">
                 
                 {/* 3.3. Biologická rodina a sociální kontakty */}
-                <div className="bg-slate-950/40 p-6 rounded-xl border border-slate-850 space-y-4 col-span-3">
+                <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4 col-span-3">
                   <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Rodinné vazby a sociální prostor (GDPR karanténa)</h4>
                   <div className="grid grid-cols-3 gap-4">
                     
                     {/* Ostatní členové domácnosti (např. manželka pěstouna, biologické děti pěstouna) */}
                     {otherMembers.map((member) => (
-                      <div key={member.id} className="p-3.5 rounded-lg bg-slate-900/40 border border-slate-850 flex items-center gap-3">
+                      <div key={member.id} className="p-3.5 rounded-lg bg-slate-50 border border-slate-200 flex items-center gap-3">
                         {member.custom_fields?.avatar_url ? (
                           <img src={member.custom_fields.avatar_url} alt="avatar" className="w-9 h-9 rounded-full object-cover" />
                         ) : (
-                          <div className="w-9 h-9 rounded-full bg-slate-800 flex items-center justify-center font-bold text-xs">
+                          <div className="w-9 h-9 rounded-full bg-slate-200 flex items-center justify-center font-bold text-xs text-slate-500">
                             {member.first_name.charAt(0)}
                           </div>
                         )}
                         <div>
-                          <p className="text-sm font-semibold text-white">{member.first_name} {member.last_name}</p>
-                          <p className="text-[10px] text-primary font-medium mt-0.5">
+                          <p className="text-sm font-semibold text-slate-800">{member.first_name} {member.last_name}</p>
+                          <p className="text-[10px] text-primary font-bold mt-0.5">
                             {member.custom_fields?.relationship_to_child || "Člen rodiny"}
                           </p>
                         </div>
@@ -644,17 +646,17 @@ export default function Home() {
                         key={bio.id} 
                         className={`p-3.5 rounded-lg border flex items-center justify-between ${
                           bio.safety_rating === "Z" 
-                            ? "bg-red-500/5 border-red-500/20" 
-                            : "bg-slate-900/40 border-slate-850"
+                            ? "bg-red-50/50 border-red-200" 
+                            : "bg-slate-50 border-slate-200"
                         }`}
                       >
                         <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-full bg-slate-850 border border-slate-800 flex items-center justify-center font-bold text-xs text-slate-400">
+                          <div className="w-9 h-9 rounded-full bg-slate-200 border border-slate-200 flex items-center justify-center font-bold text-xs text-slate-500">
                             {bio.first_name.charAt(0)}
                           </div>
                           <div>
-                            <p className="text-sm font-semibold text-white">{bio.first_name} {bio.last_name}</p>
-                            <p className="text-[10px] text-slate-500 mt-0.5">
+                            <p className="text-sm font-semibold text-slate-800">{bio.first_name} {bio.last_name}</p>
+                            <p className="text-[10px] text-slate-400 mt-0.5">
                               Biologický rodič • Rating {bio.safety_rating}
                             </p>
                           </div>
@@ -663,13 +665,13 @@ export default function Home() {
                         {/* Bezpečnostní maskování dle příznaku GDPR */}
                         <div className="text-right">
                           {bio.safety_rating === "Z" ? (
-                            <span className="px-2 py-0.5 bg-red-500/10 text-red-400 text-[9px] font-bold uppercase tracking-wide rounded border border-red-500/10">
+                            <span className="px-2 py-0.5 bg-red-50 text-red-700 text-[9px] font-bold uppercase tracking-wide rounded border border-red-200">
                               Styk zakázán
                             </span>
                           ) : bio.gdpr_consent_signed ? (
-                            <span className="text-xs font-mono text-slate-300">{bio.phone || "Bez tel."}</span>
+                            <span className="text-xs font-mono text-slate-700">{bio.phone || "Bez tel."}</span>
                           ) : (
-                            <span className="text-[11px] font-mono text-amber-500 flex items-center gap-1 bg-amber-500/5 px-2 py-0.5 rounded border border-amber-500/10">
+                            <span className="text-[11px] font-mono text-amber-700 flex items-center gap-1 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
                               <Lock className="w-3 h-3" /> maskováno
                             </span>
                           )}
@@ -686,20 +688,20 @@ export default function Home() {
                 <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Historie časové osy</h4>
                 
                 {selectedFamilyEvents.length > 0 ? (
-                  <div className="relative border-l-2 border-slate-800 ml-4 pl-6 space-y-6">
+                  <div className="relative border-l-2 border-slate-200 ml-4 pl-6 space-y-6">
                     {selectedFamilyEvents.map((e) => (
                       <div key={e.id} className="relative">
-                        <div className={`absolute -left-[31px] top-1.5 w-4 h-4 rounded-full ring-4 ring-slate-900 ${
+                        <div className={`absolute -left-[31px] top-1.5 w-4 h-4 rounded-full ring-4 ring-slate-50 ${
                           e.type === "crisis_event" ? "bg-red-500" : "bg-primary"
                         }`} />
                         <div className="flex justify-between items-start">
                           <div>
-                            <h5 className="font-semibold text-sm text-white">{e.title}</h5>
-                            <p className="text-xs text-slate-400 mt-1 leading-relaxed max-w-3xl">
+                            <h5 className="font-bold text-sm text-slate-800">{e.title}</h5>
+                            <p className="text-xs text-slate-600 mt-1 leading-relaxed max-w-3xl">
                               {e.payload?.content || e.payload?.text || "Bez textu"}
                             </p>
                           </div>
-                          <span className="text-xs text-slate-500 whitespace-nowrap ml-4">
+                          <span className="text-xs text-slate-400 whitespace-nowrap ml-4">
                             {new Date(e.occurred_at).toLocaleDateString("cs-CZ")}
                           </span>
                         </div>
@@ -707,20 +709,20 @@ export default function Home() {
                     ))}
                   </div>
                 ) : (
-                  <p className="text-sm text-slate-500 italic pl-4">Zatím žádné události.</p>
+                  <p className="text-sm text-slate-400 italic pl-4">Zatím žádné události.</p>
                 )}
               </div>
 
             </div>
 
             {/* AI COMMAND CENTER (CHATOVÝ PANEL DOLE) */}
-            <div className="p-6 border-t border-slate-800 bg-slate-950/80">
+            <div className="p-6 border-t border-slate-200 bg-white">
               <div className="max-w-4xl mx-auto relative">
                 <Sparkles className="absolute left-4 top-4.5 w-5 h-5 text-primary" />
                 <input 
                   type="text" 
                   placeholder="Zeptejte se AI na cokoliv ze spisu (např.: Kdy proběhla poslední návštěva? Jaký je rodinný rating?)..."
-                  className="w-full pl-12 pr-24 py-4 bg-slate-900 border border-slate-800 rounded-xl text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-2xl"
+                  className="w-full pl-12 pr-24 py-4 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary focus:bg-white shadow-sm transition-all"
                 />
                 <button className="absolute right-3 top-3 px-4 py-1.5 bg-primary hover:bg-primary-hover text-white rounded-lg text-xs font-semibold tracking-wide flex items-center gap-1 transition-colors">
                   Položit dotaz
