@@ -29,10 +29,8 @@ VALUES (
 -- ==========================================
 -- 2. ZALOŽENÍ UŽIVATELSKÝCH PROFILŮ
 -- ==========================================
--- Poznámka: Tyto profily se v Supabase musí později propojit se skutečnými uživateli v auth.users.
--- Pro testovací účely vytváříme fiktivní profil s rolí 'superadmin', který uvidí všechna data.
 
--- Příklad fiktivního SuperAdmina (majitele)
+-- Profil SuperAdmina (majitele)
 INSERT INTO public.profiles (id, organization_id, branch_id, email, first_name, last_name, role, is_active)
 VALUES (
     'f1520cd2-38d3-49fc-a40b-e6c4524983c8', -- Váš UID pro petr.homolka@gmail.com
@@ -65,7 +63,7 @@ VALUES (
 -- Domácnost 1: Jan Novák (Brno) - aktivní doprovázení
 INSERT INTO public.households (id, organization_id, branch_id, assigned_ko_id, foster_id, status, notes)
 VALUES (
-    'h1111111-1111-1111-1111-111111111111',
+    '11111111-1111-1111-1111-111111111111',
     'a0e0a0e0-a0e0-a0e0-a0e0-a0e0a0e0a0e0',
     'b0b0b0b0-b0b0-b0b0-b0b0-b0b0b0b0b0b0',
     'aecbcd51-1ae6-48b3-b641-a5c639b46fe6', -- test@doprovazeni.com
@@ -77,7 +75,7 @@ VALUES (
 -- Domácnost 2: Jan Novák (Hostomice #1) - aktivní doprovázení
 INSERT INTO public.households (id, organization_id, branch_id, assigned_ko_id, foster_id, status, notes)
 VALUES (
-    'h2222222-2222-2222-2222-222222222222',
+    '22222222-2222-2222-2222-222222222222',
     'a0e0a0e0-a0e0-a0e0-a0e0-a0e0a0e0a0e0',
     'b0b0b0b0-b0b0-b0b0-b0b0-b0b0b0b0b0b0',
     'aecbcd51-1ae6-48b3-b641-a5c639b46fe6', -- test@doprovazeni.com
@@ -89,7 +87,7 @@ VALUES (
 -- Domácnost 3: Jan Novák (Hostomice #2 - stejná adresa, stejné jméno!)
 INSERT INTO public.households (id, organization_id, branch_id, assigned_ko_id, foster_id, status, notes)
 VALUES (
-    'h3333333-3333-3333-3333-333333333333',
+    '33333333-3333-3333-3333-333333333333',
     'a0e0a0e0-a0e0-a0e0-a0e0-a0e0a0e0a0e0',
     'b0b0b0b0-b0b0-b0b0-b0b0-b0b0b0b0b0b0',
     'aecbcd51-1ae6-48b3-b641-a5c639b46fe6', -- test@doprovazeni.com
@@ -106,9 +104,9 @@ VALUES (
 -- Pěstoun: Jan Novák (Brno)
 INSERT INTO public.persons (id, organization_id, household_id, role, first_name, last_name, birth_date, custom_fields, is_active)
 VALUES (
-    'p1000000-0000-0000-0000-000000000001',
+    '10000000-0000-0000-0000-000000000001',
     'a0e0a0e0-a0e0-a0e0-a0e0-a0e0a0e0a0e0',
-    'h1111111-1111-1111-1111-111111111111',
+    '11111111-1111-1111-1111-111111111111',
     'foster_parent',
     'Jan',
     'Novák',
@@ -120,9 +118,9 @@ VALUES (
 -- Manželka pěstouna: Marie Nováková (pěstounská péče je psaná na Jana, ale manželku evidujeme)
 INSERT INTO public.persons (id, organization_id, household_id, role, first_name, last_name, birth_date, custom_fields, is_active)
 VALUES (
-    'p1000000-0000-0000-0000-000000000002',
+    '10000000-0000-0000-0000-000000000002',
     'a0e0a0e0-a0e0-a0e0-a0e0-a0e0a0e0a0e0',
-    'h1111111-1111-1111-1111-111111111111',
+    '11111111-1111-1111-1111-111111111111',
     'social_contact', -- partner v domácnosti
     'Marie',
     'Nováková',
@@ -134,9 +132,9 @@ VALUES (
 -- Biologické dítě pěstouna: Petr Novák (10 let, žije v domácnosti)
 INSERT INTO public.persons (id, organization_id, household_id, role, first_name, last_name, birth_date, custom_fields, is_active)
 VALUES (
-    'p1000000-0000-0000-0000-000000000003',
+    '10000000-0000-0000-0000-000000000003',
     'a0e0a0e0-a0e0-a0e0-a0e0-a0e0a0e0a0e0',
-    'h1111111-1111-1111-1111-111111111111',
+    '11111111-1111-1111-1111-111111111111',
     'social_contact', -- biologické dítě pěstouna
     'Petr',
     'Novák',
@@ -148,9 +146,9 @@ VALUES (
 -- Dítě v pěstounské péči: Adéla Svobodová (8 let - jiné příjmení než pěstoun!)
 INSERT INTO public.persons (id, organization_id, household_id, role, first_name, last_name, birth_date, custom_fields, gdpr_consent_signed, safety_rating, is_active)
 VALUES (
-    'p1000000-0000-0000-0000-000000000004',
+    '10000000-0000-0000-0000-000000000004',
     'a0e0a0e0-a0e0-a0e0-a0e0-a0e0a0e0a0e0',
-    'h1111111-1111-1111-1111-111111111111',
+    '11111111-1111-1111-1111-111111111111',
     'child',
     'Adéla',
     'Svobodová',
@@ -164,9 +162,9 @@ VALUES (
 -- Dítě v pěstounské péči 2 (druhé dítě v rodině): Lukáš Černý (6 let - opět jiné příjmení)
 INSERT INTO public.persons (id, organization_id, household_id, role, first_name, last_name, birth_date, custom_fields, gdpr_consent_signed, safety_rating, is_active)
 VALUES (
-    'p1000000-0000-0000-0000-000000000005',
+    '10000000-0000-0000-0000-000000000005',
     'a0e0a0e0-a0e0-a0e0-a0e0-a0e0a0e0a0e0',
-    'h1111111-1111-1111-1111-111111111111',
+    '11111111-1111-1111-1111-111111111111',
     'child',
     'Lukáš',
     'Černý',
@@ -182,9 +180,9 @@ VALUES (
 -- Pěstoun: Jan Novák (Hostomice #1)
 INSERT INTO public.persons (id, organization_id, household_id, role, first_name, last_name, birth_date, custom_fields, is_active)
 VALUES (
-    'p2000000-0000-0000-0000-000000000001',
+    '20000000-0000-0000-0000-000000000001',
     'a0e0a0e0-a0e0-a0e0-a0e0-a0e0a0e0a0e0',
-    'h2222222-2222-2222-2222-222222222222',
+    '22222222-2222-2222-2222-222222222222',
     'foster_parent',
     'Jan',
     'Novák',
@@ -196,9 +194,9 @@ VALUES (
 -- Dítě v péči: Tomáš Dvořák (11 let - jiné příjmení)
 INSERT INTO public.persons (id, organization_id, household_id, role, first_name, last_name, birth_date, custom_fields, gdpr_consent_signed, safety_rating, is_active)
 VALUES (
-    'p2000000-0000-0000-0000-000000000002',
+    '20000000-0000-0000-0000-000000000002',
     'a0e0a0e0-a0e0-a0e0-a0e0-a0e0a0e0a0e0',
-    'h2222222-2222-2222-2222-222222222222',
+    '22222222-2222-2222-2222-222222222222',
     'child',
     'Tomáš',
     'Dvořák',
@@ -212,9 +210,9 @@ VALUES (
 -- Biologická matka v karanténě (GDPR souhlas nepodepsán - telefon a data budou skryta)
 INSERT INTO public.persons (id, organization_id, household_id, role, first_name, last_name, birth_number, phone, gdpr_consent_signed, safety_rating, is_active)
 VALUES (
-    'p2000000-0000-0000-0000-000000000003',
+    '20000000-0000-0000-0000-000000000003',
     'a0e0a0e0-a0e0-a0e0-a0e0-a0e0a0e0a0e0',
-    'h2222222-2222-2222-2222-222222222222',
+    '22222222-2222-2222-2222-222222222222',
     'bio_parent',
     'Veronika',
     'Dvořáková',
@@ -230,9 +228,9 @@ VALUES (
 -- Pěstoun: Jan Novák (Hostomice #2)
 INSERT INTO public.persons (id, organization_id, household_id, role, first_name, last_name, birth_date, custom_fields, is_active)
 VALUES (
-    'p3000000-0000-0000-0000-000000000001',
+    '30000000-0000-0000-0000-000000000001',
     'a0e0a0e0-a0e0-a0e0-a0e0-a0e0a0e0a0e0',
-    'h3333333-3333-3333-3333-333333333333',
+    '33333333-3333-3333-3333-333333333333',
     'foster_parent',
     'Jan',
     'Novák',
@@ -244,9 +242,9 @@ VALUES (
 -- Dítě v péči: Eliška Pokorná (9 let)
 INSERT INTO public.persons (id, organization_id, household_id, role, first_name, last_name, birth_date, custom_fields, gdpr_consent_signed, safety_rating, is_active)
 VALUES (
-    'p3000000-0000-0000-0000-000000000002',
+    '30000000-0000-0000-0000-000000000002',
     'a0e0a0e0-a0e0-a0e0-a0e0-a0e0a0e0a0e0',
-    'h3333333-3333-3333-3333-333333333333',
+    '33333333-3333-3333-3333-333333333333',
     'child',
     'Eliška',
     'Pokorná',
@@ -260,9 +258,9 @@ VALUES (
 -- Biologický otec se ZÁKAZEM STYKU (Rating Z)
 INSERT INTO public.persons (id, organization_id, household_id, role, first_name, last_name, gdpr_consent_signed, safety_rating, is_active)
 VALUES (
-    'p3000000-0000-0000-0000-000000000003',
+    '30000000-0000-0000-0000-000000000003',
     'a0e0a0e0-a0e0-a0e0-a0e0-a0e0a0e0a0e0',
-    'h3333333-3333-3333-3333-333333333333',
+    '33333333-3333-3333-3333-333333333333',
     'bio_parent',
     'Marek',
     'Pokorný',
@@ -279,7 +277,7 @@ VALUES (
 -- Jan Novák Brno
 INSERT INTO public.person_addresses (person_id, type, street, city, zip, from_date)
 VALUES (
-    'p1000000-0000-0000-0000-000000000001',
+    '10000000-0000-0000-0000-000000000001',
     'actual',
     'Konečného náměstí 4',
     'Brno',
@@ -290,7 +288,7 @@ VALUES (
 -- Jan Novák Hostomice #1
 INSERT INTO public.person_addresses (person_id, type, street, city, zip, from_date)
 VALUES (
-    'p2000000-0000-0000-0000-000000000001',
+    '20000000-0000-0000-0000-000000000001',
     'actual',
     'Školní 13',
     'Hostomice',
@@ -301,7 +299,7 @@ VALUES (
 -- Jan Novák Hostomice #2 (Stejná adresa, stejné jméno!)
 INSERT INTO public.person_addresses (person_id, type, street, city, zip, floor_details, from_date)
 VALUES (
-    'p3000000-0000-0000-0000-000000000001',
+    '30000000-0000-0000-0000-000000000001',
     'actual',
     'Školní 13',
     'Hostomice',
@@ -319,7 +317,7 @@ VALUES (
 INSERT INTO public.events (organization_id, household_id, author_id, type, title, payload, occurred_at)
 VALUES (
     'a0e0a0e0-a0e0-a0e0-a0e0-a0e0a0e0a0e0',
-    'h1111111-1111-1111-1111-111111111111',
+    '11111111-1111-1111-1111-111111111111',
     'aecbcd51-1ae6-48b3-b641-a5c639b46fe6', -- test@doprovazeni.com
     'regular_visit',
     'Pravidelná pololetní návštěva',
@@ -331,7 +329,7 @@ VALUES (
 INSERT INTO public.events (organization_id, household_id, author_id, type, title, payload, occurred_at)
 VALUES (
     'a0e0a0e0-a0e0-a0e0-a0e0-a0e0a0e0a0e0',
-    'h3333333-3333-3333-3333-333333333333',
+    '33333333-3333-3333-3333-333333333333',
     'aecbcd51-1ae6-48b3-b641-a5c639b46fe6', -- test@doprovazeni.com
     'crisis_event',
     'Pokus o kontakt biologického otce',
