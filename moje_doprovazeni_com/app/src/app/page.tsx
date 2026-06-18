@@ -674,7 +674,7 @@ export default function Home() {
           {/* Main hamburger menu button */}
           <button 
             onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="p-2 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-full transition-colors text-muted"
+            className="p-2 hover:bg-[#f1f3f4] dark:hover:bg-[#2d2f31] rounded-full transition-colors text-muted"
             title="Menu"
           >
             <Menu className="w-5 h-5" />
@@ -689,7 +689,7 @@ export default function Home() {
               className={`p-3 rounded-xl transition-all relative group flex flex-col items-center justify-center ${
                 activeService === 'mail' 
                   ? "bg-[#c2e7ff] text-[#001d35] dark:bg-[#004b87] dark:text-[#a8c7fa]" 
-                  : "text-muted hover:bg-gray-200 dark:hover:bg-gray-800 hover:text-foreground"
+                  : "text-muted hover:bg-[#f1f3f4] dark:hover:bg-[#2d2f31] hover:text-foreground"
               }`}
               title="Pošta (Spisy)"
             >
@@ -704,7 +704,7 @@ export default function Home() {
               className={`p-3 rounded-xl transition-all relative group flex flex-col items-center justify-center ${
                 activeService === 'chat' 
                   ? "bg-[#c2e7ff] text-[#001d35] dark:bg-[#004b87] dark:text-[#a8c7fa]" 
-                  : "text-muted hover:bg-gray-200 dark:hover:bg-gray-800 hover:text-foreground"
+                  : "text-muted hover:bg-[#f1f3f4] dark:hover:bg-[#2d2f31] hover:text-foreground"
               }`}
               title="Chat"
             >
@@ -718,7 +718,7 @@ export default function Home() {
               className={`p-3 rounded-xl transition-all relative group flex flex-col items-center justify-center ${
                 activeService === 'contacts' 
                   ? "bg-[#c2e7ff] text-[#001d35] dark:bg-[#004b87] dark:text-[#a8c7fa]" 
-                  : "text-muted hover:bg-gray-200 dark:hover:bg-gray-800 hover:text-foreground"
+                  : "text-muted hover:bg-[#f1f3f4] dark:hover:bg-[#2d2f31] hover:text-foreground"
               }`}
               title="Kontakty"
             >
@@ -729,7 +729,7 @@ export default function Home() {
             {/* Meet (mocked) */}
             <button 
               onClick={() => alert("Spustit Google Meet schůzku...")}
-              className="p-3 rounded-xl text-muted hover:bg-gray-200 dark:hover:bg-gray-800 hover:text-foreground transition-all flex flex-col items-center justify-center"
+              className="p-3 rounded-xl text-muted hover:bg-[#f1f3f4] dark:hover:bg-[#2d2f31] hover:text-foreground transition-all flex flex-col items-center justify-center"
               title="Meet"
             >
               <Video className="w-5 h-5 stroke-[1.5]" />
@@ -741,7 +741,7 @@ export default function Home() {
         <div className="flex flex-col items-center space-y-4">
           <button 
             onClick={() => alert("Nastavení Google Workspace")}
-            className="p-2 text-muted hover:text-foreground hover:bg-gray-200 dark:hover:bg-gray-800 rounded-full transition-colors"
+            className="p-2 text-muted hover:text-foreground hover:bg-[#f1f3f4] dark:hover:bg-[#2d2f31] rounded-full transition-colors"
             title="Nastavení"
           >
             <Settings className="w-5 h-5 stroke-[1.5]" />
@@ -789,7 +789,7 @@ export default function Home() {
                 className={`w-full flex items-center justify-between px-4 py-2.5 rounded-full text-sm font-medium transition-all ${
                   !selectedFamilyId 
                     ? "bg-[#e8f0fe] text-[#1a73e8] dark:bg-[#0842a0]/20 dark:text-[#a8c7fa]" 
-                    : "text-foreground hover:bg-gray-250 dark:hover:bg-gray-800"
+                    : "text-foreground hover:bg-[#e8eaed]/80 dark:hover:bg-[#2d2f31]/50"
                 }`}
               >
                 <div className="flex items-center gap-3">
@@ -812,7 +812,7 @@ export default function Home() {
                       return (
                         <label 
                           key={status.key} 
-                          className="flex items-center gap-3 px-3 py-1.5 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 cursor-pointer transition-colors text-sm font-normal text-foreground"
+                          className="flex items-center gap-3 px-3 py-1.5 rounded-lg hover:bg-[#f1f3f4] dark:hover:bg-[#2d2f31]/50 cursor-pointer transition-colors text-sm font-normal text-foreground"
                         >
                           <input 
                             type="checkbox"
@@ -835,7 +835,7 @@ export default function Home() {
                     return (
                       <label 
                         key={key} 
-                        className="flex items-center gap-3 px-3 py-1.5 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 cursor-pointer transition-colors text-sm font-normal text-foreground"
+                        className="flex items-center gap-3 px-3 py-1.5 rounded-lg hover:bg-[#f1f3f4] dark:hover:bg-[#2d2f31]/50 cursor-pointer transition-colors text-sm font-normal text-foreground"
                       >
                         <input 
                           type="checkbox"
@@ -881,7 +881,7 @@ export default function Home() {
                   className={`w-full flex items-center justify-between px-4 py-2.5 rounded-full text-sm font-medium transition-all ${
                     activeMailFolder === folder.id 
                       ? "bg-[#e8f0fe] text-[#1a73e8] dark:bg-[#0842a0]/20 dark:text-[#a8c7fa]" 
-                      : "text-foreground hover:bg-gray-250 dark:hover:bg-gray-800"
+                      : "text-foreground hover:bg-[#e8eaed]/80 dark:hover:bg-[#2d2f31]/50"
                   }`}
                 >
                   <div className="flex items-center gap-3">
@@ -899,15 +899,15 @@ export default function Home() {
             <div className="flex-1 px-4 mt-6 border-t border-border-custom pt-4">
               <h4 className="text-[11px] font-medium text-muted uppercase tracking-wider mb-2 pl-3">Složky spisů</h4>
               <div className="space-y-0.5 text-sm text-foreground/80">
-                <div className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 cursor-pointer">
+                <div className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-[#f1f3f4] dark:hover:bg-[#2d2f31]/50 cursor-pointer">
                   <Folder className="w-4 h-4 text-amber-500" />
                   <span>Klientské zprávy</span>
                 </div>
-                <div className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 cursor-pointer">
+                <div className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-[#f1f3f4] dark:hover:bg-[#2d2f31]/50 cursor-pointer">
                   <Folder className="w-4 h-4 text-blue-500" />
                   <span>Vzdělávání a kurzy</span>
                 </div>
-                <div className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 cursor-pointer">
+                <div className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-[#f1f3f4] dark:hover:bg-[#2d2f31]/50 cursor-pointer">
                   <Folder className="w-4 h-4 text-emerald-500" />
                   <span>Lékařské zprávy</span>
                 </div>
@@ -948,7 +948,7 @@ export default function Home() {
                       className={`w-full text-left px-3 py-2.5 rounded-xl transition-all flex items-center gap-3 ${
                         selectedFamilyId === h.id 
                           ? "bg-[#e8f0fe] text-[#1a73e8] dark:bg-[#0842a0]/20 dark:text-[#a8c7fa]" 
-                          : "text-foreground hover:bg-gray-200 dark:hover:bg-gray-800"
+                          : "text-foreground hover:bg-[#f1f3f4] dark:hover:bg-[#2d2f31]/50"
                       }`}
                     >
                       <div className="w-8 h-8 rounded-full bg-primary/10 text-primary border border-primary/20 flex items-center justify-center font-medium text-xs shrink-0">
@@ -992,7 +992,7 @@ export default function Home() {
                 {searchQuery && (
                   <button 
                     onClick={() => setSearchQuery("")}
-                    className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full text-muted"
+                    className="p-1 hover:bg-[#e8eaed] dark:hover:bg-[#3c4043] rounded-full text-muted"
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -1020,7 +1020,7 @@ export default function Home() {
             <button 
               onClick={toggleDarkMode}
               title={darkMode ? "Světlý režim" : "Tmavý režim"}
-              className="p-2 text-muted hover:text-foreground hover:bg-gray-200 dark:hover:bg-gray-800 rounded-full transition-all"
+              className="p-2 text-muted hover:text-foreground hover:bg-[#f1f3f4] dark:hover:bg-[#2d2f31] rounded-full transition-all"
             >
               {darkMode ? <Sun className="w-5 h-5 text-amber-400" /> : <Moon className="w-5 h-5" />}
             </button>
@@ -1042,7 +1042,7 @@ export default function Home() {
           {/* ========================================================= */}
           {activeService === 'contacts' && (
             <section className={`bg-background flex flex-col transition-all duration-200 overflow-hidden ${
-              selectedFamilyId ? "hidden md:flex md:w-[38%] border-r border-border-custom" : "w-full"
+              selectedFamilyId ? "hidden" : "w-full flex-1"
             }`}>
               
               {/* Toolbar */}
@@ -1069,7 +1069,7 @@ export default function Home() {
                           setStarredHouseholds(next);
                           clearChecked();
                         }}
-                        className="p-1 text-muted hover:text-foreground hover:bg-gray-150 dark:hover:bg-gray-800 rounded-full"
+                        className="p-1 text-muted hover:text-foreground hover:bg-[#f1f3f4] dark:hover:bg-[#2d2f31]/50 rounded-full"
                         title="Označit hvězdičkou"
                       >
                         <Star className="w-4 h-4" />
@@ -1079,7 +1079,7 @@ export default function Home() {
                           alert(`Odstranit vybrané: ${Array.from(checkedHouseholds).join(", ")}`);
                           clearChecked();
                         }}
-                        className="p-1 text-muted hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-full"
+                        className="p-1 text-muted hover:text-red-500 hover:bg-red-500/10 dark:hover:bg-red-950/20 rounded-full"
                         title="Smazat vybrané"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -1123,9 +1123,9 @@ export default function Home() {
                             setActiveTab("overview");
                           }}
                           className={`group border-b border-border-custom cursor-pointer transition-colors ${
-                            isChecked ? "bg-primary/5 hover:bg-primary/10" : "hover:bg-gray-100/70 dark:hover:bg-gray-800/40"
+                            isChecked ? "bg-[#e8f0fe]/50 dark:bg-[#0842a0]/10" : "hover:bg-[#f1f3f4]/70 dark:hover:bg-[#2d2f31]/30"
                           } ${
-                            selectedFamilyId === h.id ? "bg-[#e8f0fe]/80 dark:bg-[#0842a0]/10" : ""
+                            selectedFamilyId === h.id ? "bg-[#e8f0fe] dark:bg-[#0842a0]/20" : ""
                           }`}
                         >
                           {/* Avatar checkbox */}
@@ -1151,7 +1151,7 @@ export default function Home() {
 
                           {/* Star toggle */}
                           <td className="py-3 px-1 w-8 align-middle text-center" onClick={(e) => e.stopPropagation()}>
-                            <button onClick={() => toggleStarredHousehold(h.id)} className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full">
+                            <button onClick={() => toggleStarredHousehold(h.id)} className="p-1 hover:bg-[#e8eaed] dark:hover:bg-[#3c4043] rounded-full transition-colors">
                               <Star className={`w-4.5 h-4.5 transition-colors ${
                                 isStarred ? "text-amber-500 fill-amber-500" : "text-gray-300 dark:text-gray-650 hover:text-gray-500"
                               }`} />
@@ -1193,10 +1193,10 @@ export default function Home() {
                                 </span>
                               </div>
                               <div className="opacity-0 scale-95 group-hover:opacity-100 group-hover:scale-100 transition-all duration-150 flex items-center gap-1 absolute right-0 bg-background/90 dark:bg-[#131314]/90 pl-2">
-                                <button onClick={() => alert(`Upravit rodinu: ${h.foster_id}`)} className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full text-muted hover:text-foreground">
+                                <button onClick={() => alert(`Upravit rodinu: ${h.foster_id}`)} className="p-1 hover:bg-[#e8eaed] dark:hover:bg-[#3c4043] rounded-full text-muted hover:text-foreground transition-colors">
                                   <Edit2 className="w-3.5 h-3.5" />
                                 </button>
-                                <button onClick={() => alert(`Odebrat: ${h.foster_id}`)} className="p-1 hover:bg-red-100 rounded-full text-muted hover:text-red-500">
+                                <button onClick={() => alert(`Odebrat: ${h.foster_id}`)} className="p-1 hover:bg-red-500/10 dark:hover:bg-red-950/20 rounded-full text-muted hover:text-red-500 transition-colors">
                                   <Trash2 className="w-3.5 h-3.5" />
                                 </button>
                               </div>
@@ -1216,7 +1216,7 @@ export default function Home() {
           {/* ========================================================= */}
           {activeService === 'mail' && (
             <section className={`bg-background flex flex-col transition-all duration-200 overflow-hidden ${
-              selectedEventId ? "hidden md:flex md:w-[38%] border-r border-border-custom" : "w-full"
+              selectedEventId ? "hidden" : "w-full flex-1"
             }`}>
               
               {/* Gmail Inbox tabs header */}
@@ -1232,7 +1232,7 @@ export default function Home() {
                     className={`flex-1 py-4 px-4 flex items-center justify-center gap-3 text-xs font-medium border-b-4 transition-all ${
                       activeMailTab === tab.id 
                         ? `${tab.color} ${tab.activeColorClass}` 
-                        : "border-transparent text-muted hover:text-foreground hover:bg-gray-100"
+                        : "border-transparent text-muted hover:text-foreground hover:bg-[#f1f3f4] dark:hover:bg-[#2d2f31]/50"
                     }`}
                   >
                     <tab.icon className="w-4.5 h-4.5 stroke-[1.8]" />
@@ -1256,7 +1256,7 @@ export default function Home() {
                         <tr 
                           key={e.id}
                           onClick={() => { setSelectedEventId(e.id); }}
-                          className={`group border-b border-border-custom cursor-pointer transition-colors text-sm hover:bg-gray-150/80 dark:hover:bg-gray-800/40 ${
+                          className={`group border-b border-border-custom cursor-pointer transition-colors text-sm hover:bg-[#f1f3f4]/70 dark:hover:bg-[#2d2f31]/30 ${
                             isSelected ? "bg-[#e8f0fe] dark:bg-[#0842a0]/15" : ""
                           }`}
                         >
@@ -1339,10 +1339,10 @@ export default function Home() {
                     </div>
                     
                     <div className="flex items-center gap-1">
-                      <button className="p-2 hover:bg-gray-150 dark:hover:bg-gray-800 rounded-full text-muted">
+                      <button className="p-2 hover:bg-[#f1f3f4] dark:hover:bg-[#2d2f31]/50 rounded-full text-muted transition-colors">
                         <Video className="w-4 h-4" />
                       </button>
-                      <button className="p-2 hover:bg-gray-150 dark:hover:bg-gray-800 rounded-full text-muted">
+                      <button className="p-2 hover:bg-[#f1f3f4] dark:hover:bg-[#2d2f31]/50 rounded-full text-muted transition-colors">
                         <MoreVertical className="w-4 h-4" />
                       </button>
                     </div>
@@ -1383,7 +1383,7 @@ export default function Home() {
                   {/* Message Input (MD3 Chat pill) */}
                   <div className="p-4 bg-background border-t border-border-custom shrink-0">
                     <div className="max-w-4xl mx-auto flex items-center gap-2 bg-[#f1f3f4] dark:bg-[#2d2f31] rounded-full px-4 py-2">
-                      <button className="p-1.5 text-muted hover:text-foreground hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full">
+                      <button className="p-1.5 text-muted hover:text-foreground hover:bg-[#e8eaed] dark:hover:bg-[#3c4043] rounded-full transition-colors">
                         <Paperclip className="w-4.5 h-4.5" />
                       </button>
                       <input 
@@ -1418,22 +1418,7 @@ export default function Home() {
           
           {/* Contacts active: detail of the household */}
           {activeService === 'contacts' && selectedHousehold && (
-            <>
-              {/* Divider drag Splitter line */}
-              <div 
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  setIsResizing(true);
-                }}
-                className={`w-1 cursor-col-resize hover:bg-primary/55 active:bg-primary transition-colors shrink-0 z-30 ${
-                  isResizing ? "bg-primary" : "bg-border-custom"
-                }`}
-              />
-
-              <div 
-                style={{ width: typeof window !== 'undefined' && window.innerWidth < 768 ? '100%' : `${detailWidth}px` }} 
-                className="bg-card shrink-0 flex flex-col overflow-hidden transition-all duration-75 border-l border-border-custom w-full md:w-auto"
-              >
+            <div className="flex-1 w-full bg-card flex flex-col overflow-hidden transition-all duration-75 border-l border-border-custom">
                 
                 {/* Header detail */}
                 <div className="p-6 border-b border-border-custom flex items-center justify-between bg-card shrink-0">
@@ -1441,7 +1426,8 @@ export default function Home() {
                     <div className="flex items-center gap-3">
                       <button 
                         onClick={() => setSelectedFamilyId(null)}
-                        className="md:hidden p-1.5 hover:bg-gray-150 rounded-full text-muted mr-1"
+                        className="p-1.5 hover:bg-[#f1f3f4] dark:hover:bg-[#2d2f31]/55 rounded-full text-muted mr-1.5 transition-colors"
+                        title="Zpět na seznam"
                       >
                         <ChevronLeft className="w-6 h-6" />
                       </button>
@@ -1534,7 +1520,7 @@ export default function Home() {
                                   href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${primaryParentAddress.street}, ${primaryParentAddress.city}`)}`}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="text-primary p-1 hover:bg-gray-150 dark:hover:bg-gray-800 rounded-full"
+                                  className="text-primary p-1 hover:bg-[#f1f3f4] dark:hover:bg-[#2d2f31]/55 rounded-full transition-colors"
                                 >
                                   <Map className="w-4 h-4" />
                                 </a>
@@ -1550,7 +1536,7 @@ export default function Home() {
                       <div className="space-y-3">
                         <h4 className="text-[11px] font-medium text-muted uppercase tracking-wider pl-1">Děti v pěstounské péči</h4>
                         {fosterChildren.map((child) => (
-                          <div key={child.id} className="bg-background border border-border-custom p-5 rounded-3xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 hover:bg-gray-100/50 dark:hover:bg-gray-800/30">
+                          <div key={child.id} className="bg-background border border-border-custom p-5 rounded-3xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 hover:bg-[#f1f3f4]/50 dark:hover:bg-[#2d2f31]/20 transition-colors">
                             <div className="flex items-center gap-4">
                               {child.custom_fields?.avatar_url ? (
                                 <img src={child.custom_fields.avatar_url} alt="child" className="w-12 h-12 rounded-full object-cover border border-border-custom" />
@@ -1677,38 +1663,22 @@ export default function Home() {
                 </div>
 
               </div>
-            </>
           )}
 
           {/* Mail active: selected timeline event detail (Gmail detail card - Screen 3 style) */}
           {activeService === 'mail' && selectedGmailEvent && (
-            <>
-              {/* Divider drag Splitter line */}
-              <div 
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  setIsResizing(true);
-                }}
-                className={`w-1 cursor-col-resize hover:bg-primary/55 active:bg-primary transition-colors shrink-0 z-30 ${
-                  isResizing ? "bg-primary" : "bg-border-custom"
-                }`}
-              />
-
-              <div 
-                style={{ width: typeof window !== 'undefined' && window.innerWidth < 768 ? '100%' : `${detailWidth}px` }} 
-                className="bg-card shrink-0 flex flex-col overflow-hidden transition-all duration-75 border-l border-border-custom w-full md:w-auto"
-              >
+            <div className="flex-1 w-full bg-card flex flex-col overflow-hidden transition-all duration-75 border-l border-border-custom">
                 {/* Gmail-style toolbar above email */}
                 <div className="h-14 border-b border-border-custom px-4 flex items-center justify-between shrink-0 bg-background">
                   <div className="flex items-center gap-1">
-                    <button onClick={() => setSelectedEventId(null)} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-full text-muted" title="Zpět">
+                    <button onClick={() => setSelectedEventId(null)} className="p-2 hover:bg-[#f1f3f4] dark:hover:bg-[#2d2f31]/55 rounded-full text-muted transition-colors" title="Zpět">
                       <ChevronLeft className="w-5 h-5" />
                     </button>
                     <div className="w-px h-5 bg-border-custom mx-1" />
-                    <button onClick={() => alert("Odeslat do archivu")} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-full text-muted" title="Archivovat">
+                    <button onClick={() => alert("Odeslat do archivu")} className="p-2 hover:bg-[#f1f3f4] dark:hover:bg-[#2d2f31]/55 rounded-full text-muted transition-colors" title="Archivovat">
                       <Inbox className="w-4.5 h-4.5" />
                     </button>
-                    <button onClick={() => alert("Smazat spis/e-mail")} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-full text-muted hover:text-red-500" title="Smazat">
+                    <button onClick={() => alert("Smazat spis/e-mail")} className="p-2 hover:bg-red-500/10 dark:hover:bg-red-950/20 rounded-full text-muted hover:text-red-500 transition-colors" title="Smazat">
                       <Trash2 className="w-4.5 h-4.5" />
                     </button>
                   </div>
@@ -1748,7 +1718,7 @@ export default function Home() {
                     </div>
                     <div className="flex items-center gap-2 text-xs text-muted font-normal">
                       <span>{new Date(selectedGmailEvent.occurred_at).toLocaleString("cs-CZ")}</span>
-                      <button className="p-1 hover:bg-gray-250 rounded-full">
+                      <button className="p-1 hover:bg-[#e8eaed] dark:hover:bg-[#3c4043] rounded-full transition-colors">
                         <Star className="w-4 h-4 text-gray-300" />
                       </button>
                     </div>
@@ -1770,21 +1740,20 @@ export default function Home() {
 
                   {/* Reply Action footer (Screen 3 style replication) */}
                   <div className="pt-6 border-t border-border-custom flex items-center gap-2 flex-wrap select-none">
-                    <button onClick={() => alert("Odpovědět...")} className="px-4 py-2 bg-background hover:bg-gray-150 dark:hover:bg-gray-800 text-foreground border border-border-custom rounded-full text-xs font-medium transition-all">
+                    <button onClick={() => alert("Odpovědět...")} className="px-4 py-2 bg-background hover:bg-[#f1f3f4] dark:hover:bg-[#2d2f31]/55 text-foreground border border-border-custom rounded-full text-xs font-medium transition-colors">
                       Odpovědět
                     </button>
-                    <button onClick={() => alert("Odpovědět všem...")} className="px-4 py-2 bg-background hover:bg-gray-150 dark:hover:bg-gray-800 text-foreground border border-border-custom rounded-full text-xs font-medium transition-all">
+                    <button onClick={() => alert("Odpovědět všem...")} className="px-4 py-2 bg-background hover:bg-[#f1f3f4] dark:hover:bg-[#2d2f31]/55 text-foreground border border-border-custom rounded-full text-xs font-medium transition-colors">
                       Odpovědět všem
                     </button>
-                    <button onClick={() => alert("Přeposlat...")} className="px-4 py-2 bg-background hover:bg-gray-150 dark:hover:bg-gray-800 text-foreground border border-border-custom rounded-full text-xs font-medium transition-all">
+                    <button onClick={() => alert("Přeposlat...")} className="px-4 py-2 bg-background hover:bg-[#f1f3f4] dark:hover:bg-[#2d2f31]/55 text-foreground border border-border-custom rounded-full text-xs font-medium transition-colors">
                       Přeposlat
                     </button>
                   </div>
 
                 </div>
               </div>
-            </>
-          )}
+            )}
 
           {/* Chat active: resizable right panel showing shared Google Drive files (Screen 4 style) */}
           {activeService === 'chat' && selectedFamilyId && (
@@ -1811,7 +1780,7 @@ export default function Home() {
                     <Building2 className="w-4.5 h-4.5 text-primary" />
                     Google Disk (Sdílené soubory)
                   </span>
-                  <button onClick={() => setSelectedFamilyId(null)} className="p-1 hover:bg-gray-150 rounded-full text-muted md:hidden">
+                  <button onClick={() => setSelectedFamilyId(null)} className="p-1 hover:bg-[#f1f3f4] dark:hover:bg-[#2d2f31]/55 rounded-full text-muted md:hidden transition-colors">
                     <X className="w-5 h-5" />
                   </button>
                 </div>
@@ -1831,14 +1800,14 @@ export default function Home() {
                       { name: "Fotka ze společné akce.jpg", size: "3.2 MB", type: "image" },
                       { name: "GDPR souhlas pěstounů.pdf", size: "950 KB", type: "pdf" }
                     ].map((file, idx) => (
-                      <div key={idx} className="flex items-center justify-between p-3 bg-card hover:bg-gray-100 rounded-2xl border border-border-custom/50 shadow-2xs transition-colors">
+                      <div key={idx} className="flex items-center justify-between p-3 bg-card hover:bg-[#f1f3f4]/70 dark:hover:bg-[#2d2f31]/30 rounded-2xl border border-border-custom/50 shadow-2xs transition-colors">
                         <div className="flex items-center gap-3 truncate">
                           <FileText className="w-4.5 h-4.5 text-muted shrink-0" />
                           <span className="text-sm font-normal text-foreground truncate">{file.name}</span>
                         </div>
                         <div className="flex items-center gap-2 shrink-0 ml-2">
                           <span className="text-xs text-muted font-mono">{file.size}</span>
-                          <button className="p-1 hover:bg-gray-200 rounded-full text-muted hover:text-foreground border border-border-custom/40">
+                          <button className="p-1 hover:bg-[#e8eaed] dark:hover:bg-[#3c4043] rounded-full text-muted hover:text-foreground border border-border-custom/40 transition-colors">
                             <FileDown className="w-3.5 h-3.5" />
                           </button>
                         </div>
@@ -1855,20 +1824,11 @@ export default function Home() {
                     <span className="text-[11px] text-muted block mt-1 font-normal">Využito 12.4 MB z 15 GB (Zkušební verze)</span>
                   </div>
                 </div>
-
               </div>
             </>
           )}
 
-          {/* Fallback state when no item is selected and resizable panel is hidden */}
-          {((activeService === 'contacts' && !selectedHousehold) || 
-            (activeService === 'mail' && !selectedGmailEvent) || 
-            (activeService === 'chat' && !selectedFamilyId)) && (
-            <div className="flex-1 flex flex-col items-center justify-center text-muted italic bg-background font-normal gap-2 select-none">
-              <Users className="w-10 h-10 text-muted/50 stroke-[1]" />
-              <span className="text-sm">Vyberte položku ze seznamu pro zobrazení podrobností.</span>
-            </div>
-          )}
+
 
         </div>
       </div>
