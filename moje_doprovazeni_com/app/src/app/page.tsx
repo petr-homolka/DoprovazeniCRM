@@ -30,7 +30,19 @@ import {
   User,
   Briefcase,
   Mail,
-  Phone
+  Phone,
+  MessageSquare,
+  Video,
+  Send,
+  Paperclip,
+  Tag,
+  Inbox,
+  AlertOctagon,
+  HelpCircle,
+  Folder,
+  ChevronRight,
+  MoreVertical,
+  CheckSquare
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 
@@ -47,9 +59,9 @@ const ALL_STATUSES = [
 ];
 
 const CARE_TYPE_MAP: Record<string, { label: string, colorClass: string }> = {
-  A: { label: "A | Dlouhodobá", colorClass: "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-500/10 dark:text-sky-450" },
-  B: { label: "B | Přechodná", colorClass: "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-500/10 dark:text-purple-450" },
-  C: { label: "C | Nezprostředkovaná", colorClass: "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-450" }
+  A: { label: "A | Dlouhodobá", colorClass: "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-500/10 dark:text-sky-400" },
+  B: { label: "B | Přechodná", colorClass: "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-500/10 dark:text-purple-400" },
+  C: { label: "C | Nezprostředkovaná", colorClass: "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400" }
 };
 
 export default function Home() {
@@ -72,7 +84,7 @@ export default function Home() {
   const [darkMode, setDarkMode] = useState<boolean>(false);
   const [sortBy, setSortBy] = useState<string>("name");
 
-  // Multi-checkbox filtering states
+  // Multi-checkbox filtering states (Google Contacts)
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([
     "active", "applicant", "preparation", "paused", "terminated", "lead"
   ]);
@@ -82,8 +94,26 @@ export default function Home() {
   const [starredHouseholds, setStarredHouseholds] = useState<Set<string>>(new Set());
   const [checkedHouseholds, setCheckedHouseholds] = useState<Set<string>>(new Set());
 
-  // UI state
+  // Google Workspace Service State
+  // contacts = Google Contacts, mail = Gmail, chat = Google Chat
+  const [activeService, setActiveService] = useState<'contacts' | 'mail' | 'chat'>('contacts');
+
+  // Gmail-specific folders and tabs
+  const [activeMailFolder, setActiveMailFolder] = useState<'inbox' | 'starred' | 'sent' | 'drafts'>('inbox');
+  const [activeMailTab, setActiveMailTab] = useState<'primary' | 'promo' | 'social'>('primary');
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [starredEvents, setStarredEvents] = useState<Set<string>>(new Set());
+
+  // Google Chat-specific state
+  const [chatThreads, setChatThreads] = useState<Record<string, { sender: string; text: string; time: string; isMe: boolean }[]>>({});
+  const [chatInput, setChatInput] = useState("");
+
+  // UI Drawer state
   const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  // User-resizable right panel splitter state
+  const [detailWidth, setDetailWidth] = useState(620);
+  const [isResizing, setIsResizing] = useState(false);
 
   // Sync dark mode
   useEffect(() => {
@@ -106,6 +136,31 @@ export default function Home() {
       document.documentElement.classList.remove("dark");
     }
   };
+
+  // Splitter width mouse tracking
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing) return;
+      const newWidth = window.innerWidth - e.clientX;
+      if (newWidth > 320 && newWidth < window.innerWidth * 0.8) {
+        setDetailWidth(newWidth);
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    if (isResizing) {
+      window.addEventListener("mousemove", handleMouseMove);
+      window.addEventListener("mouseup", handleMouseUp);
+    }
+
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isResizing]);
 
   // Auth synchronization on mount
   useEffect(() => {
@@ -160,7 +215,6 @@ export default function Home() {
         if (orgError) {
           console.error("Chyba při načítání organizace:", orgError);
         } else if (org) {
-          // Dynamic CSS variable overrides
           document.documentElement.style.setProperty("--primary-color", org.primary_color || "#1a73e8");
           document.documentElement.style.setProperty("--secondary-color", org.secondary_color || "#001d35");
         }
@@ -196,6 +250,19 @@ export default function Home() {
       if (eError) throw eError;
       setEvents(eventsData || []);
 
+      // Initialize mock chat history
+      const initialChats: Record<string, any[]> = {};
+      householdsData?.forEach(h => {
+        const p = personsData?.find(per => per.household_id === h.id && per.role === "foster_parent");
+        const name = p ? p.first_name : "Pěstoun";
+        initialChats[h.id] = [
+          { sender: name, text: "Dobrý den, posílám vypracovanou zprávu a hodnocení za minulý měsíc.", time: "10:14", isMe: false },
+          { sender: "Já (KO)", text: "Skvělé, děkuji za zaslání. Podívám se na to v průběhu odpoledne.", time: "10:20", isMe: true },
+          { sender: name, text: "Super, také bych se chtěla zeptat, zda se domluvíme na osobní návštěvě na příští týden?", time: "10:25", isMe: false }
+        ];
+      });
+      setChatThreads(initialChats);
+
     } catch (err) {
       console.error("Chyba při načítání dat:", err);
     } finally {
@@ -223,8 +290,24 @@ export default function Home() {
     await supabase.auth.signOut();
   };
 
+  // Send message inside Chat Room
+  const handleSendMessage = () => {
+    if (!chatInput.trim() || !selectedFamilyId) return;
+    const newMsg = {
+      sender: "Já (KO)",
+      text: chatInput,
+      time: new Date().toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" }),
+      isMe: true
+    };
+    setChatThreads(prev => ({
+      ...prev,
+      [selectedFamilyId]: [...(prev[selectedFamilyId] || []), newMsg]
+    }));
+    setChatInput("");
+  };
+
   // ==========================================
-  // HELPERS AND BUSINESS LOGIC (No semibold/extrabold)
+  // HELPERS (No semibold / extrabold)
   // ==========================================
 
   const getCareTypeDescription = (type: string) => {
@@ -232,68 +315,6 @@ export default function Home() {
     if (type === "B") return "Přechodná zprostředkovaná pěstounská péče";
     if (type === "C") return "Nezprostředkovaná příbuzenská pěstounská péče";
     return "";
-  };
-
-  const getFosterParentDisplayName = (parent: any) => {
-    if (!parent) return "";
-    const duplicates = persons.filter(p => 
-      p.role === "foster_parent" && 
-      p.last_name === parent.last_name
-    );
-
-    let displayName = `${parent.first_name || ""} ${parent.last_name || ""}`.trim();
-
-    if (duplicates.length > 1) {
-      const sorted = [...duplicates].sort((a, b) => {
-        const nameCompare = (a.first_name || "").localeCompare(b.first_name || "", "cs-CZ");
-        if (nameCompare !== 0) return nameCompare;
-        return (a.id || "").localeCompare(b.id || "");
-      });
-      const index = sorted.findIndex(s => s.id === parent.id) + 1;
-      displayName += ` (${index})`;
-    }
-
-    const careType = parent.custom_fields?.foster_care_type;
-    if (careType) {
-      const rel = parent.custom_fields?.relationship_to_child;
-      if (careType === "C" && rel) {
-        displayName += ` (${careType} - ${rel})`;
-      } else {
-        displayName += ` (${careType})`;
-      }
-    }
-
-    return displayName;
-  };
-
-  const getChildDisplayName = (child: any) => {
-    if (!child) return "";
-    const duplicates = persons.filter(p =>
-      p.role === "child" &&
-      p.household_id === child.household_id &&
-      p.first_name === child.first_name &&
-      p.last_name === child.last_name
-    );
-
-    let displayName = `${child.first_name || ""} ${child.last_name || ""}`.trim();
-
-    if (duplicates.length > 1) {
-      const sorted = [...duplicates].sort((a, b) => (a.id || "").localeCompare(b.id || ""));
-      const index = sorted.findIndex(s => s.id === child.id) + 1;
-      displayName += ` (${index})`;
-    }
-
-    const careType = child.custom_fields?.foster_care_type;
-    if (careType) {
-      const rel = child.custom_fields?.relationship_to_foster_parent;
-      if (careType === "C" && rel) {
-        displayName += ` (${careType} - ${rel})`;
-      } else {
-        displayName += ` (${careType})`;
-      }
-    }
-
-    return displayName;
   };
 
   const hasSurnameDuplicate = (lastName: string) => {
@@ -388,11 +409,10 @@ export default function Home() {
     );
   };
 
-  // Safe status fetcher
   const getStatusObj = (status: string) => {
     const currentStatus = status || "lead";
     const statusObj = ALL_STATUSES.find(s => s.key === currentStatus);
-    return statusObj || { label: currentStatus, colorClass: "bg-slate-100 text-slate-700 border-slate-300" };
+    return statusObj || { label: currentStatus, colorClass: "bg-slate-100 text-slate-700 border-slate-350" };
   };
 
   // ==========================================
@@ -458,7 +478,7 @@ export default function Home() {
     setCheckedHouseholds(new Set());
   };
 
-  // Dynamic DB querying filters
+  // Dynamic household list filtering (Contacts tab)
   const getFilteredAndSortedHouseholds = () => {
     return households
       .filter(h => {
@@ -467,7 +487,7 @@ export default function Home() {
         const childNames = c.map(ch => `${ch.first_name || ""} ${ch.last_name || ""}`).join(" ");
         const parentName = p ? `${p.first_name || ""} ${p.last_name || ""}` : "";
         
-        // Hledání podle adresy
+        // Vyhledávání podle adresy
         const pAddress = p ? addresses.find(a => a.person_id === p.id) : null;
         const addressText = pAddress ? `${pAddress.street || ""} ${pAddress.city || ""}` : "";
 
@@ -523,6 +543,34 @@ export default function Home() {
       });
   };
 
+  // Gmail Filter and Map Database Events
+  const getGmailFilteredEvents = () => {
+    return events.filter(e => {
+      // Search matching
+      const matchesSearch = e.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                            (e.payload?.content || "").toLowerCase().includes(searchQuery.toLowerCase());
+      if (!matchesSearch) return false;
+
+      // Filter by Gmail Folder
+      if (activeMailFolder === "starred" && !starredEvents.has(e.id)) return false;
+      if (activeMailFolder === "sent" && e.author_id !== currentUserProfile?.id) return false;
+      if (activeMailFolder === "drafts") return false; // empty drafts mockup
+
+      // Categorize database event type into Gmail Tabs
+      if (activeMailTab === "primary") {
+        // regular visits / court hearings
+        return e.type === "regular_visit" || e.type === "court_hearing" || e.type === "school_report";
+      } else if (activeMailTab === "promo") {
+        // Crisis and warnings
+        return e.type === "crisis_event";
+      } else if (activeMailTab === "social") {
+        // communications
+        return e.type === "phone_call" || e.type === "email";
+      }
+      return true;
+    });
+  };
+
   const selectedHousehold = households.find(h => h.id === selectedFamilyId);
   const selectedFamilyPersons = persons.filter(p => p.household_id === selectedFamilyId);
   const selectedFamilyEvents = events.filter(e => e.household_id === selectedFamilyId);
@@ -533,6 +581,9 @@ export default function Home() {
   const biologicalParents = selectedFamilyPersons.filter(p => p.role === "bio_parent");
 
   const primaryParentAddress = primaryFosterParent ? addresses.find(a => a.person_id === primaryFosterParent.id) : null;
+
+  // Active event detail in Gmail
+  const selectedGmailEvent = events.find(e => e.id === selectedEventId);
 
   // Render Loader
   if (loading && !session) {
@@ -546,7 +597,7 @@ export default function Home() {
     );
   }
 
-  // RENDER: MD3 Login page
+  // RENDER: Login screen
   if (!session) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-[#f8f9fa] dark:bg-[#131314] text-foreground p-6 transition-colors">
@@ -608,184 +659,332 @@ export default function Home() {
     );
   }
 
-  // Active household filter output length
   const filteredHouseholds = getFilteredAndSortedHouseholds();
   const allVisibleSelected = filteredHouseholds.length > 0 && filteredHouseholds.every(h => checkedHouseholds.has(h.id));
+  const activeChatFeed = selectedFamilyId ? chatThreads[selectedFamilyId] || [] : [];
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-background text-foreground font-sans">
+    <div className="flex h-screen w-full overflow-hidden bg-background text-foreground font-sans antialiased">
       
-      {/* 1. LEFT PANEL (Navigation Drawer - Google Contacts / Gmail labels style) */}
-      <aside className={`w-64 bg-background flex flex-col shrink-0 border-r border-border-custom transition-all duration-200 ${
-        sidebarOpen ? "translate-x-0" : "-translate-x-full w-0"
-      } lg:relative lg:translate-x-0`}>
-        
-        {/* Logo and Org Identity */}
-        <div className="p-5 flex items-center gap-3">
+      {/* ========================================================= */}
+      {/* 1. APP SWITCH RAIL (Far left vertical switcher bar)        */}
+      {/* ========================================================= */}
+      <div className="w-16 bg-[#f6f8fc] dark:bg-[#111214] border-r border-border-custom flex flex-col items-center py-4 justify-between shrink-0 select-none">
+        <div className="flex flex-col items-center w-full space-y-4">
+          {/* Main hamburger menu button */}
           <button 
             onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="lg:hidden p-1.5 hover:bg-gray-150 dark:hover:bg-gray-800 rounded-full transition-colors"
+            className="p-2 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-full transition-colors text-muted"
+            title="Menu"
           >
-            <Menu className="w-5 h-5 text-muted" />
+            <Menu className="w-5 h-5" />
           </button>
-          <div className="w-8 h-8 rounded-xl bg-primary flex items-center justify-center shadow-xs">
-            <Activity className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <h1 className="font-medium text-base text-foreground tracking-tight">
-              FosterFlow
-            </h1>
-            <p className="text-[10px] text-primary uppercase tracking-wider font-medium">
-              Workspace CZ
-            </p>
-          </div>
-        </div>
 
-        {/* Google Workspace Extended FAB */}
-        <div className="px-4 mb-4 mt-2">
-          <button 
-            onClick={() => alert("Vytvořit novou rodinu")}
-            className="flex items-center gap-3 px-6 py-4 bg-[#c2e7ff] text-[#001d35] hover:bg-[#b3dcff] rounded-2xl font-medium shadow-xs hover:shadow-md transition-all duration-200 w-fit"
-          >
-            <Plus className="w-5 h-5 stroke-[2.5]" />
-            <span className="text-sm">Vytvořit kontakt</span>
-          </button>
-        </div>
+          {/* Service switcher buttons */}
+          <div className="flex flex-col items-center w-full space-y-2">
+            
+            {/* Pošta / Gmail Button */}
+            <button 
+              onClick={() => { setActiveService('mail'); setSelectedFamilyId(null); }}
+              className={`p-3 rounded-xl transition-all relative group flex flex-col items-center justify-center ${
+                activeService === 'mail' 
+                  ? "bg-[#c2e7ff] text-[#001d35] dark:bg-[#004b87] dark:text-[#a8c7fa]" 
+                  : "text-muted hover:bg-gray-200 dark:hover:bg-gray-800 hover:text-foreground"
+              }`}
+              title="Pošta (Spisy)"
+            >
+              <Mail className="w-5 h-5 stroke-[1.5]" />
+              <span className="text-[9px] mt-1 font-medium scale-90">Pošta</span>
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" />
+            </button>
 
-        {/* Navigation list */}
-        <nav className="px-3 space-y-0.5">
-          <button 
-            onClick={() => { setSelectedFamilyId(null); }}
-            className={`w-full flex items-center justify-between px-4 py-3 rounded-full text-sm font-medium transition-all ${
-              !selectedFamilyId 
-                ? "bg-[#e8f0fe] text-[#1a73e8] dark:bg-[#0842a0]/20 dark:text-[#a8c7fa]" 
-                : "text-foreground hover:bg-gray-150 dark:hover:bg-gray-800"
-            }`}
-          >
-            <div className="flex items-center gap-3">
+            {/* Chat / Google Chat Button */}
+            <button 
+              onClick={() => { setActiveService('chat'); }}
+              className={`p-3 rounded-xl transition-all relative group flex flex-col items-center justify-center ${
+                activeService === 'chat' 
+                  ? "bg-[#c2e7ff] text-[#001d35] dark:bg-[#004b87] dark:text-[#a8c7fa]" 
+                  : "text-muted hover:bg-gray-200 dark:hover:bg-gray-800 hover:text-foreground"
+              }`}
+              title="Chat"
+            >
+              <MessageSquare className="w-5 h-5 stroke-[1.5]" />
+              <span className="text-[9px] mt-1 font-medium scale-90">Chat</span>
+            </button>
+
+            {/* Kontakty / Google Contacts Button */}
+            <button 
+              onClick={() => { setActiveService('contacts'); }}
+              className={`p-3 rounded-xl transition-all relative group flex flex-col items-center justify-center ${
+                activeService === 'contacts' 
+                  ? "bg-[#c2e7ff] text-[#001d35] dark:bg-[#004b87] dark:text-[#a8c7fa]" 
+                  : "text-muted hover:bg-gray-200 dark:hover:bg-gray-800 hover:text-foreground"
+              }`}
+              title="Kontakty"
+            >
               <Users className="w-5 h-5 stroke-[1.5]" />
-              <span>Kontakty (rodiny)</span>
+              <span className="text-[9px] mt-1 font-medium scale-90">Kontakty</span>
+            </button>
+
+            {/* Meet (mocked) */}
+            <button 
+              onClick={() => alert("Spustit Google Meet schůzku...")}
+              className="p-3 rounded-xl text-muted hover:bg-gray-200 dark:hover:bg-gray-800 hover:text-foreground transition-all flex flex-col items-center justify-center"
+              title="Meet"
+            >
+              <Video className="w-5 h-5 stroke-[1.5]" />
+              <span className="text-[9px] mt-1 font-medium scale-90">Meet</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="flex flex-col items-center space-y-4">
+          <button 
+            onClick={() => alert("Nastavení Google Workspace")}
+            className="p-2 text-muted hover:text-foreground hover:bg-gray-200 dark:hover:bg-gray-800 rounded-full transition-colors"
+            title="Nastavení"
+          >
+            <Settings className="w-5 h-5 stroke-[1.5]" />
+          </button>
+        </div>
+      </div>
+
+      {/* ========================================================= */}
+      {/* 2. DYNAMIC SIDEBAR (Changes based on active service)       */}
+      {/* ========================================================= */}
+      <aside className={`w-64 bg-[#f6f8fc] dark:bg-[#111214] flex flex-col shrink-0 transition-all duration-200 border-r border-border-custom select-none ${
+        sidebarOpen ? "translate-x-0" : "-translate-x-full w-0"
+      }`}>
+        
+        {/* Header containing name of the active service */}
+        <div className="p-4 flex items-center gap-2">
+          <div className="w-6 h-6 rounded-lg bg-primary flex items-center justify-center">
+            <Activity className="w-4 h-4 text-white" />
+          </div>
+          <span className="font-medium text-base text-foreground tracking-tight capitalize">
+            {activeService === 'contacts' && "Kontakty"}
+            {activeService === 'mail' && "Gmail (Spisy)"}
+            {activeService === 'chat' && "Google Chat"}
+          </span>
+        </div>
+
+        {/* SERVICE 1: GOOGLE CONTACTS SIDEBAR */}
+        {activeService === 'contacts' && (
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {/* Extended FAB: Vytvořit kontakt */}
+            <div className="px-4 mb-4 mt-2">
+              <button 
+                onClick={() => alert("Vytvořit novou rodinu")}
+                className="flex items-center gap-3 px-6 py-4 bg-[#c2e7ff] text-[#001d35] hover:bg-[#b3dcff] rounded-2xl font-medium shadow-xs hover:shadow-md transition-all duration-200 w-fit"
+              >
+                <Plus className="w-5 h-5 stroke-[2.5]" />
+                <span className="text-sm">Vytvořit kontakt</span>
+              </button>
             </div>
-            <span className="text-xs bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded-full text-foreground/80">{households.length}</span>
-          </button>
-          
-          <button 
-            onClick={() => alert("Zobrazit kalendář a plánování")}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-full text-sm font-medium text-foreground hover:bg-gray-150 dark:hover:bg-gray-800 transition-all"
-          >
-            <Calendar className="w-5 h-5 stroke-[1.5]" />
-            <span>Návštěvy a schůzky</span>
-          </button>
 
-          <button 
-            onClick={() => alert("Správa spisů")}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-full text-sm font-medium text-foreground hover:bg-gray-150 dark:hover:bg-gray-800 transition-all"
-          >
-            <FileText className="w-5 h-5 stroke-[1.5]" />
-            <span>Dokumenty a spisy</span>
-          </button>
-        </nav>
+            {/* Navigation links */}
+            <nav className="px-3 space-y-0.5">
+              <button 
+                onClick={() => { setSelectedFamilyId(null); }}
+                className={`w-full flex items-center justify-between px-4 py-2.5 rounded-full text-sm font-medium transition-all ${
+                  !selectedFamilyId 
+                    ? "bg-[#e8f0fe] text-[#1a73e8] dark:bg-[#0842a0]/20 dark:text-[#a8c7fa]" 
+                    : "text-foreground hover:bg-gray-250 dark:hover:bg-gray-800"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <User className="w-4.5 h-4.5 stroke-[1.5]" />
+                  <span>Kontakty</span>
+                </div>
+                <span className="text-xs bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded-full text-foreground/80">{households.length}</span>
+              </button>
+            </nav>
 
-        {/* Checkbox filters represented as Labels in Drawer */}
-        <div className="flex-1 overflow-y-auto px-4 mt-6 space-y-6">
-          <div className="border-t border-border-custom pt-4">
-            <h4 className="text-[11px] font-medium text-muted uppercase tracking-wider mb-2 pl-3">Stavy rodin</h4>
-            <div className="space-y-0.5">
-              {ALL_STATUSES
-                .filter((s, idx, self) => self.findIndex(t => t.key === s.key) === idx)
-                .map(status => {
-                  const isChecked = selectedStatuses.includes(status.key);
+            {/* Labels as filters inside Contacts */}
+            <div className="flex-1 overflow-y-auto px-4 mt-4 space-y-5">
+              <div className="border-t border-border-custom pt-4">
+                <h4 className="text-[11px] font-medium text-muted uppercase tracking-wider mb-2 pl-3">Stavy rodin</h4>
+                <div className="space-y-0.5">
+                  {ALL_STATUSES
+                    .filter((s, idx, self) => self.findIndex(t => t.key === s.key) === idx)
+                    .map(status => {
+                      const isChecked = selectedStatuses.includes(status.key);
+                      return (
+                        <label 
+                          key={status.key} 
+                          className="flex items-center gap-3 px-3 py-1.5 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 cursor-pointer transition-colors text-sm font-normal text-foreground"
+                        >
+                          <input 
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => toggleStatusFilter(status.key)}
+                            className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary bg-transparent"
+                          />
+                          <span>{status.label}</span>
+                        </label>
+                      );
+                    })}
+                </div>
+              </div>
+
+              <div className="border-t border-border-custom pt-4">
+                <h4 className="text-[11px] font-medium text-muted uppercase tracking-wider mb-2 pl-3">Typy péče</h4>
+                <div className="space-y-0.5">
+                  {Object.entries(CARE_TYPE_MAP).map(([key, value]) => {
+                    const isChecked = selectedCareTypes.includes(key);
+                    return (
+                      <label 
+                        key={key} 
+                        className="flex items-center gap-3 px-3 py-1.5 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 cursor-pointer transition-colors text-sm font-normal text-foreground"
+                      >
+                        <input 
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => toggleCareTypeFilter(key)}
+                          className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary bg-transparent"
+                        />
+                        <span>{value.label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* SERVICE 2: GMAIL (MAIL) SIDEBAR */}
+        {activeService === 'mail' && (
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {/* Extended FAB: Nová zpráva */}
+            <div className="px-4 mb-4 mt-2">
+              <button 
+                onClick={() => alert("Napsat nový e-mail/spis")}
+                className="flex items-center gap-3 px-6 py-4 bg-[#c2e7ff] text-[#001d35] hover:bg-[#b3dcff] rounded-2xl font-medium shadow-xs hover:shadow-md transition-all duration-200 w-fit"
+              >
+                <Plus className="w-5 h-5 stroke-[2.5]" />
+                <span className="text-sm">Nová zpráva</span>
+              </button>
+            </div>
+
+            {/* Folder list */}
+            <nav className="px-3 space-y-0.5">
+              {[
+                { id: "inbox", label: "Doručená pošta", icon: Inbox, badge: events.length },
+                { id: "starred", label: "S hvězdičkou", icon: Star, badge: starredEvents.size },
+                { id: "sent", label: "Odeslané", icon: Send, badge: null },
+                { id: "drafts", label: "Koncepty", icon: FileText, badge: null }
+              ].map(folder => (
+                <button 
+                  key={folder.id}
+                  onClick={() => { setActiveMailFolder(folder.id as any); setSelectedEventId(null); }}
+                  className={`w-full flex items-center justify-between px-4 py-2.5 rounded-full text-sm font-medium transition-all ${
+                    activeMailFolder === folder.id 
+                      ? "bg-[#e8f0fe] text-[#1a73e8] dark:bg-[#0842a0]/20 dark:text-[#a8c7fa]" 
+                      : "text-foreground hover:bg-gray-250 dark:hover:bg-gray-800"
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <folder.icon className="w-4.5 h-4.5 stroke-[1.5]" />
+                    <span>{folder.label}</span>
+                  </div>
+                  {folder.badge !== null && folder.badge > 0 && (
+                    <span className="text-xs bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded-full text-foreground/80">{folder.badge}</span>
+                  )}
+                </button>
+              ))}
+            </nav>
+
+            {/* Sidebar bottom decoration */}
+            <div className="flex-1 px-4 mt-6 border-t border-border-custom pt-4">
+              <h4 className="text-[11px] font-medium text-muted uppercase tracking-wider mb-2 pl-3">Složky spisů</h4>
+              <div className="space-y-0.5 text-sm text-foreground/80">
+                <div className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 cursor-pointer">
+                  <Folder className="w-4 h-4 text-amber-500" />
+                  <span>Klientské zprávy</span>
+                </div>
+                <div className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 cursor-pointer">
+                  <Folder className="w-4 h-4 text-blue-500" />
+                  <span>Vzdělávání a kurzy</span>
+                </div>
+                <div className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 cursor-pointer">
+                  <Folder className="w-4 h-4 text-emerald-500" />
+                  <span>Lékařské zprávy</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* SERVICE 3: GOOGLE CHAT SIDEBAR */}
+        {activeService === 'chat' && (
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {/* Extended FAB: Nový chat */}
+            <div className="px-4 mb-4 mt-2">
+              <button 
+                onClick={() => alert("Spustit novou konverzaci")}
+                className="flex items-center gap-3 px-6 py-4 bg-[#c2e7ff] text-[#001d35] hover:bg-[#b3dcff] rounded-2xl font-medium shadow-xs hover:shadow-md transition-all duration-200 w-fit"
+              >
+                <Plus className="w-5 h-5 stroke-[2.5]" />
+                <span className="text-sm">Nový chat</span>
+              </button>
+            </div>
+
+            {/* Direct messages list */}
+            <div className="flex-1 overflow-y-auto">
+              <div className="px-4 mb-2">
+                <span className="text-[11px] font-medium text-muted uppercase tracking-wider pl-2">Přímé zprávy</span>
+              </div>
+              <nav className="px-2 space-y-0.5">
+                {households.map(h => {
+                  const p = persons.find(per => per.household_id === h.id && per.role === "foster_parent");
+                  const name = p ? `${p.first_name} ${p.last_name}` : "Pěstoun";
+                  const lastMessage = chatThreads[h.id]?.[chatThreads[h.id].length - 1]?.text || "Zatím žádné zprávy";
+                  
                   return (
-                    <label 
-                      key={status.key} 
-                      className="flex items-center gap-3 px-3 py-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer transition-colors text-sm font-normal text-foreground"
+                    <button
+                      key={h.id}
+                      onClick={() => { setSelectedFamilyId(h.id); }}
+                      className={`w-full text-left px-3 py-2.5 rounded-xl transition-all flex items-center gap-3 ${
+                        selectedFamilyId === h.id 
+                          ? "bg-[#e8f0fe] text-[#1a73e8] dark:bg-[#0842a0]/20 dark:text-[#a8c7fa]" 
+                          : "text-foreground hover:bg-gray-200 dark:hover:bg-gray-800"
+                      }`}
                     >
-                      <input 
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={() => toggleStatusFilter(status.key)}
-                        className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary bg-transparent"
-                      />
-                      <span>{status.label}</span>
-                    </label>
+                      <div className="w-8 h-8 rounded-full bg-primary/10 text-primary border border-primary/20 flex items-center justify-center font-medium text-xs shrink-0">
+                        {p?.first_name?.charAt(0) || "P"}
+                      </div>
+                      <div className="truncate flex-1">
+                        <p className="text-sm font-medium leading-none truncate">{name}</p>
+                        <p className="text-xs text-muted font-normal mt-1 truncate">{lastMessage}</p>
+                      </div>
+                    </button>
                   );
                 })}
+              </nav>
             </div>
           </div>
-
-          <div className="border-t border-border-custom pt-4">
-            <h4 className="text-[11px] font-medium text-muted uppercase tracking-wider mb-2 pl-3">Typy péče</h4>
-            <div className="space-y-0.5">
-              {Object.entries(CARE_TYPE_MAP).map(([key, value]) => {
-                const isChecked = selectedCareTypes.includes(key);
-                return (
-                  <label 
-                    key={key} 
-                    className="flex items-center gap-3 px-3 py-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer transition-colors text-sm font-normal text-foreground"
-                  >
-                    <input 
-                      type="checkbox"
-                      checked={isChecked}
-                      onChange={() => toggleCareTypeFilter(key)}
-                      className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary bg-transparent"
-                    />
-                    <span>{value.label}</span>
-                  </label>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
-        {/* User profile / Logout at the bottom */}
-        <div className="p-4 border-t border-border-custom bg-background/50 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5 truncate">
-              <div className="w-8 h-8 rounded-full bg-md-surface-variant flex items-center justify-center font-medium text-xs text-foreground shrink-0 border border-border-custom">
-                {currentUserProfile?.first_name?.charAt(0) || "U"}
-              </div>
-              <div className="truncate">
-                <p className="text-xs font-medium text-foreground">
-                  {currentUserProfile ? `${currentUserProfile.first_name} ${currentUserProfile.last_name}` : "Načítání..."}
-                </p>
-                <p className="text-[10px] text-muted font-normal uppercase tracking-wider mt-0.5">
-                  {currentUserProfile?.role || "worker"}
-                </p>
-              </div>
-            </div>
-            
-            <button 
-              onClick={handleLogout}
-              title="Odhlásit se"
-              className="p-1.5 text-muted hover:text-foreground hover:bg-gray-150 dark:hover:bg-gray-800 rounded-full transition-colors"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
+        )}
       </aside>
 
-      {/* Primary Workspace container */}
+      {/* ========================================================= */}
+      {/* 3. DYNAMIC CONTENT WORKSPACE                               */}
+      {/* ========================================================= */}
       <div className="flex-1 flex flex-col overflow-hidden bg-background">
         
-        {/* 2. TOP BAR (Google-like Search Bar & Icons) */}
-        <header className="h-16 px-6 bg-background border-b border-border-custom flex items-center justify-between shrink-0 z-20 transition-colors gap-4">
-          
+        {/* Dynamic Header */}
+        <header className="h-16 px-6 bg-background border-b border-border-custom flex items-center justify-between shrink-0 z-20 gap-4">
           <div className="flex items-center gap-3 flex-1">
-            <button 
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="p-2 hover:bg-gray-150 dark:hover:bg-gray-800 rounded-full transition-colors text-muted"
-            >
-              <Menu className="w-5 h-5" />
-            </button>
-
             {/* Google Search Bar Design */}
             <div className="flex-1 max-w-2xl relative">
               <div className="flex items-center bg-[#f1f3f4] dark:bg-[#2d2f31] focus-within:bg-card focus-within:shadow-md focus-within:ring-1 focus-within:ring-border-custom rounded-full px-4 py-2 transition-all duration-200 w-full group">
                 <Search className="w-5 h-5 text-muted mr-3" />
                 <input 
                   type="text" 
-                  placeholder="Hledat rodinu, pěstouna, adresu..."
+                  placeholder={
+                    activeService === 'contacts' ? "Hledat v kontaktech (jméno, adresa...)" :
+                    activeService === 'mail' ? "Hledat v poště a spisech..." : "Hledat v konverzacích..."
+                  }
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="bg-transparent border-none outline-none focus:ring-0 text-sm text-foreground placeholder-muted w-full"
@@ -803,254 +1002,450 @@ export default function Home() {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            {/* Sorting indicator trigger */}
-            <div className="relative">
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value)}
-                className="bg-transparent text-xs font-medium text-muted hover:text-foreground cursor-pointer focus:outline-none border-none py-1 pl-2 pr-6"
-              >
-                <option value="name">Řadit: Jméno</option>
-                <option value="address">Řadit: Město</option>
-                <option value="children_count">Řadit: Počet dětí</option>
-                <option value="status">Řadit: Stav</option>
-              </select>
-            </div>
+            {activeService === 'contacts' && (
+              <div className="relative">
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value)}
+                  className="bg-transparent text-xs font-medium text-muted hover:text-foreground cursor-pointer focus:outline-none border-none py-1 pl-2 pr-6"
+                >
+                  <option value="name">Řadit: Jméno</option>
+                  <option value="address">Řadit: Město</option>
+                  <option value="children_count">Řadit: Počet dětí</option>
+                  <option value="status">Řadit: Stav</option>
+                </select>
+              </div>
+            )}
 
             <button 
               onClick={toggleDarkMode}
               title={darkMode ? "Světlý režim" : "Tmavý režim"}
-              className="p-2 text-muted hover:text-foreground hover:bg-gray-150 dark:hover:bg-gray-800 rounded-full transition-all"
+              className="p-2 text-muted hover:text-foreground hover:bg-gray-200 dark:hover:bg-gray-800 rounded-full transition-all"
             >
               {darkMode ? <Sun className="w-5 h-5 text-amber-400" /> : <Moon className="w-5 h-5" />}
             </button>
 
             <div className="w-px h-6 bg-border-custom mx-1" />
 
+            {/* Profile monogram */}
             <div className="w-8 h-8 rounded-full bg-primary/10 text-primary border border-primary/20 flex items-center justify-center font-medium text-sm shadow-xs shrink-0 select-none">
               {currentUserProfile?.first_name?.charAt(0) || "U"}
             </div>
           </div>
         </header>
 
-        {/* 3. LIST AND DETAIL COLUMN FLOW */}
+        {/* Dynamic viewport layout */}
         <div className="flex-1 flex overflow-hidden">
           
-          {/* A. TABLE SEZNAM RODIN (Gmail style list view) */}
-          <section className={`bg-background flex flex-col transition-all duration-200 overflow-hidden ${
-            selectedFamilyId ? "hidden md:flex md:w-[38%] border-r border-border-custom" : "w-full"
-          }`}>
-            
-            {/* Gmail-style table controls / Bulk actions bar */}
-            <div className="h-14 px-4 border-b border-border-custom flex items-center justify-between shrink-0 bg-background transition-all">
-              <div className="flex items-center gap-3">
-                <input 
-                  type="checkbox"
-                  checked={allVisibleSelected}
-                  onChange={toggleSelectAll}
-                  className="w-4 h-4 cursor-pointer rounded border-gray-300 text-primary focus:ring-primary bg-transparent"
-                />
-                
-                {checkedHouseholds.size > 0 ? (
-                  <div className="flex items-center gap-3 animate-in fade-in duration-150">
-                    <span className="text-xs font-medium text-primary">Vybráno: {checkedHouseholds.size}</span>
-                    <button 
-                      onClick={clearChecked}
-                      className="text-xs text-muted hover:text-foreground underline font-normal"
-                    >
-                      Zrušit
-                    </button>
-                    <div className="w-px h-4 bg-border-custom" />
-                    <button 
-                      onClick={() => {
-                        const next = new Set(starredHouseholds);
-                        checkedHouseholds.forEach(id => next.add(id));
-                        setStarredHouseholds(next);
-                        clearChecked();
-                      }}
-                      className="p-1 text-muted hover:text-foreground hover:bg-gray-150 dark:hover:bg-gray-800 rounded-full"
-                      title="Označit hvězdičkou"
-                    >
-                      <Star className="w-4 h-4" />
-                    </button>
-                    <button 
-                      onClick={() => {
-                        alert(`Odstranit vybrané: ${Array.from(checkedHouseholds).join(", ")}`);
-                        clearChecked();
-                      }}
-                      className="p-1 text-muted hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-full"
-                      title="Smazat vybrané"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                ) : (
-                  <span className="text-xs font-normal text-muted">
-                    Zobrazeno {filteredHouseholds.length} domácností
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* List Rows */}
-            <div className="flex-1 overflow-y-auto">
-              <table className="w-full text-left border-collapse">
-                <tbody>
-                  {filteredHouseholds.map((h) => {
-                    const p = persons.find(per => per.household_id === h.id && per.role === "foster_parent");
-                    const children = persons.filter(per => per.household_id === h.id && per.role === "child");
-                    const pAddress = p ? addresses.find(a => a.person_id === p.id) : null;
-                    const hasDup = p ? hasSurnameDuplicate(p.last_name) : false;
-                    const statusObj = getStatusObj(h.status);
-                    const isChecked = checkedHouseholds.has(h.id);
-                    const isStarred = starredHouseholds.has(h.id);
-
-                    return (
-                      <tr 
-                        key={h.id}
+          {/* ========================================================= */}
+          {/* A. VIEW 1: GOOGLE CONTACTS VIEW (Contacts active)         */}
+          {/* ========================================================= */}
+          {activeService === 'contacts' && (
+            <section className={`bg-background flex flex-col transition-all duration-200 overflow-hidden ${
+              selectedFamilyId ? "hidden md:flex md:w-[38%] border-r border-border-custom" : "w-full"
+            }`}>
+              
+              {/* Toolbar */}
+              <div className="h-14 px-4 border-b border-border-custom flex items-center justify-between shrink-0 bg-background">
+                <div className="flex items-center gap-3">
+                  <input 
+                    type="checkbox"
+                    checked={allVisibleSelected}
+                    onChange={toggleSelectAll}
+                    className="w-4 h-4 cursor-pointer rounded border-gray-300 text-primary focus:ring-primary bg-transparent"
+                  />
+                  
+                  {checkedHouseholds.size > 0 ? (
+                    <div className="flex items-center gap-3 animate-in fade-in duration-150">
+                      <span className="text-xs font-medium text-primary">Vybráno: {checkedHouseholds.size}</span>
+                      <button onClick={clearChecked} className="text-xs text-muted hover:text-foreground underline font-normal">
+                        Zrušit
+                      </button>
+                      <div className="w-px h-4 bg-border-custom" />
+                      <button 
                         onClick={() => {
-                          setSelectedFamilyId(h.id);
-                          setActiveTab("overview");
+                          const next = new Set(starredHouseholds);
+                          checkedHouseholds.forEach(id => next.add(id));
+                          setStarredHouseholds(next);
+                          clearChecked();
                         }}
-                        className={`group border-b border-border-custom cursor-pointer transition-colors ${
-                          isChecked ? "bg-primary/5 hover:bg-primary/10" : "hover:bg-gray-100/70 dark:hover:bg-gray-800/40"
-                        } ${
-                          selectedFamilyId === h.id ? "bg-[#e8f0fe]/80 dark:bg-[#0842a0]/10" : ""
-                        }`}
+                        className="p-1 text-muted hover:text-foreground hover:bg-gray-150 dark:hover:bg-gray-800 rounded-full"
+                        title="Označit hvězdičkou"
                       >
-                        {/* Avatar / Hover Checkbox */}
-                        <td className="py-3 px-4 w-12 align-middle text-center select-none" onClick={(e) => e.stopPropagation()}>
-                          <div className="relative w-8 h-8 flex items-center justify-center group/avatar">
-                            {/* Avatar bubble */}
-                            <div className={`w-8 h-8 rounded-full flex items-center justify-center font-medium text-xs transition-all duration-150 ${
-                              isChecked ? "scale-0 opacity-0 absolute" : "group-hover:scale-0 group-hover:opacity-0"
-                            } ${
-                              h.status === "active" ? "bg-emerald-100 text-emerald-850 dark:bg-emerald-950 dark:text-emerald-300" : "bg-blue-100 text-blue-855 dark:bg-blue-950 dark:text-blue-300"
-                            }`}>
-                              {p?.first_name?.charAt(0) || "P"}
-                            </div>
-                            {/* Hidden checkbox that emerges on hover or checked */}
-                            <input 
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={() => toggleCheckedHousehold(h.id)}
-                              className={`w-4 h-4 cursor-pointer rounded border-gray-300 text-primary focus:ring-primary transition-all duration-150 ${
-                                isChecked ? "scale-100 opacity-100" : "scale-0 opacity-0 absolute group-hover:scale-100 group-hover:opacity-100 group-hover:relative"
-                              }`}
-                            />
-                          </div>
-                        </td>
+                        <Star className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={() => {
+                          alert(`Odstranit vybrané: ${Array.from(checkedHouseholds).join(", ")}`);
+                          clearChecked();
+                        }}
+                        className="p-1 text-muted hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-full"
+                        title="Smazat vybrané"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="text-xs font-normal text-muted">
+                      Kontakty ({filteredHouseholds.length})
+                    </span>
+                  )}
+                </div>
+              </div>
 
-                        {/* Star column */}
-                        <td className="py-3 px-1 w-8 align-middle text-center" onClick={(e) => e.stopPropagation()}>
-                          <button
-                            onClick={() => toggleStarredHousehold(h.id)}
-                            className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full transition-colors"
-                          >
-                            <Star className={`w-4.5 h-4.5 transition-colors ${
-                              isStarred 
-                                ? "text-amber-500 fill-amber-500" 
-                                : "text-gray-300 dark:text-gray-600 hover:text-gray-500"
-                            }`} />
-                          </button>
-                        </td>
+              {/* Rows */}
+              <div className="flex-1 overflow-y-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-border-custom text-xs font-medium text-muted">
+                      <th className="py-2.5 px-4 w-12 text-center"></th>
+                      <th className="py-2.5 px-1 w-8 text-center"></th>
+                      <th className="py-2.5 px-3">Název</th>
+                      {!selectedFamilyId && <th className="py-2.5 px-4">Adresa</th>}
+                      {!selectedFamilyId && <th className="py-2.5 px-4">Děti v péči</th>}
+                      <th className="py-2.5 px-4 text-right">Stav</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredHouseholds.map((h) => {
+                      const p = persons.find(per => per.household_id === h.id && per.role === "foster_parent");
+                      const children = persons.filter(per => per.household_id === h.id && per.role === "child");
+                      const pAddress = p ? addresses.find(a => a.person_id === p.id) : null;
+                      const statusObj = getStatusObj(h.status);
+                      const isChecked = checkedHouseholds.has(h.id);
+                      const isStarred = starredHouseholds.has(h.id);
 
-                        {/* Primary info (Foster name + child hints) */}
-                        <td className="py-3 px-3 align-middle">
-                          <div className="flex flex-col">
-                            <span className="text-[14px] text-foreground font-normal flex items-center gap-1.5 leading-tight">
-                              {renderFosterParentName(p)}
-                            </span>
-                            {/* Children list shown inline if list is not split-screen */}
-                            {!selectedFamilyId && children.length > 0 && (
-                              <span className="text-xs text-muted font-normal mt-0.5 truncate max-w-sm">
-                                Děti: {children.map(ch => ch.first_name).join(", ")}
-                              </span>
-                            )}
-                          </div>
-                        </td>
-
-                        {/* Address column (only when full width list) */}
-                        {!selectedFamilyId && (
-                          <td className="py-3 px-4 align-middle hidden sm:table-cell text-sm text-foreground/80 font-normal">
-                            {pAddress ? (
-                              <div className="flex flex-col">
-                                <span>{pAddress.street}</span>
-                                <span className="text-muted text-xs font-normal">{pAddress.city}</span>
+                      return (
+                        <tr 
+                          key={h.id}
+                          onClick={() => {
+                            setSelectedFamilyId(h.id);
+                            setActiveTab("overview");
+                          }}
+                          className={`group border-b border-border-custom cursor-pointer transition-colors ${
+                            isChecked ? "bg-primary/5 hover:bg-primary/10" : "hover:bg-gray-100/70 dark:hover:bg-gray-800/40"
+                          } ${
+                            selectedFamilyId === h.id ? "bg-[#e8f0fe]/80 dark:bg-[#0842a0]/10" : ""
+                          }`}
+                        >
+                          {/* Avatar checkbox */}
+                          <td className="py-3 px-4 w-12 align-middle text-center select-none" onClick={(e) => e.stopPropagation()}>
+                            <div className="relative w-8 h-8 flex items-center justify-center">
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-medium text-xs transition-all duration-155 ${
+                                isChecked ? "scale-0 opacity-0 absolute" : "group-hover:scale-0 group-hover:opacity-0"
+                              } ${
+                                h.status === "active" ? "bg-emerald-100 text-emerald-850 dark:bg-emerald-950 dark:text-emerald-300" : "bg-blue-100 text-blue-855 dark:bg-blue-950 dark:text-blue-300"
+                              }`}>
+                                {p?.first_name?.charAt(0) || "P"}
                               </div>
-                            ) : (
-                              <span className="text-muted text-xs font-normal italic">Adresa neuvedena</span>
-                            )}
+                              <input 
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => toggleCheckedHousehold(h.id)}
+                                className={`w-4 h-4 cursor-pointer rounded border-gray-300 text-primary focus:ring-primary transition-all duration-155 ${
+                                  isChecked ? "scale-100 opacity-100" : "scale-0 opacity-0 absolute group-hover:scale-100 group-hover:opacity-100 group-hover:relative"
+                                }`}
+                              />
+                            </div>
                           </td>
-                        )}
 
-                        {/* Action badge / Hover Quick Actions (Gmail style) */}
-                        <td className="py-3 px-4 text-right align-middle w-28 text-xs select-none" onClick={(e) => e.stopPropagation()}>
-                          <div className="flex items-center justify-end relative h-7">
-                            {/* Normal status (hidden on row hover) */}
-                            <div className="group-hover:opacity-0 group-hover:scale-95 transition-all duration-150 absolute right-0">
-                              <span className={`inline-block px-2 py-0.5 rounded-full border text-[11px] font-normal tracking-wide ${statusObj.colorClass}`}>
-                                {statusObj.label}
-                              </span>
+                          {/* Star toggle */}
+                          <td className="py-3 px-1 w-8 align-middle text-center" onClick={(e) => e.stopPropagation()}>
+                            <button onClick={() => toggleStarredHousehold(h.id)} className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full">
+                              <Star className={`w-4.5 h-4.5 transition-colors ${
+                                isStarred ? "text-amber-500 fill-amber-500" : "text-gray-300 dark:text-gray-650 hover:text-gray-500"
+                              }`} />
+                            </button>
+                          </td>
+
+                          {/* Foster parent display name */}
+                          <td className="py-3 px-3 align-middle text-sm text-foreground">
+                            <div className="flex flex-col">
+                              {renderFosterParentName(p)}
+                              {!selectedFamilyId && children.length > 0 && (
+                                <span className="text-xs text-muted mt-0.5 truncate max-w-sm">
+                                  Děti: {children.map(ch => ch.first_name).join(", ")}
+                                </span>
+                              )}
                             </div>
-                            {/* Hover icons container */}
-                            <div className="opacity-0 scale-95 group-hover:opacity-100 group-hover:scale-100 transition-all duration-150 flex items-center gap-1 absolute right-0 bg-background/90 dark:bg-[#131314]/90 pl-2">
-                              <button 
-                                onClick={() => alert(`Upravit rodinu: ${h.foster_id}`)}
-                                title="Upravit"
-                                className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full text-muted hover:text-foreground"
-                              >
-                                <Edit2 className="w-3.5 h-3.5" />
-                              </button>
-                              <button 
-                                onClick={() => alert(`Událost pro rodinu: ${h.foster_id}`)}
-                                title="Nová událost"
-                                className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full text-muted hover:text-foreground"
-                              >
-                                <Calendar className="w-3.5 h-3.5" />
-                              </button>
-                              <button 
-                                onClick={() => alert(`Odebrat: ${h.foster_id}`)}
-                                title="Smazat"
-                                className="p-1 hover:bg-red-100 dark:hover:bg-red-950/20 rounded-full text-muted hover:text-red-500"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
+                          </td>
+
+                          {/* Address (only visible in full grid) */}
+                          {!selectedFamilyId && (
+                            <td className="py-3 px-4 align-middle text-sm text-foreground/80 font-normal">
+                              {pAddress ? `${pAddress.street}, ${pAddress.city}` : <span className="text-muted italic">Bez adresy</span>}
+                            </td>
+                          )}
+
+                          {/* Children count (only visible in full grid) */}
+                          {!selectedFamilyId && (
+                            <td className="py-3 px-4 align-middle text-sm text-foreground/80 font-normal">
+                              {children.length > 0 ? `${children.length} dětí` : "Bez dětí"}
+                            </td>
+                          )}
+
+                          {/* Action badge / Hover icons */}
+                          <td className="py-3 px-4 text-right align-middle w-28 text-xs select-none" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center justify-end relative h-7">
+                              <div className="group-hover:opacity-0 group-hover:scale-95 transition-all duration-150 absolute right-0">
+                                <span className={`inline-block px-2.5 py-0.5 rounded-full border text-[11px] font-normal tracking-wide ${statusObj.colorClass}`}>
+                                  {statusObj.label}
+                                </span>
+                              </div>
+                              <div className="opacity-0 scale-95 group-hover:opacity-100 group-hover:scale-100 transition-all duration-150 flex items-center gap-1 absolute right-0 bg-background/90 dark:bg-[#131314]/90 pl-2">
+                                <button onClick={() => alert(`Upravit rodinu: ${h.foster_id}`)} className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full text-muted hover:text-foreground">
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </button>
+                                <button onClick={() => alert(`Odebrat: ${h.foster_id}`)} className="p-1 hover:bg-red-100 rounded-full text-muted hover:text-red-500">
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
                             </div>
-                          </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
+
+          {/* ========================================================= */}
+          {/* B. VIEW 2: GMAIL STYLE EVENTS VIEW (Mail active)          */}
+          {/* ========================================================= */}
+          {activeService === 'mail' && (
+            <section className={`bg-background flex flex-col transition-all duration-200 overflow-hidden ${
+              selectedEventId ? "hidden md:flex md:w-[38%] border-r border-border-custom" : "w-full"
+            }`}>
+              
+              {/* Gmail Inbox tabs header */}
+              <div className="border-b border-border-custom flex bg-background shrink-0 select-none">
+                {[
+                  { id: "primary", label: "Primární", icon: Inbox, color: "border-[#1a73e8] text-[#1a73e8]", activeColorClass: "bg-[#e8f0fe]/30" },
+                  { id: "promo", label: "Promoakce", icon: Tag, color: "border-[#137333] text-[#137333]", activeColorClass: "bg-[#e6f4ea]/30" },
+                  { id: "social", label: "Sociální sítě", icon: Users, color: "border-[#a142f4] text-[#a142f4]", activeColorClass: "bg-[#f3e8fd]/30" }
+                ].map(tab => (
+                  <button 
+                    key={tab.id}
+                    onClick={() => { setActiveMailTab(tab.id as any); setSelectedEventId(null); }}
+                    className={`flex-1 py-4 px-4 flex items-center justify-center gap-3 text-xs font-medium border-b-4 transition-all ${
+                      activeMailTab === tab.id 
+                        ? `${tab.color} ${tab.activeColorClass}` 
+                        : "border-transparent text-muted hover:text-foreground hover:bg-gray-100"
+                    }`}
+                  >
+                    <tab.icon className="w-4.5 h-4.5 stroke-[1.8]" />
+                    <span>{tab.label}</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Email Table list */}
+              <div className="flex-1 overflow-y-auto">
+                <table className="w-full text-left border-collapse">
+                  <tbody>
+                    {getGmailFilteredEvents().map((e) => {
+                      const h = households.find(house => house.id === e.household_id);
+                      const p = h ? persons.find(per => per.household_id === h.id && per.role === "foster_parent") : null;
+                      const senderName = p ? `${p.first_name} ${p.last_name}` : "Systém";
+                      const isStarred = starredEvents.has(e.id);
+                      const isSelected = selectedEventId === e.id;
+
+                      return (
+                        <tr 
+                          key={e.id}
+                          onClick={() => { setSelectedEventId(e.id); }}
+                          className={`group border-b border-border-custom cursor-pointer transition-colors text-sm hover:bg-gray-150/80 dark:hover:bg-gray-800/40 ${
+                            isSelected ? "bg-[#e8f0fe] dark:bg-[#0842a0]/15" : ""
+                          }`}
+                        >
+                          {/* Gmail checkbox (decorative in event table) */}
+                          <td className="py-2.5 px-3 w-10 text-center select-none" onClick={(e) => e.stopPropagation()}>
+                            <input type="checkbox" className="w-4 h-4 cursor-pointer rounded border-gray-300" />
+                          </td>
+
+                          {/* Gmail star */}
+                          <td className="py-2.5 px-1 w-8 text-center select-none" onClick={(e) => e.stopPropagation()}>
+                            <button 
+                              onClick={() => {
+                                setStarredEvents(prev => {
+                                  const next = new Set(prev);
+                                  if (next.has(e.id)) next.delete(e.id);
+                                  else next.add(e.id);
+                                  return next;
+                                });
+                              }}
+                              className="p-1 rounded-full text-gray-300 hover:text-gray-500"
+                            >
+                              <Star className={`w-4 h-4 ${isStarred ? "text-amber-500 fill-amber-500" : ""}`} />
+                            </button>
+                          </td>
+
+                          {/* Sender name */}
+                          <td className="py-2.5 px-3 w-36 font-normal text-foreground truncate">
+                            {senderName}
+                          </td>
+
+                          {/* Subject and body snippet */}
+                          <td className="py-2.5 px-3 truncate max-w-xs font-normal">
+                            <span className="text-foreground/90 font-medium mr-1">{e.title}</span>
+                            <span className="text-muted text-xs font-normal">- {e.payload?.content || e.payload?.text || "Bez detailu"}</span>
+                          </td>
+
+                          {/* Date */}
+                          <td className="py-2.5 px-4 text-right text-xs text-muted w-20 font-normal">
+                            {new Date(e.occurred_at).toLocaleDateString("cs-CZ", { month: "short", day: "numeric" })}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {getGmailFilteredEvents().length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="py-8 text-center text-sm text-muted italic">
+                          Složka je prázdná.
                         </td>
                       </tr>
-                    );
-                  })}
-                  {filteredHouseholds.length === 0 && (
-                    <tr>
-                      <td colSpan={5} className="py-8 text-center text-sm text-muted italic">
-                        Nebyly nalezeny žádné záznamy vyhovující filtrům.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </section>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
 
-          {/* B. DETAILNÍ PANEL (MD3 Card - Split-screen / Fullscreen view on mobile) */}
-          {selectedHousehold ? (
-            <main className="flex-1 bg-background p-4 md:p-6 flex flex-col overflow-hidden animate-in fade-in duration-200">
-              <div className="bg-card rounded-[28px] border border-border-custom shadow-xs flex flex-col flex-1 overflow-hidden">
+          {/* ========================================================= */}
+          {/* C. VIEW 3: GOOGLE CHAT STREAM VIEW (Chat active)          */}
+          {/* ========================================================= */}
+          {activeService === 'chat' && (
+            <section className="flex-1 flex flex-col overflow-hidden bg-background">
+              {selectedFamilyId ? (
+                <div className="flex-1 flex flex-col overflow-hidden">
+                  
+                  {/* Chat header */}
+                  <div className="h-14 px-6 border-b border-border-custom flex items-center justify-between bg-background shrink-0 select-none">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-medium text-xs">
+                        {primaryFosterParent?.first_name?.charAt(0) || "P"}
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-medium text-foreground">
+                          {primaryFosterParent ? `${primaryFosterParent.first_name} ${primaryFosterParent.last_name}` : "Chat konverzace"}
+                        </h4>
+                        <span className="text-[10px] text-emerald-600 flex items-center gap-1 mt-0.5 font-normal">
+                          <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full inline-block" />
+                          Aktivní
+                        </span>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-1">
+                      <button className="p-2 hover:bg-gray-150 dark:hover:bg-gray-800 rounded-full text-muted">
+                        <Video className="w-4 h-4" />
+                      </button>
+                      <button className="p-2 hover:bg-gray-150 dark:hover:bg-gray-800 rounded-full text-muted">
+                        <MoreVertical className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Bubbles stream */}
+                  <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50/30 dark:bg-gray-900/10">
+                    <div className="text-center my-4">
+                      <span className="text-[10px] bg-slate-100 dark:bg-gray-800 px-3 py-1 rounded-full text-muted font-normal">
+                        Historie chatu je šifrovaná
+                      </span>
+                    </div>
+
+                    {activeChatFeed.map((msg, index) => (
+                      <div 
+                        key={index}
+                        className={`flex gap-3 max-w-xl ${msg.isMe ? "ml-auto flex-row-reverse" : "mr-auto"}`}
+                      >
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center font-medium text-xs shrink-0 select-none ${
+                          msg.isMe ? "bg-slate-300 text-slate-800" : "bg-primary/20 text-primary"
+                        }`}>
+                          {msg.isMe ? "Já" : msg.sender.charAt(0)}
+                        </div>
+                        <div className="space-y-1">
+                          <div className={`px-4 py-2.5 rounded-2xl text-sm font-normal leading-relaxed ${
+                            msg.isMe 
+                              ? "bg-primary text-white rounded-tr-none" 
+                              : "bg-[#f1f3f4] dark:bg-gray-800 text-foreground rounded-tl-none"
+                          }`}>
+                            <p>{msg.text}</p>
+                          </div>
+                          <span className="text-[10px] text-muted block pl-1">{msg.time}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Message Input (MD3 Chat pill) */}
+                  <div className="p-4 bg-background border-t border-border-custom shrink-0">
+                    <div className="max-w-4xl mx-auto flex items-center gap-2 bg-[#f1f3f4] dark:bg-[#2d2f31] rounded-full px-4 py-2">
+                      <button className="p-1.5 text-muted hover:text-foreground hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full">
+                        <Paperclip className="w-4.5 h-4.5" />
+                      </button>
+                      <input 
+                        type="text" 
+                        placeholder="Napište zprávu..."
+                        value={chatInput}
+                        onChange={(e) => setChatInput(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') handleSendMessage(); }}
+                        className="w-full bg-transparent border-none outline-none focus:ring-0 text-sm text-foreground placeholder-muted"
+                      />
+                      <button 
+                        onClick={handleSendMessage}
+                        className="p-2 bg-primary hover:bg-primary-hover text-white rounded-full transition-colors shrink-0"
+                      >
+                        <Send className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex-1 flex flex-col items-center justify-center text-muted italic bg-background font-normal gap-2 select-none">
+                  <MessageSquare className="w-10 h-10 text-muted/50 stroke-[1]" />
+                  <span>Vyberte kontakt v levém sloupci pro zahájení chatu.</span>
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* ========================================================= */}
+          {/* 4. RESIZABLE RIGHT PANEL DETAIL                           */}
+          {/* ========================================================= */}
+          
+          {/* Contacts active: detail of the household */}
+          {activeService === 'contacts' && selectedHousehold && (
+            <>
+              {/* Divider drag Splitter line */}
+              <div 
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  setIsResizing(true);
+                }}
+                className={`w-1 cursor-col-resize hover:bg-primary/55 active:bg-primary transition-colors shrink-0 z-30 ${
+                  isResizing ? "bg-primary" : "bg-border-custom"
+                }`}
+              />
+
+              <div 
+                style={{ width: typeof window !== 'undefined' && window.innerWidth < 768 ? '100%' : `${detailWidth}px` }} 
+                className="bg-card shrink-0 flex flex-col overflow-hidden transition-all duration-75 border-l border-border-custom w-full md:w-auto"
+              >
                 
-                {/* Header detailu */}
-                <div className="p-6 border-b border-border-custom flex items-center justify-between bg-card shrink-0 transition-colors">
+                {/* Header detail */}
+                <div className="p-6 border-b border-border-custom flex items-center justify-between bg-card shrink-0">
                   <div className="space-y-1">
                     <div className="flex items-center gap-3">
                       <button 
                         onClick={() => setSelectedFamilyId(null)}
-                        title="Zpět na seznam"
-                        className="md:hidden p-1.5 hover:bg-gray-150 dark:hover:bg-gray-800 rounded-full text-muted transition-colors mr-1"
+                        className="md:hidden p-1.5 hover:bg-gray-150 rounded-full text-muted mr-1"
                       >
                         <ChevronLeft className="w-6 h-6" />
                       </button>
-                      <h3 className="text-xl md:text-2xl font-medium text-foreground tracking-tight">
+                      <h3 className="text-xl font-medium text-foreground tracking-tight">
                         {primaryFosterParent ? `Spis rodiny ${primaryFosterParent.last_name}ových` : "Detail rodiny"}
                       </h3>
                       {primaryFosterParent?.custom_fields?.foster_care_type && 
@@ -1061,14 +1456,13 @@ export default function Home() {
                       Kód spisu: {selectedHousehold.foster_id} • Brno
                     </p>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
                     <button className="px-4 py-2 bg-background hover:bg-gray-100 dark:hover:bg-gray-800 text-foreground border border-border-custom rounded-full text-xs font-medium transition-all">
                       Export spisu
                     </button>
                     <button className="px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-full text-xs font-medium transition-all shadow-xs">
                       Upravit
                     </button>
-                    <div className="w-px h-6 bg-border-custom mx-1 hidden md:block" />
                     <button 
                       onClick={() => setSelectedFamilyId(null)}
                       title="Zavřít"
@@ -1079,7 +1473,7 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* Navigation MD3 tab switcher */}
+                {/* Tab layout inside panel */}
                 <div className="bg-card border-b border-border-custom px-6 flex gap-4 shrink-0 overflow-x-auto select-none">
                   {[
                     { id: "overview", label: "Přehled rodiny" },
@@ -1100,22 +1494,17 @@ export default function Home() {
                   ))}
                 </div>
 
-                {/* Tab Content viewport */}
-                <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 bg-slate-50/50 dark:bg-slate-900/10 transition-colors">
+                {/* Main panel body */}
+                <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50/50 dark:bg-slate-900/10">
                   
-                  {/* TAB 1: OVERVIEW (Stacked layout) */}
                   {activeTab === "overview" && (
                     <div className="space-y-6">
                       
-                      {/* Main Foster Parent Card */}
-                      <div className="bg-background border border-border-custom p-6 rounded-3xl space-y-5 transition-colors shadow-xs">
+                      {/* Main Foster parent */}
+                      <div className="bg-background border border-border-custom p-6 rounded-3xl space-y-5 shadow-xs">
                         <div className="flex items-center gap-4">
                           {primaryFosterParent?.custom_fields?.avatar_url ? (
-                            <img 
-                              src={primaryFosterParent.custom_fields.avatar_url} 
-                              alt="avatar" 
-                              className="w-14 h-14 rounded-full border border-border-custom object-cover"
-                            />
+                            <img src={primaryFosterParent.custom_fields.avatar_url} alt="avatar" className="w-14 h-14 rounded-full border border-border-custom object-cover" />
                           ) : (
                             <div className="w-14 h-14 rounded-full bg-primary/10 text-primary border border-primary/20 flex items-center justify-center font-medium text-xl shadow-xs">
                               {primaryFosterParent?.first_name?.charAt(0) || "P"}
@@ -1145,8 +1534,7 @@ export default function Home() {
                                   href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${primaryParentAddress.street}, ${primaryParentAddress.city}`)}`}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  title="Google Maps"
-                                  className="text-primary hover:text-primary-hover p-1 hover:bg-gray-150 dark:hover:bg-gray-800 rounded-full transition-colors"
+                                  className="text-primary p-1 hover:bg-gray-150 dark:hover:bg-gray-800 rounded-full"
                                 >
                                   <Map className="w-4 h-4" />
                                 </a>
@@ -1158,18 +1546,14 @@ export default function Home() {
                         </div>
                       </div>
 
-                      {/* Children (Stacked, single column list) */}
+                      {/* Children */}
                       <div className="space-y-3">
                         <h4 className="text-[11px] font-medium text-muted uppercase tracking-wider pl-1">Děti v pěstounské péči</h4>
                         {fosterChildren.map((child) => (
-                          <div key={child.id} className="bg-background border border-border-custom p-5 rounded-3xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 transition-all hover:bg-gray-100/50 dark:hover:bg-gray-800/30">
+                          <div key={child.id} className="bg-background border border-border-custom p-5 rounded-3xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 hover:bg-gray-100/50 dark:hover:bg-gray-800/30">
                             <div className="flex items-center gap-4">
                               {child.custom_fields?.avatar_url ? (
-                                <img 
-                                  src={child.custom_fields.avatar_url} 
-                                  alt="child" 
-                                  className="w-12 h-12 rounded-full object-cover border border-border-custom"
-                                />
+                                <img src={child.custom_fields.avatar_url} alt="child" className="w-12 h-12 rounded-full object-cover border border-border-custom" />
                               ) : (
                                 <div className="w-12 h-12 rounded-full bg-primary/10 text-primary border border-primary/20 flex items-center justify-center font-medium text-base shadow-xs">
                                   {child.first_name?.charAt(0) || "D"}
@@ -1182,80 +1566,54 @@ export default function Home() {
                                   <span>•</span>
                                   <span>Záliby: {child.custom_fields?.hobby || "Neuvedeno"}</span>
                                 </div>
-                                <p className="text-xs text-muted">Škola: {child.custom_fields?.school || "Neuvedeno"}</p>
                               </div>
                             </div>
-
-                            <div className="flex sm:flex-col items-end gap-1.5 w-full sm:w-auto justify-between sm:justify-start border-t sm:border-t-0 border-border-custom/30 pt-3 sm:pt-0 shrink-0 select-none">
-                              <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-normal border ${
-                                child.safety_rating === "A" ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400" :
-                                child.safety_rating === "B" ? "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-400" : 
-                                "bg-red-50 text-red-700 border-red-200 dark:bg-red-500/10 dark:text-red-400"
-                              }`}>
-                                Hodnocení {child.safety_rating}
-                              </span>
-                            </div>
-                          </div>
-                        ))}
-                        {fosterChildren.length === 0 && (
-                          <p className="text-xs text-muted italic pl-1">V této rodině nejsou evidovány žádné děti.</p>
-                        )}
-                      </div>
-
-                      {/* Other family members */}
-                      <div className="space-y-3">
-                        <h4 className="text-[11px] font-medium text-muted uppercase tracking-wider pl-1">Další kontakty a biologické vazby</h4>
-                        
-                        {otherMembers.map((member) => (
-                          <div key={member.id} className="bg-background border border-border-custom p-4 rounded-3xl flex items-center justify-between transition-all hover:bg-gray-100/50 dark:hover:bg-gray-800/30">
-                            <div className="flex items-center gap-3">
-                              {member.custom_fields?.avatar_url ? (
-                                <img src={member.custom_fields.avatar_url} alt="avatar" className="w-10 h-10 rounded-full object-cover border border-border-custom" />
-                              ) : (
-                                <div className="w-10 h-10 rounded-full bg-slate-100 text-foreground border border-border-custom flex items-center justify-center font-medium text-sm">
-                                  {member.first_name?.charAt(0) || "M"}
-                                </div>
-                              )}
-                              <div>
-                                <p className="text-sm font-medium text-foreground">{member.first_name} {member.last_name}</p>
-                                <p className="text-xs text-muted">Člen domácnosti</p>
-                              </div>
-                            </div>
-                            <span className="text-xs bg-slate-100 dark:bg-gray-800 px-2.5 py-0.5 rounded-full text-foreground font-normal">
-                              {member.custom_fields?.relationship_to_child || "Rodina"}
+                            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-normal border bg-emerald-50 text-emerald-700 border-emerald-200">
+                              Hodnocení {child.safety_rating}
                             </span>
                           </div>
                         ))}
+                      </div>
 
+                      {/* Relatives and Bio parent details */}
+                      <div className="space-y-3">
+                        <h4 className="text-[11px] font-medium text-muted uppercase tracking-wider pl-1">Další kontakty a biologické vazby</h4>
                         {biologicalParents.map((bio) => (
-                          <div 
-                            key={bio.id} 
-                            className={`p-4 rounded-3xl flex items-center justify-between border transition-all ${
-                              bio.safety_rating === "Z" 
-                                ? "bg-red-50/20 border-red-200 dark:bg-red-950/10 dark:border-red-900/30" 
-                                : "bg-background border-border-custom hover:bg-gray-100/50 dark:hover:bg-gray-800/30"
-                            }`}
-                          >
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-full bg-slate-100 text-foreground border border-border-custom flex items-center justify-center font-medium text-sm">
-                                {bio.first_name?.charAt(0) || "B"}
+                          <div key={bio.id} className={`p-4 rounded-3xl border ${bio.safety_rating === 'Z' ? 'bg-red-50/20 border-red-200 dark:bg-red-950/10' : 'bg-background border-border-custom'}`}>
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-full bg-slate-100 border border-border-custom flex items-center justify-center font-medium text-sm">B</div>
+                                <div>
+                                  <p className="text-sm font-medium text-foreground">{bio.first_name} {bio.last_name}</p>
+                                  <p className="text-xs text-muted">Biologický rodič</p>
+                                </div>
                               </div>
-                              <div>
-                                <p className="text-sm font-medium text-foreground">{bio.first_name} {bio.last_name}</p>
-                                <p className="text-xs text-muted">
-                                  Biologický rodič (vazba: {bio.safety_rating})
-                                </p>
-                              </div>
-                            </div>
-
-                            <div>
-                              {bio.safety_rating === "Z" ? (
-                                <span className="px-2.5 py-0.5 bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-400 text-xs font-medium rounded-full border border-red-200 dark:border-red-500/30 uppercase tracking-wide">
-                                  Styk zakázán
-                                </span>
+                              {bio.safety_rating === 'Z' ? (
+                                <span className="px-2.5 py-0.5 bg-red-100 text-red-800 text-xs font-medium rounded-full">Styk zakázán</span>
                               ) : (
-                                <span className="text-xs text-foreground font-mono bg-card px-2.5 py-1 rounded-lg border border-border-custom/80 shadow-xs">{bio.phone || "Bez tel."}</span>
+                                <span className="text-xs font-mono bg-card px-2 py-1 rounded border border-border-custom">{bio.phone || "Bez tel."}</span>
                               )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                    </div>
+                  )}
+
+                  {activeTab === "timeline" && (
+                    <div className="bg-background border border-border-custom p-6 rounded-3xl space-y-5 shadow-xs">
+                      <h4 className="text-[11px] font-medium text-muted uppercase tracking-wider pl-1">Historie klientských kontaktů</h4>
+                      <div className="relative border-l-2 border-primary/20 ml-2.5 pl-6 space-y-6">
+                        {selectedFamilyEvents.map((e) => (
+                          <div key={e.id} className="relative">
+                            <div className={`absolute -left-[29.5px] top-1.5 w-3 h-3 rounded-full ring-4 ring-card ${e.type === "crisis_event" ? "bg-red-500" : "bg-primary"}`} />
+                            <div className="flex justify-between items-start gap-4">
+                              <div className="space-y-1">
+                                <h5 className="font-medium text-sm text-foreground">{e.title}</h5>
+                                <p className="text-xs text-muted leading-relaxed font-normal">{e.payload?.content || e.payload?.text || "Bez textu"}</p>
+                              </div>
+                              <span className="text-[10px] text-muted whitespace-nowrap bg-card px-2 py-0.5 rounded border border-border-custom">{new Date(e.occurred_at).toLocaleDateString("cs-CZ")}</span>
                             </div>
                           </div>
                         ))}
@@ -1263,115 +1621,39 @@ export default function Home() {
                     </div>
                   )}
 
-                  {/* TAB 2: EVENTS (TIMELINE) */}
-                  {activeTab === "timeline" && (
-                    <div className="bg-background border border-border-custom p-6 rounded-3xl space-y-5 shadow-xs">
-                      <h4 className="text-[11px] font-medium text-muted uppercase tracking-wider pl-1">Historie klientských kontaktů</h4>
-                      {selectedFamilyEvents.length > 0 ? (
-                        <div className="relative border-l-2 border-primary/20 ml-2.5 pl-6 space-y-6">
-                          {selectedFamilyEvents.map((e) => (
-                            <div key={e.id} className="relative animate-in fade-in duration-200">
-                              <div className={`absolute -left-[29.5px] top-1.5 w-3 h-3 rounded-full ring-4 ring-card ${
-                                e.type === "crisis_event" ? "bg-red-500" : "bg-primary"
-                              }`} />
-                              <div className="flex justify-between items-start gap-4">
-                                <div className="space-y-1">
-                                  <h5 className="font-medium text-sm text-foreground">{e.title}</h5>
-                                  <p className="text-xs text-muted leading-relaxed max-w-2xl font-normal">
-                                    {e.payload?.content || e.payload?.text || "Bez textu"}
-                                  </p>
-                                </div>
-                                <span className="text-[10px] text-muted font-normal bg-card px-2 py-0.5 rounded border border-border-custom shadow-xs whitespace-nowrap">
-                                  {new Date(e.occurred_at).toLocaleDateString("cs-CZ")}
-                                </span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="text-sm text-muted italic pl-1">Žádné zaznamenané události v historii rodiny.</p>
-                      )}
-                    </div>
-                  )}
-
-                  {/* TAB 3: REGISTRY & DOCUMENTS */}
                   {activeTab === "registry" && (
                     <div className="space-y-6">
-                      {/* Education */}
                       <div className="bg-background border border-border-custom p-6 rounded-3xl space-y-4 shadow-xs">
-                        <h4 className="text-[11px] font-medium text-muted uppercase tracking-wider flex items-center gap-2 pl-1">
-                          <GraduationCap className="w-5 h-5 text-primary" />
-                          Evidence vzdělávání dětí
-                        </h4>
+                        <h4 className="text-[11px] font-medium text-muted uppercase tracking-wider flex items-center gap-2 pl-1"><GraduationCap className="w-5 h-5 text-primary" /> Evidence vzdělávání dětí</h4>
                         <div className="divide-y divide-border-custom">
                           {fosterChildren.map((child) => (
-                            <div key={child.id} className="py-3.5 first:pt-0 last:pb-0 flex justify-between items-center text-sm text-foreground">
+                            <div key={child.id} className="py-3 first:pt-0 last:pb-0 flex justify-between items-center text-sm">
                               <div>
-                                <span className="font-medium text-sm block">{child.first_name} {child.last_name}</span>
-                                <span className="text-muted mt-0.5 block text-xs">{child.custom_fields?.school || "ZŠ Merhautova Brno"}</span>
+                                <span className="font-medium block">{child.first_name} {child.last_name}</span>
+                                <span className="text-muted block text-xs">{child.custom_fields?.school || "ZŠ Merhautova Brno"}</span>
                               </div>
-                              <div className="text-right">
-                                <span className="block font-medium text-primary text-xs bg-primary/10 px-2.5 py-0.5 rounded-full">Třída: 6.A</span>
-                                <span className="text-[11px] text-muted block mt-1">Mgr. Kateřina Novotná</span>
-                              </div>
+                              <span className="text-xs bg-primary/10 text-primary px-2.5 py-0.5 rounded-full">Třída: 6.A</span>
                             </div>
                           ))}
-                          {fosterChildren.length === 0 && (
-                            <p className="text-xs text-muted italic pl-1">V této rodině nejsou školní děti.</p>
-                          )}
                         </div>
                       </div>
 
-                      {/* Pediatric Metrics */}
                       <div className="bg-background border border-border-custom p-6 rounded-3xl space-y-4 shadow-xs">
-                        <h4 className="text-[11px] font-medium text-muted uppercase tracking-wider flex items-center gap-2 pl-1">
-                          <Stethoscope className="w-5 h-5 text-primary" />
-                          Zdravotní a fyziologické údaje
-                        </h4>
-                        <div className="space-y-4">
-                          {fosterChildren.map((child) => (
-                            <div key={child.id} className="p-4 bg-card rounded-2xl border border-border-custom/80 space-y-2.5 text-sm text-foreground shadow-xs">
-                              <span className="font-medium text-sm block border-b border-border-custom pb-1.5">
-                                {child.first_name} {child.last_name}
-                              </span>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                                <p><span className="text-muted font-medium mr-1 uppercase text-[10px] tracking-wide">Pediatr:</span> MUDr. Josef Fiala</p>
-                                <p><span className="text-muted font-medium mr-1 uppercase text-[10px] tracking-wide">Pojišťovna:</span> 111 (VZP)</p>
-                                <p className="col-span-1 sm:col-span-2"><span className="text-muted font-medium mr-1 uppercase text-[10px] tracking-wide">Medikace:</span> Bez pravidelné medikace</p>
-                                <p className="col-span-1 sm:col-span-2"><span className="text-muted font-medium mr-1 uppercase text-[10px] tracking-wide">Měření:</span> 142 cm / 35 kg</p>
-                              </div>
-                            </div>
-                          ))}
-                          {fosterChildren.length === 0 && (
-                            <p className="text-xs text-muted italic pl-1">Žádné zdravotní údaje.</p>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Document scans */}
-                      <div className="bg-background border border-border-custom p-6 rounded-3xl space-y-4 shadow-xs">
-                        <h4 className="text-[11px] font-medium text-muted uppercase tracking-wider flex items-center gap-2 pl-1">
-                          <FileText className="w-5 h-5 text-primary" />
-                          Spisy a smluvní dokumenty (DMS)
-                        </h4>
-                        <div className="space-y-2.5">
+                        <h4 className="text-[11px] font-medium text-muted uppercase tracking-wider flex items-center gap-2 pl-1"><FileText className="w-5 h-5 text-primary" /> Spisy a smluvní dokumenty (DMS)</h4>
+                        <div className="space-y-2">
                           {[
-                            { name: "Dohoda o doprovázení pěstounské rodiny.pdf", size: "2.4 MB", date: "15.01.2025" },
-                            { name: "IPOD - Individuální plán ochrany dítěte.pdf", size: "1.8 MB", date: "22.02.2025" },
-                            { name: "Soudní rozhodnutí o svěření do péče.pdf", size: "4.1 MB", date: "10.12.2024" },
-                            { name: "GDPR Souhlas se zpracováním údajů.pdf", size: "950 KB", date: "15.01.2025" }
-                          ].map((doc, dIdx) => (
-                            <div key={dIdx} className="p-3 bg-card hover:bg-slate-500/5 rounded-2xl border border-border-custom/50 flex justify-between items-center transition-all text-sm shadow-xs">
+                            { name: "Dohoda o doprovázení pěstounské rodiny.pdf", size: "2.4 MB" },
+                            { name: "IPOD - Individuální plán ochrany dítěte.pdf", size: "1.8 MB" }
+                          ].map((doc, idx) => (
+                            <div key={idx} className="p-3 bg-card rounded-2xl border border-border-custom/50 flex justify-between items-center text-sm shadow-xs">
                               <div className="flex items-center gap-3">
-                                <FileText className="w-4.5 h-4.5 text-muted shrink-0" />
-                                <div className="space-y-0.5">
-                                  <span className="font-normal text-sm text-foreground block">{doc.name}</span>
-                                  <span className="text-[10px] text-muted block font-normal">Datum: {doc.date} • {doc.size}</span>
+                                <FileText className="w-4 h-4 text-muted" />
+                                <div>
+                                  <span className="font-normal block text-sm">{doc.name}</span>
+                                  <span className="text-[10px] text-muted block">{doc.size}</span>
                                 </div>
                               </div>
-                              <button className="p-2 hover:bg-gray-150 rounded-full text-muted hover:text-foreground transition-colors border border-border-custom/40 shadow-xs">
-                                <FileDown className="w-4 h-4" />
-                              </button>
+                              <button className="p-1.5 hover:bg-gray-100 rounded-full border border-border-custom"><FileDown className="w-4 h-4" /></button>
                             </div>
                           ))}
                         </div>
@@ -1381,28 +1663,213 @@ export default function Home() {
 
                 </div>
 
-                {/* AI Workspace Copilot (Material bar design) */}
+                {/* AI Copilot */}
                 <div className="p-4 border-t border-border-custom bg-card shrink-0">
                   <div className="max-w-4xl mx-auto relative flex items-center">
                     <Sparkles className="absolute left-4 w-4 h-4 text-primary" />
                     <input 
                       type="text" 
-                      placeholder="Položte AI dotaz k rodině (např. 'Kdy proběhla poslední návštěva?')"
+                      placeholder="Zeptejte se AI na cokoliv ze spisu rodiny..."
                       className="w-full pl-11 pr-24 py-3 bg-[#f1f3f4] dark:bg-[#2d2f31] border border-transparent rounded-full text-xs text-foreground focus:bg-card focus:border-primary focus:outline-none transition-all shadow-xs"
                     />
-                    <button className="absolute right-3 px-4 py-1.5 bg-primary hover:bg-primary-hover text-white rounded-full text-[11px] font-medium transition-colors shadow-xs">
-                      Položit dotaz
-                    </button>
+                    <button className="absolute right-3 px-4 py-1.5 bg-primary text-white rounded-full text-[11px] font-medium">Položit dotaz</button>
                   </div>
                 </div>
+
               </div>
-            </main>
-          ) : (
+            </>
+          )}
+
+          {/* Mail active: selected timeline event detail (Gmail detail card - Screen 3 style) */}
+          {activeService === 'mail' && selectedGmailEvent && (
+            <>
+              {/* Divider drag Splitter line */}
+              <div 
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  setIsResizing(true);
+                }}
+                className={`w-1 cursor-col-resize hover:bg-primary/55 active:bg-primary transition-colors shrink-0 z-30 ${
+                  isResizing ? "bg-primary" : "bg-border-custom"
+                }`}
+              />
+
+              <div 
+                style={{ width: typeof window !== 'undefined' && window.innerWidth < 768 ? '100%' : `${detailWidth}px` }} 
+                className="bg-card shrink-0 flex flex-col overflow-hidden transition-all duration-75 border-l border-border-custom w-full md:w-auto"
+              >
+                {/* Gmail-style toolbar above email */}
+                <div className="h-14 border-b border-border-custom px-4 flex items-center justify-between shrink-0 bg-background">
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => setSelectedEventId(null)} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-full text-muted" title="Zpět">
+                      <ChevronLeft className="w-5 h-5" />
+                    </button>
+                    <div className="w-px h-5 bg-border-custom mx-1" />
+                    <button onClick={() => alert("Odeslat do archivu")} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-full text-muted" title="Archivovat">
+                      <Inbox className="w-4.5 h-4.5" />
+                    </button>
+                    <button onClick={() => alert("Smazat spis/e-mail")} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-full text-muted hover:text-red-500" title="Smazat">
+                      <Trash2 className="w-4.5 h-4.5" />
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-muted font-normal select-none">
+                    <span>1 z 1</span>
+                  </div>
+                </div>
+
+                {/* Email Content (Screen 3 style replication) */}
+                <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-card">
+                  
+                  {/* Subject and tags */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h2 className="text-lg font-medium text-foreground tracking-tight">
+                        {selectedGmailEvent.title}
+                      </h2>
+                      <span className="px-2 py-0.5 bg-gray-100 dark:bg-gray-800 text-muted rounded text-[10px] font-normal border border-border-custom">
+                        Doručená pošta <span className="text-red-500 ml-1">x</span>
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Sender and recipient info card */}
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center font-medium text-sm">
+                        S
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-sm font-medium text-foreground">Systém doprovázení CRM</span>
+                          <span className="text-xs text-muted font-normal">&lt;podpora@doprovazeni.cz&gt;</span>
+                        </div>
+                        <p className="text-xs text-muted font-normal mt-0.5">komu: mně</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-muted font-normal">
+                      <span>{new Date(selectedGmailEvent.occurred_at).toLocaleString("cs-CZ")}</span>
+                      <button className="p-1 hover:bg-gray-250 rounded-full">
+                        <Star className="w-4 h-4 text-gray-300" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Event Details Content Block (Replicating email body) */}
+                  <div className="border border-border-custom rounded-2xl p-6 space-y-4 bg-gray-50/30 dark:bg-gray-900/10 text-sm leading-relaxed text-foreground font-normal">
+                    <h3 className="font-medium text-base text-foreground pb-2 border-b border-border-custom flex items-center gap-2">
+                      <Activity className="w-5 h-5 text-primary" />
+                      Záznam klientského spisu
+                    </h3>
+                    <p>{selectedGmailEvent.payload?.content || selectedGmailEvent.payload?.text || "K této události není evidován podrobný textový popis."}</p>
+                    <div className="pt-4 mt-4 border-t border-border-custom/80 flex items-center gap-4 text-xs text-muted">
+                      <span>Typ události: {selectedGmailEvent.type}</span>
+                      <span>•</span>
+                      <span>Autor ID: {selectedGmailEvent.author_id || "Automat"}</span>
+                    </div>
+                  </div>
+
+                  {/* Reply Action footer (Screen 3 style replication) */}
+                  <div className="pt-6 border-t border-border-custom flex items-center gap-2 flex-wrap select-none">
+                    <button onClick={() => alert("Odpovědět...")} className="px-4 py-2 bg-background hover:bg-gray-150 dark:hover:bg-gray-800 text-foreground border border-border-custom rounded-full text-xs font-medium transition-all">
+                      Odpovědět
+                    </button>
+                    <button onClick={() => alert("Odpovědět všem...")} className="px-4 py-2 bg-background hover:bg-gray-150 dark:hover:bg-gray-800 text-foreground border border-border-custom rounded-full text-xs font-medium transition-all">
+                      Odpovědět všem
+                    </button>
+                    <button onClick={() => alert("Přeposlat...")} className="px-4 py-2 bg-background hover:bg-gray-150 dark:hover:bg-gray-800 text-foreground border border-border-custom rounded-full text-xs font-medium transition-all">
+                      Přeposlat
+                    </button>
+                  </div>
+
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Chat active: resizable right panel showing shared Google Drive files (Screen 4 style) */}
+          {activeService === 'chat' && selectedFamilyId && (
+            <>
+              {/* Divider drag Splitter line */}
+              <div 
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  setIsResizing(true);
+                }}
+                className={`w-1 cursor-col-resize hover:bg-primary/55 active:bg-primary transition-colors shrink-0 z-30 ${
+                  isResizing ? "bg-primary" : "bg-border-custom"
+                }`}
+              />
+
+              <div 
+                style={{ width: typeof window !== 'undefined' && window.innerWidth < 768 ? '100%' : `${detailWidth}px` }} 
+                className="bg-card shrink-0 flex flex-col overflow-hidden transition-all duration-75 border-l border-border-custom w-full md:w-auto"
+              >
+                
+                {/* Header */}
+                <div className="p-4 border-b border-border-custom flex items-center justify-between bg-card shrink-0 select-none">
+                  <span className="text-sm font-medium text-foreground flex items-center gap-2">
+                    <Building2 className="w-4.5 h-4.5 text-primary" />
+                    Google Disk (Sdílené soubory)
+                  </span>
+                  <button onClick={() => setSelectedFamilyId(null)} className="p-1 hover:bg-gray-150 rounded-full text-muted md:hidden">
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {/* Drive file list viewport (Screen 4 replication) */}
+                <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50/20 dark:bg-gray-900/10">
+                  <div className="bg-background border border-border-custom rounded-3xl p-5 shadow-xs space-y-4">
+                    <div className="flex items-center justify-between pb-3 border-b border-border-custom">
+                      <span className="text-xs font-medium text-muted uppercase tracking-wider">Název souboru</span>
+                      <span className="text-xs font-medium text-muted uppercase tracking-wider">Velikost</span>
+                    </div>
+
+                    {[
+                      { name: "Smlouva o doprovázení rodiny.pdf", size: "2.4 MB", type: "pdf" },
+                      { name: "IPOD klientský spis 2025.pdf", size: "1.8 MB", type: "pdf" },
+                      { name: "Rozhodnutí soudu o svěření dětí.pdf", size: "4.1 MB", type: "pdf" },
+                      { name: "Fotka ze společné akce.jpg", size: "3.2 MB", type: "image" },
+                      { name: "GDPR souhlas pěstounů.pdf", size: "950 KB", type: "pdf" }
+                    ].map((file, idx) => (
+                      <div key={idx} className="flex items-center justify-between p-3 bg-card hover:bg-gray-100 rounded-2xl border border-border-custom/50 shadow-2xs transition-colors">
+                        <div className="flex items-center gap-3 truncate">
+                          <FileText className="w-4.5 h-4.5 text-muted shrink-0" />
+                          <span className="text-sm font-normal text-foreground truncate">{file.name}</span>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0 ml-2">
+                          <span className="text-xs text-muted font-mono">{file.size}</span>
+                          <button className="p-1 hover:bg-gray-200 rounded-full text-muted hover:text-foreground border border-border-custom/40">
+                            <FileDown className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Drive usage stat card */}
+                  <div className="bg-background border border-border-custom rounded-3xl p-5 shadow-xs space-y-2">
+                    <span className="text-xs font-medium text-muted uppercase tracking-wider block">Využití úložiště</span>
+                    <div className="w-full bg-gray-200 dark:bg-gray-700 h-2 rounded-full overflow-hidden">
+                      <div className="bg-primary h-full rounded-full" style={{ width: "35%" }} />
+                    </div>
+                    <span className="text-[11px] text-muted block mt-1 font-normal">Využito 12.4 MB z 15 GB (Zkušební verze)</span>
+                  </div>
+                </div>
+
+              </div>
+            </>
+          )}
+
+          {/* Fallback state when no item is selected and resizable panel is hidden */}
+          {((activeService === 'contacts' && !selectedHousehold) || 
+            (activeService === 'mail' && !selectedGmailEvent) || 
+            (activeService === 'chat' && !selectedFamilyId)) && (
             <div className="flex-1 flex flex-col items-center justify-center text-muted italic bg-background font-normal gap-2 select-none">
               <Users className="w-10 h-10 text-muted/50 stroke-[1]" />
-              <span className="text-sm">Vyberte klientský spis z tabulky pro zobrazení detailu rodiny.</span>
+              <span className="text-sm">Vyberte položku ze seznamu pro zobrazení podrobností.</span>
             </div>
           )}
+
         </div>
       </div>
     </div>
