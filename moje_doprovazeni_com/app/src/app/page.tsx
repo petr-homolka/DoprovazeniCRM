@@ -2024,6 +2024,11 @@ export default function Home() {
                           {/* Dynamic columns */}
                           {columnsOrder.filter(c => visibleColumns.includes(c)).map((colId) => {
                             if (colId === "name") {
+                              const parentObj = h.isPerson 
+                                ? (h.role === "foster_parent" ? h.rawItem : null) 
+                                : parentPerson;
+                              const isJmenovec = parentObj && parentObj.last_name ? hasSurnameDuplicate(parentObj.last_name) : false;
+
                               return (
                                 <td key={colId} className="py-3 px-3 align-middle text-sm text-foreground">
                                   <div className="flex flex-col">
@@ -2047,6 +2052,19 @@ export default function Home() {
                                         </span>
                                       )}
                                     </span>
+                                    {isJmenovec && h.address && (
+                                      <div className="flex items-center gap-1 text-[11px] text-muted-foreground mt-0.5" onClick={(e) => e.stopPropagation()}>
+                                        <MapPin className="w-3 h-3 text-[#ea4335] shrink-0" />
+                                        <a 
+                                          href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(h.address)}`}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="hover:underline text-primary"
+                                        >
+                                          {h.address}
+                                        </a>
+                                      </div>
+                                    )}
                                     {((!h.isPerson) || (h.isPerson && h.role === "foster_parent")) && h.childrenList && h.childrenList.length > 0 && (
                                       <div className="flex flex-col gap-1 mt-1 pl-2 text-xs text-muted font-normal">
                                         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
