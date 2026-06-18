@@ -1530,7 +1530,7 @@ export default function Home() {
                                         </span>
                                       )}
                                     </span>
-                                    {!h.isPerson && h.childrenList && h.childrenList.length > 0 && (
+                                    {((!h.isPerson) || (h.isPerson && h.role === "foster_parent")) && h.childrenList && h.childrenList.length > 0 && (
                                       <div className="flex flex-col gap-1 mt-1 pl-2 text-xs text-muted font-normal">
                                         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                                           <span className="text-gray-400">↳</span>
