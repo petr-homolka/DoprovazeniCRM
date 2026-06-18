@@ -1,0 +1,1 @@
+(window.webpack=window.webpack||[]).push([["i18n.mail-liza.react-dates.en"],{"./locales/i18n/mail-liza/react-dates/formatDBinHM/en.tsx":function(e,a,t){t.r(a);a.default=function(e){return e.date+" at "+e.time}},"./locales/i18n/mail-liza/react-dates/sinceDatetimeText/en.tsx":function(e,a,t){t.r(a);a.default="since"}}]);

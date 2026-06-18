@@ -1,0 +1,1 @@
+(window.webpack=window.webpack||[]).push([["i18n.mail-liza.react-settings-popup.en"],{"./locales/i18n/mail-liza/react-settings-popup/newBadge/en.tsx":function(e,a,i){i.r(a);a.default="New"}}]);

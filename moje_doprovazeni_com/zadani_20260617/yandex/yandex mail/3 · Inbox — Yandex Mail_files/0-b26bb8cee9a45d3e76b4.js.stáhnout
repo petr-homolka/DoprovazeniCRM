@@ -1,0 +1,1 @@
+(window.webpack=window.webpack||[]).push([[0],{"./node_modules/@yandex-int/messenger.widget/lib/ui/block.css":function(e,i,n){"use strict";n.r(i)}}]);

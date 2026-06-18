@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<!-- saved from url=(0044)https://docviewer.yandex.com/set-cookie.html -->
+<html crxemulator=""><head><meta http-equiv="Content-Type" content="text/html; charset=windows-1252"></head><body>
+<script type="text/javascript">
+    let diskHostRegExp;
+    if (location.search === '?onprem=1') {
+        diskHostRegExp = new RegExp(`^https://${location.host.replace('docviewer', 'disk').replaceAll('.', '\\.')}$`);
+    } else {
+        const currentTld = /\.yandex\.([\w\.]+)/.exec(location.host)[1];
+        diskHostRegExp = new RegExp(
+            `^https://(?:disk(?:\.360)?|.+\\.(?:dsp|dst|dsd))\\.yandex\\.${currentTld.replace('.', '\\.')}$`
+        );
+    }
+    function listener(event) {
+        if (!diskHostRegExp.test(event.origin)) {
+            return;
+        }
+        const { type, name, value } = JSON.parse(event.data);
+        if (type === 'set-cookie' && name === 'passToken') {
+            const afterFourHours = new Date();
+            afterFourHours.setHours(afterFourHours.getHours() + 4);
+            document.cookie = `${name}=${value}; path=/; expires=${afterFourHours.toUTCString()}`;
+        }
+    }
+    window.addEventListener('message', listener);
+</script>
+
+
+</body></html>
