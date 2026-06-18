@@ -42,7 +42,8 @@ import {
   Folder,
   ChevronRight,
   MoreVertical,
-  CheckSquare
+  CheckSquare,
+  Lightbulb
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 
@@ -95,10 +96,20 @@ export default function Home() {
   const [sortBy, setSortBy] = useState<string>("name");
 
   // Multi-checkbox filtering states (Google Contacts)
-  const [selectedStatuses, setSelectedStatuses] = useState<string[]>([
-    "active", "applicant", "preparation", "paused", "terminated", "lead"
-  ]);
-  const [selectedCareTypes, setSelectedCareTypes] = useState<string[]>(["A", "B", "C"]);
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("selectedStatuses");
+      if (saved) return JSON.parse(saved);
+    }
+    return ["active", "applicant", "preparation", "paused", "terminated", "lead"];
+  });
+  const [selectedCareTypes, setSelectedCareTypes] = useState<string[]>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("selectedCareTypes");
+      if (saved) return JSON.parse(saved);
+    }
+    return ["A", "B", "C"];
+  });
 
   // Gmail-style row interaction states
   const [starredHouseholds, setStarredHouseholds] = useState<Set<string>>(new Set());
@@ -109,15 +120,282 @@ export default function Home() {
   const [activeService, setActiveService] = useState<'contacts' | 'mail' | 'chat'>('contacts');
 
   // Contact sub-categories filtering
-  const [contactFilterType, setContactFilterType] = useState<'families' | 'foster_parents' | 'children' | 'others'>('families');
+  const [contactFilterType, setContactFilterType] = useState<'families' | 'foster_parents' | 'children' | 'others'>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("contactFilterType");
+      if (saved) return saved as any;
+    }
+    return 'families';
+  });
 
   // Dynamic columns state
-  const [columnsOrder, setColumnsOrder] = useState<string[]>(['name', 'address', 'care_type', 'children_count', 'status', 'phone', 'email']);
-  const [visibleColumns, setVisibleColumns] = useState<string[]>(['name', 'address', 'care_type', 'children_count', 'status']);
+  const [columnsOrder, setColumnsOrder] = useState<string[]>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("columnsOrder");
+      if (saved) return JSON.parse(saved);
+    }
+    return ['name', 'address', 'care_type', 'children_count', 'status', 'phone', 'email'];
+  });
+  const [visibleColumns, setVisibleColumns] = useState<string[]>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("visibleColumns");
+      if (saved) return JSON.parse(saved);
+    }
+    return ['name', 'address', 'care_type', 'children_count', 'status'];
+  });
   const [showColumnPicker, setShowColumnPicker] = useState<boolean>(false);
   const [draggedColId, setDraggedColId] = useState<string | null>(null);
   const [dragOverColId, setDragOverColId] = useState<string | null>(null);
   const [hoveredChildId, setHoveredChildId] = useState<string | null>(null);
+
+  // Right vertical switcher rail and widget drawer state
+  const [activeRightWidget, setActiveRightWidget] = useState<'calendar' | 'keep' | 'tasks' | 'maps' | null>(null);
+
+  const toggleRightWidget = (widget: 'calendar' | 'keep' | 'tasks' | 'maps') => {
+    setActiveRightWidget(prev => prev === widget ? null : widget);
+  };
+
+  // Google Keep persistent notes
+  const [keepNotes, setKeepNotes] = useState<any[]>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("keepNotes");
+      if (saved) return JSON.parse(saved);
+    }
+    return [
+      { id: "note-1", title: "Papíry na IPOD", content: "Vzít s sebou na schůzku k Novákovým podklady k IPOD a nechat podepsat pěstouny.", color: "bg-[#fff4b8] dark:bg-[#fff4b8]/20" },
+      { id: "note-2", title: "Tomáš - psycholog", content: "Zavolat dětskému psychologovi a vyžádat si zprávu z vyšetření pro OSPOD.", color: "bg-[#e8f0fe] dark:bg-[#e8f0fe]/20" }
+    ];
+  });
+
+  // Google Tasks persistent tasks
+  const [tasks, setTasks] = useState<any[]>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("tasks");
+      if (saved) return JSON.parse(saved);
+    }
+    return [
+      { id: "task-1", text: "Podepsat dohodu o doprovázení FF-4029", completed: false },
+      { id: "task-2", text: "Odeslat výkazy na úřad práce Brno", completed: true },
+      { id: "task-3", text: "Objednat supervizi na příští měsíc", completed: false }
+    ];
+  });
+
+  const [noteTitle, setNoteTitle] = useState("");
+  const [noteContent, setNoteContent] = useState("");
+  const [noteColor, setNoteColor] = useState("bg-[#fff4b8] dark:bg-[#fff4b8]/20");
+  const [taskText, setTaskText] = useState("");
+
+  // Registries and Document Management System (DMS) States
+  const [selectedRegistryChildId, setSelectedRegistryChildId] = useState<string | null>(null);
+  const [educationHistory, setEducationHistory] = useState<Record<string, any[]>>({});
+  const [medicalRecords, setMedicalRecords] = useState<Record<string, any>>({});
+  const [physiologicalMetrics, setPhysiologicalMetrics] = useState<Record<string, any[]>>({});
+  const [identityDocs, setIdentityDocs] = useState<Record<string, any>>({});
+  const [consents, setConsents] = useState<Record<string, any[]>>({});
+
+  // OCR and editing UI states
+  const [isOcrScanning, setIsOcrScanning] = useState(false);
+  const [ocrSuccessAlert, setOcrSuccessAlert] = useState<string | null>(null);
+  
+  const [isEditingPediatrician, setIsEditingPediatrician] = useState(false);
+  const [editedPediatrician, setEditedPediatrician] = useState("");
+  const [editedPediatricianPhone, setEditedPediatricianPhone] = useState("");
+  const [editedPediatricianAddress, setEditedPediatricianAddress] = useState("");
+  const [editedAllergies, setEditedAllergies] = useState("");
+
+  const [newSchoolYear, setNewSchoolYear] = useState("");
+  const [newSchoolName, setNewSchoolName] = useState("");
+  const [newGradeClass, setNewGradeClass] = useState("");
+  const [newSchoolNote, setNewSchoolNote] = useState("");
+  const [showAddSchoolForm, setShowAddSchoolForm] = useState(false);
+
+  const [newVaccine, setNewVaccine] = useState("");
+  const [newVaccineDate, setNewVaccineDate] = useState("");
+  const [showAddVaccineForm, setShowAddVaccineForm] = useState(false);
+
+  const [newPhysHeight, setNewPhysHeight] = useState("");
+  const [newPhysWeight, setNewPhysWeight] = useState("");
+  const [newPhysDate, setNewPhysDate] = useState("");
+  const [showAddPhysForm, setShowAddPhysForm] = useState(false);
+
+  // Load and initialize child registries from localStorage or seed fallback
+  useEffect(() => {
+    if (typeof window === "undefined" || persons.length === 0) return;
+
+    const savedEducation = localStorage.getItem("educationHistory");
+    const savedMedical = localStorage.getItem("medicalRecords");
+    const savedPhysiological = localStorage.getItem("physiologicalMetrics");
+    const savedIdentity = localStorage.getItem("identityDocs");
+    const savedConsents = localStorage.getItem("consents");
+
+    let eduObj = savedEducation ? JSON.parse(savedEducation) : {};
+    let medObj = savedMedical ? JSON.parse(savedMedical) : {};
+    let physObj = savedPhysiological ? JSON.parse(savedPhysiological) : {};
+    let idObj = savedIdentity ? JSON.parse(savedIdentity) : {};
+    let conObj = savedConsents ? JSON.parse(savedConsents) : {};
+
+    let updated = false;
+    const children = persons.filter(p => p.role === "child");
+
+    children.forEach(child => {
+      const cid = child.id;
+      if (!eduObj[cid]) {
+        eduObj[cid] = [
+          { schoolYear: "2025/2026", schoolName: child.custom_fields?.school || "ZŠ Merhautova, Brno", gradeClass: child.custom_fields?.grade || "6.A", note: "Velmi dobrý prospěch, aktivní v zájmových kroužcích." },
+          { schoolYear: "2024/2025", schoolName: child.custom_fields?.school || "ZŠ Merhautova, Brno", gradeClass: "5.A", note: "Prospěch s vyznamenáním, vzorná docházka." },
+          { schoolYear: "2023/2024", schoolName: "MŠ Pastelka, Brno", gradeClass: "Předškoláci", note: "Příprava na školu proběhla v pořádku." }
+        ];
+        updated = true;
+      }
+
+      if (!medObj[cid]) {
+        medObj[cid] = {
+          pediatrician: "MUDr. Hana Nováková",
+          phone: "+420 541 234 567",
+          address: "Milady Horákové 28, 602 00 Brno",
+          allergies: child.custom_fields?.allergies || "Bez zjevných alergií",
+          vaccinations: [
+            { vaccine: "Hexavakcína (dávka 1-3)", date: "12.10.2016", status: "completed" },
+            { vaccine: "Hexavakcína (dávka 4)", date: "18.06.2017", status: "completed" },
+            { vaccine: "MMR (Priorix)", date: "14.03.2018", status: "completed" },
+            { vaccine: "Infanrix Hexa (přeočkování)", date: "22.09.2021", status: "completed" },
+            { vaccine: "Pravidelné očkování proti TBC", date: "Čeká se na termín", status: "pending" }
+          ]
+        };
+        updated = true;
+      }
+
+      if (!physObj[cid]) {
+        const age = child.birth_date ? new Date().getFullYear() - new Date(child.birth_date).getFullYear() : 10;
+        const baseHeight = 80 + (age * 6.5);
+        const baseWeight = 10 + (age * 3.2);
+
+        physObj[cid] = [
+          { date: "15.05.2026", height: Math.round(baseHeight), weight: Math.round(baseWeight) },
+          { date: "10.11.2025", height: Math.round(baseHeight - 3), weight: Math.round(baseWeight - 2.5) },
+          { date: "12.04.2025", height: Math.round(baseHeight - 6), weight: Math.round(baseWeight - 5) },
+          { date: "08.09.2024", height: Math.round(baseHeight - 9), weight: Math.round(baseWeight - 7.5) }
+        ];
+        updated = true;
+      }
+
+      if (!idObj[cid]) {
+        idObj[cid] = {
+          docType: "Občanský průkaz (Dětský)",
+          docNumber: "987" + Math.floor(100000 + Math.random() * 900000),
+          validity: "18.06.2029",
+          issuer: "Magistrát města Brna"
+        };
+        updated = true;
+      }
+
+      if (!conObj[cid]) {
+        conObj[cid] = [
+          { id: "c-1", title: "Souhlas s focením a prezentací činností", signed: true, signedDate: "01.09.2025", fileUrl: "/docs/souhlas_foto.pdf" },
+          { id: "c-2", title: "Souhlas s lékařským ošetřením a hospitalizací", signed: true, signedDate: "02.09.2025", fileUrl: "/docs/souhlas_lekar.pdf" },
+          { id: "c-3", title: "Souhlas s účastí na mimoškolních akcích", signed: false, signedDate: "", fileUrl: "" },
+          { id: "c-4", title: "GDPR souhlas se zpracováním osobních údajů", signed: true, signedDate: "01.09.2025", fileUrl: "/docs/gdpr_souhlas.pdf" }
+        ];
+        updated = true;
+      }
+    });
+
+    if (updated || !savedEducation) {
+      setEducationHistory(eduObj);
+      setMedicalRecords(medObj);
+      setPhysiologicalMetrics(physObj);
+      setIdentityDocs(idObj);
+      setConsents(conObj);
+      localStorage.setItem("educationHistory", JSON.stringify(eduObj));
+      localStorage.setItem("medicalRecords", JSON.stringify(medObj));
+      localStorage.setItem("physiologicalMetrics", JSON.stringify(physObj));
+      localStorage.setItem("identityDocs", JSON.stringify(idObj));
+      localStorage.setItem("consents", JSON.stringify(conObj));
+    } else {
+      setEducationHistory(eduObj);
+      setMedicalRecords(medObj);
+      setPhysiologicalMetrics(physObj);
+      setIdentityDocs(idObj);
+      setConsents(conObj);
+    }
+  }, [persons]);
+
+  // Persist edits to localStorage when states change
+  useEffect(() => {
+    if (Object.keys(educationHistory).length > 0) {
+      localStorage.setItem("educationHistory", JSON.stringify(educationHistory));
+    }
+  }, [educationHistory]);
+
+  useEffect(() => {
+    if (Object.keys(medicalRecords).length > 0) {
+      localStorage.setItem("medicalRecords", JSON.stringify(medicalRecords));
+    }
+  }, [medicalRecords]);
+
+  useEffect(() => {
+    if (Object.keys(physiologicalMetrics).length > 0) {
+      localStorage.setItem("physiologicalMetrics", JSON.stringify(physiologicalMetrics));
+    }
+  }, [physiologicalMetrics]);
+
+  useEffect(() => {
+    if (Object.keys(identityDocs).length > 0) {
+      localStorage.setItem("identityDocs", JSON.stringify(identityDocs));
+    }
+  }, [identityDocs]);
+
+  useEffect(() => {
+    if (Object.keys(consents).length > 0) {
+      localStorage.setItem("consents", JSON.stringify(consents));
+    }
+  }, [consents]);
+
+  // Keep Notes persistence
+  useEffect(() => {
+    localStorage.setItem("keepNotes", JSON.stringify(keepNotes));
+  }, [keepNotes]);
+
+  // Tasks persistence
+  useEffect(() => {
+    localStorage.setItem("tasks", JSON.stringify(tasks));
+  }, [tasks]);
+
+  const addKeepNote = () => {
+    if (!noteContent.trim() && !noteTitle.trim()) return;
+    const newNote = {
+      id: "note-" + Date.now(),
+      title: noteTitle.trim() || "Bez názvu",
+      content: noteContent.trim(),
+      color: noteColor
+    };
+    setKeepNotes(prev => [newNote, ...prev]);
+    setNoteTitle("");
+    setNoteContent("");
+  };
+
+  const deleteKeepNote = (id: string) => {
+    setKeepNotes(prev => prev.filter(n => n.id !== id));
+  };
+
+  const addTask = () => {
+    if (!taskText.trim()) return;
+    const newTask = {
+      id: "task-" + Date.now(),
+      text: taskText.trim(),
+      completed: false
+    };
+    setTasks(prev => [...prev, newTask]);
+    setTaskText("");
+  };
+
+  const toggleTask = (id: string) => {
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, completed: !t.completed } : t));
+  };
+
+  const deleteTask = (id: string) => {
+    setTasks(prev => prev.filter(t => t.id !== id));
+  };
 
   // Drag and drop column handlers
   const handleDragStart = (e: React.DragEvent, colId: string) => {
@@ -222,6 +500,27 @@ export default function Home() {
       window.removeEventListener("mouseup", handleMouseUp);
     };
   }, [isResizing]);
+
+  // Save settings persistently to localStorage
+  useEffect(() => {
+    localStorage.setItem("selectedStatuses", JSON.stringify(selectedStatuses));
+  }, [selectedStatuses]);
+
+  useEffect(() => {
+    localStorage.setItem("selectedCareTypes", JSON.stringify(selectedCareTypes));
+  }, [selectedCareTypes]);
+
+  useEffect(() => {
+    localStorage.setItem("contactFilterType", contactFilterType);
+  }, [contactFilterType]);
+
+  useEffect(() => {
+    localStorage.setItem("visibleColumns", JSON.stringify(visibleColumns));
+  }, [visibleColumns]);
+
+  useEffect(() => {
+    localStorage.setItem("columnsOrder", JSON.stringify(columnsOrder));
+  }, [columnsOrder]);
 
   // Auth synchronization on mount
   useEffect(() => {
@@ -365,6 +664,163 @@ export default function Home() {
       [selectedFamilyId]: [...(prev[selectedFamilyId] || []), newMsg]
     }));
     setChatInput("");
+  };
+
+  // Child registries helper functions
+  const handleAddSchoolYear = (e: React.FormEvent, activeChildId: string) => {
+    e.preventDefault();
+    if (!activeChildId || !newSchoolYear || !newSchoolName) return;
+    const newEntry = {
+      schoolYear: newSchoolYear,
+      schoolName: newSchoolName,
+      gradeClass: newGradeClass || "-",
+      note: newSchoolNote || "Bez dodatečných poznámek"
+    };
+    setEducationHistory(prev => ({
+      ...prev,
+      [activeChildId]: [newEntry, ...(prev[activeChildId] || [])]
+    }));
+    setNewSchoolYear("");
+    setNewSchoolName("");
+    setNewGradeClass("");
+    setNewSchoolNote("");
+    setShowAddSchoolForm(false);
+  };
+
+  const handleAddVaccine = (e: React.FormEvent, activeChildId: string) => {
+    e.preventDefault();
+    if (!activeChildId || !newVaccine) return;
+    const newEntry = {
+      vaccine: newVaccine,
+      date: newVaccineDate || "Čeká se na termín",
+      status: newVaccineDate ? "completed" : "pending"
+    };
+    setMedicalRecords(prev => {
+      const childRecord = prev[activeChildId] || { vaccinations: [] };
+      return {
+        ...prev,
+        [activeChildId]: {
+          ...childRecord,
+          vaccinations: [...(childRecord.vaccinations || []), newEntry]
+        }
+      };
+    });
+    setNewVaccine("");
+    setNewVaccineDate("");
+    setShowAddVaccineForm(false);
+  };
+
+  const handleToggleVaccine = (vaccineName: string, activeChildId: string) => {
+    if (!activeChildId) return;
+    setMedicalRecords(prev => {
+      const childRecord = prev[activeChildId];
+      if (!childRecord) return prev;
+      const updatedVaccinations = childRecord.vaccinations.map((v: any) => {
+        if (v.vaccine === vaccineName) {
+          return {
+            ...v,
+            status: v.status === "completed" ? "pending" : "completed",
+            date: v.status === "completed" ? "Čeká se na termín" : new Date().toLocaleDateString("cs-CZ")
+          };
+        }
+        return v;
+      });
+      return {
+        ...prev,
+        [activeChildId]: {
+          ...childRecord,
+          vaccinations: updatedVaccinations
+        }
+      };
+    });
+  };
+
+  const handleAddPhys = (e: React.FormEvent, activeChildId: string) => {
+    e.preventDefault();
+    if (!activeChildId || !newPhysHeight || !newPhysWeight) return;
+    const newEntry = {
+      date: newPhysDate || new Date().toLocaleDateString("cs-CZ"),
+      height: parseInt(newPhysHeight),
+      weight: parseInt(newPhysWeight)
+    };
+    setPhysiologicalMetrics(prev => ({
+      ...prev,
+      [activeChildId]: [newEntry, ...(prev[activeChildId] || [])]
+    }));
+    setNewPhysHeight("");
+    setNewPhysWeight("");
+    setNewPhysDate("");
+    setShowAddPhysForm(false);
+  };
+
+  const handleToggleConsent = (consentId: string, activeChildId: string) => {
+    if (!activeChildId) return;
+    setConsents(prev => {
+      const childList = prev[activeChildId] || [];
+      const updated = childList.map((c: any) => {
+        if (c.id === consentId) {
+          return {
+            ...c,
+            signed: !c.signed,
+            signedDate: !c.signed ? new Date().toLocaleDateString("cs-CZ") : ""
+          };
+        }
+        return c;
+      });
+      return {
+        ...prev,
+        [activeChildId]: updated
+      };
+    });
+  };
+
+  const triggerOcrScan = (activeChildId: string, currentHeights: any[]) => {
+    if (!activeChildId) return;
+    setIsOcrScanning(true);
+    setOcrSuccessAlert(null);
+    setTimeout(() => {
+      setIsOcrScanning(false);
+      const nextHeight = currentHeights.length > 0 ? currentHeights[0].height + 1 : 153;
+      const nextWeight = currentHeights.length > 0 ? currentHeights[0].weight + 1 : 43;
+      const todayDate = new Date().toLocaleDateString("cs-CZ");
+      
+      const newEntry = {
+        date: todayDate,
+        height: nextHeight,
+        weight: nextWeight
+      };
+      setPhysiologicalMetrics(prev => ({
+        ...prev,
+        [activeChildId]: [newEntry, ...(prev[activeChildId] || [])]
+      }));
+
+      setOcrSuccessAlert(`AI úspěšně extrahovalo lékařskou zprávu: Výška ${nextHeight} cm, Váha ${nextWeight} kg ze dne ${todayDate} a zapsalo do fyziologie!`);
+    }, 2500);
+  };
+
+  const handleSavePediatrician = (e: React.FormEvent, activeChildId: string) => {
+    e.preventDefault();
+    if (!activeChildId) return;
+    setMedicalRecords(prev => ({
+      ...prev,
+      [activeChildId]: {
+        ...prev[activeChildId],
+        pediatrician: editedPediatrician,
+        phone: editedPediatricianPhone,
+        address: editedPediatricianAddress,
+        allergies: editedAllergies
+      }
+    }));
+    setIsEditingPediatrician(false);
+  };
+
+  const startEditPediatrician = (childMed: any) => {
+    if (!childMed) return;
+    setEditedPediatrician(childMed.pediatrician || "");
+    setEditedPediatricianPhone(childMed.phone || "");
+    setEditedPediatricianAddress(childMed.address || "");
+    setEditedAllergies(childMed.allergies || "");
+    setIsEditingPediatrician(true);
   };
 
   // ==========================================
@@ -758,9 +1214,15 @@ export default function Home() {
   // Gmail Filter and Map Database Events
   const getGmailFilteredEvents = () => {
     return events.filter(e => {
+      // Find household associated with the event
+      const h = households.find(house => house.id === e.household_id);
+      const p = h ? persons.find(per => per.household_id === h.id && per.role === "foster_parent") : null;
+      const parentName = p ? `${p.first_name} ${p.last_name}` : "";
+
       // Search matching
       const matchesSearch = e.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                            (e.payload?.content || "").toLowerCase().includes(searchQuery.toLowerCase());
+                            (e.payload?.content || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+                            parentName.toLowerCase().includes(searchQuery.toLowerCase());
       if (!matchesSearch) return false;
 
       // Filter by Gmail Folder
@@ -1991,19 +2453,47 @@ export default function Home() {
                       
                       {/* Main Foster parent */}
                       <div className="bg-background border border-border-custom p-6 rounded-3xl space-y-5 shadow-xs">
-                        <div className="flex items-center gap-4">
-                          {primaryFosterParent?.custom_fields?.avatar_url ? (
-                            <img src={primaryFosterParent.custom_fields.avatar_url} alt="avatar" className="w-14 h-14 rounded-full border border-border-custom object-cover" />
-                          ) : (
-                            <div className="w-14 h-14 rounded-full bg-primary/10 text-primary border border-primary/20 flex items-center justify-center font-medium text-xl shadow-xs">
-                              {primaryFosterParent?.first_name?.charAt(0) || "P"}
+                        <div className="flex items-center justify-between gap-4 flex-wrap">
+                          <div className="flex items-center gap-4">
+                            {primaryFosterParent?.custom_fields?.avatar_url ? (
+                              <img src={primaryFosterParent.custom_fields.avatar_url} alt="avatar" className="w-14 h-14 rounded-full border border-border-custom object-cover" />
+                            ) : (
+                              <div className="w-14 h-14 rounded-full bg-primary/10 text-primary border border-primary/20 flex items-center justify-center font-medium text-xl shadow-xs">
+                                {primaryFosterParent?.first_name?.charAt(0) || "P"}
+                              </div>
+                            )}
+                            <div>
+                              <h4 className="text-lg font-medium text-foreground tracking-tight leading-snug">
+                                {renderFosterParentName(primaryFosterParent)}
+                              </h4>
+                              <p className="text-xs text-muted font-normal mt-0.5">Klíčový pěstoun domácnosti</p>
                             </div>
-                          )}
-                          <div>
-                            <h4 className="text-lg font-medium text-foreground tracking-tight leading-snug">
-                              {renderFosterParentName(primaryFosterParent)}
-                            </h4>
-                            <p className="text-xs text-muted font-normal mt-0.5">Klíčový pěstoun domácnosti</p>
+                          </div>
+
+                          {/* Quick actions bridge */}
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => {
+                                setActiveService('chat');
+                                setSelectedFamilyId(selectedHousehold.id);
+                              }}
+                              className="px-3.5 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary rounded-full text-xs font-medium transition-colors flex items-center gap-1.5 select-none"
+                              title="Otevřít Chat s pěstounem"
+                            >
+                              <MessageSquare className="w-4 h-4 stroke-[1.8]" />
+                              <span>Otevřít Chat</span>
+                            </button>
+                            <button
+                              onClick={() => {
+                                setActiveService('mail');
+                                setSearchQuery(primaryFosterParent ? primaryFosterParent.last_name : "");
+                              }}
+                              className="px-3.5 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary rounded-full text-xs font-medium transition-colors flex items-center gap-1.5 select-none"
+                              title="Zobrazit poštu rodiny"
+                            >
+                              <Mail className="w-4 h-4 stroke-[1.8]" />
+                              <span>Zobrazit Poštu</span>
+                            </button>
                           </div>
                         </div>
 
@@ -2111,45 +2601,556 @@ export default function Home() {
                     </div>
                   )}
 
-                  {activeTab === "registry" && (
-                    <div className="space-y-6">
-                      <div className="bg-background border border-border-custom p-6 rounded-3xl space-y-4 shadow-xs">
-                        <h4 className="text-[11px] font-medium text-muted uppercase tracking-wider flex items-center gap-2 pl-1"><GraduationCap className="w-5 h-5 text-primary" /> Evidence vzdělávání dětí</h4>
-                        <div className="divide-y divide-border-custom">
-                          {fosterChildren.map((child) => (
-                            <div key={child.id} className="py-3 first:pt-0 last:pb-0 flex justify-between items-center text-sm">
-                              <div>
-                                <span className="font-medium block">{child.first_name} {child.last_name}</span>
-                                <span className="text-muted block text-xs">{child.custom_fields?.school || "ZŠ Merhautova Brno"}</span>
-                              </div>
-                              <span className="text-xs bg-primary/10 text-primary px-2.5 py-0.5 rounded-full">Třída: 6.A</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
+                  {activeTab === "registry" && (() => {
+                    const activeChildId = selectedRegistryChildId || (fosterChildren[0]?.id || null);
+                    const activeChild = fosterChildren.find(c => c.id === activeChildId);
+                    const childEdu = activeChildId ? educationHistory[activeChildId] || [] : [];
+                    const childMed = activeChildId ? medicalRecords[activeChildId] || null : null;
+                    const childPhys = activeChildId ? physiologicalMetrics[activeChildId] || [] : [];
+                    const childIdDoc = activeChildId ? identityDocs[activeChildId] || null : null;
+                    const childConsents = activeChildId ? consents[activeChildId] || [] : [];
 
-                      <div className="bg-background border border-border-custom p-6 rounded-3xl space-y-4 shadow-xs">
-                        <h4 className="text-[11px] font-medium text-muted uppercase tracking-wider flex items-center gap-2 pl-1"><FileText className="w-5 h-5 text-primary" /> Spisy a smluvní dokumenty (DMS)</h4>
-                        <div className="space-y-2">
-                          {[
-                            { name: "Dohoda o doprovázení pěstounské rodiny.pdf", size: "2.4 MB" },
-                            { name: "IPOD - Individuální plán ochrany dítěte.pdf", size: "1.8 MB" }
-                          ].map((doc, idx) => (
-                            <div key={idx} className="p-3 bg-card rounded-2xl border border-border-custom/50 flex justify-between items-center text-sm shadow-xs">
-                              <div className="flex items-center gap-3">
-                                <FileText className="w-4 h-4 text-muted" />
+                    if (fosterChildren.length === 0) {
+                      return (
+                        <div className="bg-background border border-border-custom p-8 rounded-3xl text-center space-y-2 shadow-xs">
+                          <p className="text-muted text-sm font-medium">V této domácnosti nejsou evidovány žádné děti v pěstounské péči.</p>
+                          <p className="text-muted text-xs">Registry a dokumenty o vzdělávání, očkování a tělesném vývoji jsou dostupné pouze pro děti.</p>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="space-y-6">
+                        {/* Toast AI OCR Success Alert */}
+                        {ocrSuccessAlert && (
+                          <div className="p-4 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/40 rounded-2xl flex items-center justify-between text-xs animate-in fade-in slide-in-from-top-4 duration-300">
+                            <div className="flex items-center gap-2">
+                              <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                              <span>{ocrSuccessAlert}</span>
+                            </div>
+                            <button onClick={() => setOcrSuccessAlert(null)} className="p-1 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 rounded-full cursor-pointer">
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Child Selector Pill Menu */}
+                        <div className="flex flex-wrap gap-2 pb-2 border-b border-border-custom">
+                          {fosterChildren.map((child) => {
+                            const isSelected = child.id === activeChildId;
+                            return (
+                              <button
+                                key={child.id}
+                                onClick={() => {
+                                  setSelectedRegistryChildId(child.id);
+                                  setIsEditingPediatrician(false);
+                                  setOcrSuccessAlert(null);
+                                }}
+                                className={`px-4 py-2 rounded-full text-xs font-medium transition-all duration-200 flex items-center gap-2 border cursor-pointer ${
+                                  isSelected 
+                                    ? "bg-primary text-white border-primary shadow-sm" 
+                                    : "bg-card text-muted hover:text-foreground hover:bg-[#f1f3f4] dark:hover:bg-[#2d2f31]/55 border-border-custom"
+                                }`}
+                              >
+                                <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-white' : 'bg-primary'}`}></span>
+                                {child.first_name} {child.last_name}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {activeChild && (
+                          <div className="space-y-6">
+                            
+                            {/* SECTION A: EDUCATION */}
+                            <div className="bg-background border border-border-custom p-6 rounded-3xl space-y-4 shadow-xs">
+                              <div className="flex justify-between items-center">
+                                <h4 className="text-[11px] font-medium text-muted uppercase tracking-wider flex items-center gap-2 pl-1">
+                                  <GraduationCap className="w-5 h-5 text-primary" /> Evidence vzdělávání dětí
+                                </h4>
+                                <button
+                                  onClick={() => setShowAddSchoolForm(!showAddSchoolForm)}
+                                  className="text-[11px] text-primary hover:underline flex items-center gap-1 font-medium cursor-pointer"
+                                >
+                                  <Plus className="w-3.5 h-3.5" /> Přidat školní rok
+                                </button>
+                              </div>
+
+                              {/* School info header summary */}
+                              <div className="p-4 bg-card rounded-2xl border border-border-custom/50 flex justify-between items-center text-sm">
                                 <div>
-                                  <span className="font-normal block text-sm">{doc.name}</span>
-                                  <span className="text-[10px] text-muted block">{doc.size}</span>
+                                  <span className="text-xs text-muted block">Aktuální škola</span>
+                                  <span className="font-medium text-foreground">{activeChild.custom_fields?.school || "ZŠ Merhautova, Brno"}</span>
+                                </div>
+                                <div className="text-right">
+                                  <span className="text-xs text-muted block">Třída</span>
+                                  <span className="text-xs bg-primary/10 text-primary px-2.5 py-0.5 rounded-full font-medium">
+                                    {activeChild.custom_fields?.grade || "6.A"}
+                                  </span>
                                 </div>
                               </div>
-                              <button className="p-1.5 hover:bg-gray-100 rounded-full border border-border-custom"><FileDown className="w-4 h-4" /></button>
+
+                              {/* Form to Add New School Year */}
+                              {showAddSchoolForm && (
+                                <form onSubmit={(e) => handleAddSchoolYear(e, activeChildId)} className="p-4 bg-[#f1f3f4]/50 dark:bg-[#2d2f31]/30 border border-border-custom rounded-2xl space-y-3">
+                                  <div className="grid grid-cols-3 gap-2">
+                                    <input
+                                      type="text"
+                                      placeholder="Školní rok (např. 2025/2026)"
+                                      required
+                                      value={newSchoolYear}
+                                      onChange={(e) => setNewSchoolYear(e.target.value)}
+                                      className="p-2 bg-background border border-border-custom rounded-xl text-xs text-foreground"
+                                    />
+                                    <input
+                                      type="text"
+                                      placeholder="Škola"
+                                      required
+                                      value={newSchoolName}
+                                      onChange={(e) => setNewSchoolName(e.target.value)}
+                                      className="p-2 bg-background border border-border-custom rounded-xl text-xs text-foreground col-span-2"
+                                    />
+                                  </div>
+                                  <div className="grid grid-cols-3 gap-2">
+                                    <input
+                                      type="text"
+                                      placeholder="Třída (např. 7.B)"
+                                      value={newGradeClass}
+                                      onChange={(e) => setNewGradeClass(e.target.value)}
+                                      className="p-2 bg-background border border-border-custom rounded-xl text-xs text-foreground"
+                                    />
+                                    <input
+                                      type="text"
+                                      placeholder="Poznámka / Hodnocení"
+                                      value={newSchoolNote}
+                                      onChange={(e) => setNewSchoolNote(e.target.value)}
+                                      className="p-2 bg-background border border-border-custom rounded-xl text-xs text-foreground col-span-2"
+                                    />
+                                  </div>
+                                  <div className="flex justify-end gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => setShowAddSchoolForm(false)}
+                                      className="px-3 py-1 bg-card border border-border-custom rounded-full text-[11px] text-foreground cursor-pointer"
+                                    >
+                                      Zrušit
+                                    </button>
+                                    <button
+                                      type="submit"
+                                      className="px-3 py-1 bg-primary text-white rounded-full text-[11px] cursor-pointer"
+                                    >
+                                      Uložit
+                                    </button>
+                                  </div>
+                                </form>
+                              )}
+
+                              {/* Education History Timeline */}
+                              <div className="relative pl-6 space-y-4 border-l border-border-custom ml-3 mt-2">
+                                {childEdu.map((edu: any, idx: number) => (
+                                  <div key={idx} className="relative space-y-1">
+                                    <span className="absolute -left-[31px] top-1.5 w-3 h-3 rounded-full bg-primary border-2 border-background dark:border-[#131314]"></span>
+                                    <div className="flex justify-between items-start">
+                                      <span className="text-[11px] font-bold text-primary">{edu.schoolYear}</span>
+                                      <span className="text-xs text-muted font-medium bg-[#f1f3f4] dark:bg-[#2d2f31] px-2 py-0.5 rounded-md">{edu.gradeClass}</span>
+                                    </div>
+                                    <p className="text-sm font-medium text-foreground">{edu.schoolName}</p>
+                                    <p className="text-xs text-muted italic">{edu.note}</p>
+                                  </div>
+                                ))}
+                              </div>
                             </div>
-                          ))}
-                        </div>
+
+                            {/* SECTION B: HEALTHCARE & VACCINATIONS */}
+                            <div className="bg-background border border-border-custom p-6 rounded-3xl space-y-4 shadow-xs">
+                              <div className="flex justify-between items-center">
+                                <h4 className="text-[11px] font-medium text-muted uppercase tracking-wider flex items-center gap-2 pl-1">
+                                  <Stethoscope className="w-5 h-5 text-primary" /> Zdravotní péče a očkování
+                                </h4>
+                                {!isEditingPediatrician && (
+                                  <button
+                                    onClick={() => startEditPediatrician(childMed)}
+                                    className="text-[11px] text-primary hover:underline flex items-center gap-1 font-medium cursor-pointer"
+                                  >
+                                    <Edit2 className="w-3 h-3" /> Upravit údaje
+                                  </button>
+                                )}
+                              </div>
+
+                              {/* Pediatrician and allergies details */}
+                              {isEditingPediatrician ? (
+                                <form onSubmit={(e) => handleSavePediatrician(e, activeChildId)} className="p-4 bg-[#f1f3f4]/50 dark:bg-[#2d2f31]/30 border border-border-custom rounded-2xl space-y-3">
+                                  <div className="grid grid-cols-2 gap-2">
+                                    <div>
+                                      <label className="text-[10px] text-muted block mb-1">Pediatr</label>
+                                      <input
+                                        type="text"
+                                        value={editedPediatrician}
+                                        onChange={(e) => setEditedPediatrician(e.target.value)}
+                                        className="w-full p-2 bg-background border border-border-custom rounded-xl text-xs text-foreground"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="text-[10px] text-muted block mb-1">Telefon pediatr</label>
+                                      <input
+                                        type="text"
+                                        value={editedPediatricianPhone}
+                                        onChange={(e) => setEditedPediatricianPhone(e.target.value)}
+                                        className="w-full p-2 bg-background border border-border-custom rounded-xl text-xs text-foreground"
+                                      />
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <label className="text-[10px] text-muted block mb-1">Adresa ordinace</label>
+                                    <input
+                                      type="text"
+                                      value={editedPediatricianAddress}
+                                      onChange={(e) => setEditedPediatricianAddress(e.target.value)}
+                                      className="w-full p-2 bg-background border border-border-custom rounded-xl text-xs text-foreground"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="text-[10px] text-muted block mb-1">Alergie a zdrav. omezení</label>
+                                    <input
+                                      type="text"
+                                      value={editedAllergies}
+                                      onChange={(e) => setEditedAllergies(e.target.value)}
+                                      className="w-full p-2 bg-background border border-border-custom rounded-xl text-xs text-foreground"
+                                    />
+                                  </div>
+                                  <div className="flex justify-end gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => setIsEditingPediatrician(false)}
+                                      className="px-3 py-1 bg-card border border-border-custom rounded-full text-[11px] text-foreground cursor-pointer"
+                                    >
+                                      Zrušit
+                                    </button>
+                                    <button
+                                      type="submit"
+                                      className="px-3 py-1 bg-primary text-white rounded-full text-[11px] cursor-pointer"
+                                    >
+                                      Uložit
+                                    </button>
+                                  </div>
+                                </form>
+                              ) : (
+                                <div className="grid grid-cols-2 gap-4">
+                                  <div className="p-4 bg-card rounded-2xl border border-border-custom/50 space-y-2">
+                                    <span className="text-[10px] text-muted block uppercase tracking-wider font-semibold">Pediatr</span>
+                                    <p className="font-medium text-sm text-foreground">{childMed?.pediatrician || "MUDr. Hana Nováková"}</p>
+                                    <p className="text-xs text-muted flex items-center gap-1"><Phone className="w-3.5 h-3.5 text-primary" /> {childMed?.phone || "+420 541 234 567"}</p>
+                                    <p className="text-[11px] text-muted">{childMed?.address || "Milady Horákové 28, Brno"}</p>
+                                  </div>
+                                  <div className="p-4 bg-card rounded-2xl border border-border-custom/50 space-y-2">
+                                    <span className="text-[10px] text-muted block uppercase tracking-wider font-semibold">Alergie a Omezení</span>
+                                    <p className="font-medium text-sm text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/15 p-2 rounded-xl border border-rose-100 dark:border-rose-900/35">
+                                      {childMed?.allergies || "Bez zjevných alergií"}
+                                    </p>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Vaccinations Checklist */}
+                              <div className="space-y-3">
+                                <div className="flex justify-between items-center">
+                                  <span className="text-xs text-muted font-medium">Očkovací kalendář (kliknutím změníte stav)</span>
+                                  <button
+                                    onClick={() => setShowAddVaccineForm(!showAddVaccineForm)}
+                                    className="text-[11px] text-primary hover:underline flex items-center gap-1 font-medium cursor-pointer"
+                                  >
+                                    <Plus className="w-3.5 h-3.5" /> Přidat očkování
+                                  </button>
+                                </div>
+
+                                {showAddVaccineForm && (
+                                  <form onSubmit={(e) => handleAddVaccine(e, activeChildId)} className="p-4 bg-[#f1f3f4]/50 dark:bg-[#2d2f31]/30 border border-border-custom rounded-2xl space-y-3">
+                                    <div className="grid grid-cols-2 gap-2">
+                                      <input
+                                        type="text"
+                                        placeholder="Název vakcíny / očkování"
+                                        required
+                                        value={newVaccine}
+                                        onChange={(e) => setNewVaccine(e.target.value)}
+                                        className="p-2 bg-background border border-border-custom rounded-xl text-xs text-foreground"
+                                      />
+                                      <input
+                                        type="text"
+                                        placeholder="Datum (pokud již proběhlo)"
+                                        value={newVaccineDate}
+                                        onChange={(e) => setNewVaccineDate(e.target.value)}
+                                        className="p-2 bg-background border border-border-custom rounded-xl text-xs text-foreground"
+                                      />
+                                    </div>
+                                    <div className="flex justify-end gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => setShowAddVaccineForm(false)}
+                                        className="px-3 py-1 bg-card border border-border-custom rounded-full text-[11px] text-foreground cursor-pointer"
+                                      >
+                                        Zrušit
+                                      </button>
+                                      <button
+                                        type="submit"
+                                        className="px-3 py-1 bg-primary text-white rounded-full text-[11px] cursor-pointer"
+                                      >
+                                        Přidat
+                                      </button>
+                                    </div>
+                                  </form>
+                                )}
+
+                                <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                                  {childMed?.vaccinations.map((vac: any, idx: number) => (
+                                    <div
+                                      key={idx}
+                                      onClick={() => handleToggleVaccine(vac.vaccine, activeChildId)}
+                                      className="p-2.5 bg-card hover:bg-gray-100/50 dark:hover:bg-[#2d2f31]/40 rounded-xl border border-border-custom/50 flex justify-between items-center text-xs cursor-pointer select-none transition-all duration-200"
+                                    >
+                                      <div className="flex items-center gap-2.5">
+                                        <div className={`w-4 h-4 rounded-md border flex items-center justify-center transition-all ${
+                                          vac.status === "completed" 
+                                            ? "bg-primary border-primary text-white" 
+                                            : "border-gray-400 bg-background"
+                                        }`}>
+                                          {vac.status === "completed" && <Check className="w-3 h-3" />}
+                                        </div>
+                                        <span className={`font-medium ${vac.status === "completed" ? 'line-through text-muted' : 'text-foreground'}`}>{vac.vaccine}</span>
+                                      </div>
+                                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-md ${
+                                        vac.status === "completed" 
+                                          ? "bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20" 
+                                          : "bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20"
+                                      }`}>
+                                        {vac.status === "completed" ? `Aplikováno: ${vac.date}` : "Plánováno"}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* SECTION C: PHYSIOLOGY & GROWTH CHART */}
+                            <div className="bg-background border border-border-custom p-6 rounded-3xl space-y-4 shadow-xs">
+                              <div className="flex justify-between items-center">
+                                <h4 className="text-[11px] font-medium text-muted uppercase tracking-wider flex items-center gap-2 pl-1">
+                                  <Activity className="w-5 h-5 text-primary" /> Tělesný vývoj a růstový graf
+                                </h4>
+                                <button
+                                  onClick={() => setShowAddPhysForm(!showAddPhysForm)}
+                                  className="text-[11px] text-primary hover:underline flex items-center gap-1 font-medium cursor-pointer"
+                                >
+                                  <Plus className="w-3.5 h-3.5" /> Zapsat měření
+                                </button>
+                              </div>
+
+                              {showAddPhysForm && (
+                                <form onSubmit={(e) => handleAddPhys(e, activeChildId)} className="p-4 bg-[#f1f3f4]/50 dark:bg-[#2d2f31]/30 border border-border-custom rounded-2xl space-y-3">
+                                  <div className="grid grid-cols-3 gap-2">
+                                    <input
+                                      type="number"
+                                      placeholder="Výška (cm)"
+                                      required
+                                      value={newPhysHeight}
+                                      onChange={(e) => setNewPhysHeight(e.target.value)}
+                                      className="p-2 bg-background border border-border-custom rounded-xl text-xs text-foreground"
+                                    />
+                                    <input
+                                      type="number"
+                                      placeholder="Váha (kg)"
+                                      required
+                                      value={newPhysWeight}
+                                      onChange={(e) => setNewPhysWeight(e.target.value)}
+                                      className="p-2 bg-background border border-border-custom rounded-xl text-xs text-foreground"
+                                    />
+                                    <input
+                                      type="text"
+                                      placeholder="Datum měření"
+                                      value={newPhysDate}
+                                      onChange={(e) => setNewPhysDate(e.target.value)}
+                                      className="p-2 bg-background border border-border-custom rounded-xl text-xs text-foreground"
+                                    />
+                                  </div>
+                                  <div className="flex justify-end gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => setShowAddPhysForm(false)}
+                                      className="px-3 py-1 bg-card border border-border-custom rounded-full text-[11px] text-foreground cursor-pointer"
+                                    >
+                                      Zrušit
+                                    </button>
+                                    <button
+                                      type="submit"
+                                      className="px-3 py-1 bg-primary text-white rounded-full text-[11px] cursor-pointer"
+                                    >
+                                      Uložit
+                                    </button>
+                                  </div>
+                                </form>
+                              )}
+
+                              {/* Height growth bar chart */}
+                              {childPhys.length > 0 && (
+                                <div className="p-4 bg-card rounded-2xl border border-border-custom/50">
+                                  <span className="text-[10px] text-muted block uppercase tracking-wider font-semibold mb-3">Vývoj výšky (grafické zobrazení v čase)</span>
+                                  <div className="flex justify-around items-end h-32 pt-2 border-b border-border-custom">
+                                    {[...childPhys].reverse().map((item, idx) => {
+                                      const maxVal = Math.max(...childPhys.map(p => p.height)) || 180;
+                                      const minVal = Math.min(...childPhys.map(p => p.height)) || 100;
+                                      const range = (maxVal - minVal + 20) || 50;
+                                      const scaledHeightPct = 30 + ((item.height - minVal) / range) * 65;
+                                      return (
+                                        <div key={idx} className="flex flex-col items-center group w-12 relative">
+                                          <div className="absolute bottom-[105%] bg-secondary text-white text-[9px] px-2 py-0.5 rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap shadow-md z-10">
+                                            {item.weight} kg
+                                          </div>
+                                          <div 
+                                            style={{ height: `${scaledHeightPct}%` }} 
+                                            className="bg-primary/80 hover:bg-primary w-6 rounded-t-lg transition-all duration-300 shadow-sm flex items-end justify-center pb-1 text-[9px] text-white font-bold"
+                                          >
+                                            {item.height}
+                                          </div>
+                                          <span className="text-[9px] text-muted mt-2 block whitespace-nowrap select-none">{item.date.substring(0, 5)}</span>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Physical measurements table */}
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-left border-collapse text-xs">
+                                  <thead>
+                                    <tr className="border-b border-border-custom/50 text-muted">
+                                      <th className="py-2 font-medium">Datum měření</th>
+                                      <th className="py-2 font-medium">Výška</th>
+                                      <th className="py-2 font-medium">Váha</th>
+                                      <th className="py-2 font-medium">BMI index</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-border-custom/40">
+                                    {childPhys.map((item: any, idx: number) => {
+                                      const heightM = item.height / 100;
+                                      const bmi = (item.weight / (heightM * heightM)).toFixed(1);
+                                      return (
+                                        <tr key={idx} className="text-foreground">
+                                          <td className="py-2 font-medium">{item.date}</td>
+                                          <td className="py-2">{item.height} cm</td>
+                                          <td className="py-2">{item.weight} kg</td>
+                                          <td className="py-2">
+                                            <span className="text-[10px] bg-[#f1f3f4] dark:bg-[#2d2f31] px-2 py-0.5 rounded-full font-semibold">
+                                              {bmi} BMI
+                                            </span>
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+
+                            {/* SECTION D: DOCUMENTS & CONSENTS */}
+                            <div className="bg-background border border-border-custom p-6 rounded-3xl space-y-4 shadow-xs">
+                              <h4 className="text-[11px] font-medium text-muted uppercase tracking-wider flex items-center gap-2 pl-1">
+                                <FileText className="w-5 h-5 text-primary" /> Doklady a právní souhlasy
+                              </h4>
+
+                              {/* Identity document preview card */}
+                              <div className="p-4 bg-card rounded-2xl border border-border-custom/50 flex justify-between items-center text-xs">
+                                <div className="space-y-1">
+                                  <span className="text-[10px] text-muted block uppercase tracking-wider font-semibold">Osobní průkaz</span>
+                                  <span className="font-bold text-foreground block text-sm">{childIdDoc?.docType || "Občanský průkaz (Dětský)"}</span>
+                                  <span className="text-muted block">Vydavatel: {childIdDoc?.issuer || "Magistrát města Brna"}</span>
+                                </div>
+                                <div className="text-right">
+                                  <span className="font-mono bg-[#f1f3f4] dark:bg-[#2d2f31] px-2.5 py-1 rounded-md text-foreground block font-bold mb-1">{childIdDoc?.docNumber || "987456123"}</span>
+                                  <span className="text-[10px] text-muted block">Platnost do: <strong className="text-foreground">{childIdDoc?.validity || "18.06.2029"}</strong></span>
+                                </div>
+                              </div>
+
+                              {/* Consents checklists */}
+                              <div className="space-y-2.5">
+                                <span className="text-xs text-muted font-medium block">Podepsané souhlasy se zastupováním a GDPR</span>
+                                <div className="space-y-2">
+                                  {childConsents.map((consent: any) => (
+                                    <div
+                                      key={consent.id}
+                                      className="p-3 bg-card rounded-2xl border border-border-custom/50 flex justify-between items-center text-xs shadow-xs"
+                                    >
+                                      <div className="flex items-center gap-3">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleToggleConsent(consent.id, activeChildId)}
+                                          className={`w-4 h-4 rounded-full border flex items-center justify-center transition-all cursor-pointer ${
+                                            consent.signed 
+                                              ? "bg-emerald-500 border-emerald-500 text-white" 
+                                              : "border-gray-400 bg-background"
+                                          }`}
+                                        >
+                                          {consent.signed && <Check className="w-3 h-3" />}
+                                        </button>
+                                        <div>
+                                          <span className={`font-medium block text-xs ${consent.signed ? 'text-foreground font-semibold' : 'text-muted'}`}>{consent.title}</span>
+                                          {consent.signed && (
+                                            <span className="text-[10px] text-muted block">Podepsáno dne: {consent.signedDate}</span>
+                                          )}
+                                        </div>
+                                      </div>
+                                      
+                                      {consent.signed && (
+                                        <button 
+                                          type="button"
+                                          title="Stáhnout dokument"
+                                          onClick={() => alert(`Stahování dokumentu: ${consent.title}`)}
+                                          className="p-1.5 hover:bg-gray-100 dark:hover:bg-[#2d2f31]/60 rounded-full border border-border-custom text-muted hover:text-foreground cursor-pointer"
+                                        >
+                                          <FileDown className="w-3.5 h-3.5" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* SECTION E: AI OCR scanning trigger */}
+                            <div className="bg-gradient-to-br from-primary/5 to-primary/10 border border-primary/20 p-5 rounded-3xl space-y-3 shadow-xs">
+                              <div className="flex items-center gap-2 text-primary">
+                                <Sparkles className="w-5 h-5 animate-pulse" />
+                                <h4 className="text-[11px] font-bold uppercase tracking-wider">AI OCR Rychlý sken dokumentů</h4>
+                              </div>
+                              <p className="text-xs text-muted">
+                                Vyberte soubor (např. lékařskou zprávu, vysvědčení, IPOD) a nechte AI automaticky načíst výšku, váhu, školu nebo stav očkování přímo do registru bez ručního přepisování.
+                              </p>
+
+                              {isOcrScanning ? (
+                                <div className="p-6 bg-background rounded-2xl border border-primary/20 space-y-4 text-center relative overflow-hidden">
+                                  <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-primary to-transparent animate-bounce opacity-80" />
+                                  <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
+                                  <div className="space-y-1">
+                                    <p className="text-xs font-semibold text-primary animate-pulse">Skenování dokumentu umělou inteligencí...</p>
+                                    <p className="text-[10px] text-muted">Skenuji text a páruji lékařské záznamy...</p>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div 
+                                  onClick={() => triggerOcrScan(activeChildId, childPhys)}
+                                  className="p-6 bg-background rounded-2xl border border-dashed border-border-custom hover:border-primary/50 text-center cursor-pointer transition-all duration-300 group hover:shadow-xs"
+                                >
+                                  <FileText className="w-8 h-8 text-muted mx-auto mb-2 group-hover:text-primary transition-colors" />
+                                  <p className="text-xs font-semibold text-foreground">Kliknutím simulujte nahrání a OCR analýzu zprávy</p>
+                                  <p className="text-[10px] text-muted mt-1">Podporované formáty: PDF, JPG, PNG (Max 5MB)</p>
+                                </div>
+                              )}
+                            </div>
+
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
 
                 </div>
 
@@ -2347,6 +3348,406 @@ export default function Home() {
               </div>
             </>
           )}
+
+
+
+          {/* ========================================================= */}
+          {/* 4. GOOGLE WIDGETS DRAWER (Slides from the right)          */}
+          {/* ========================================================= */}
+          {activeRightWidget && (
+            <div className="w-80 border-l border-border-custom bg-card flex flex-col overflow-hidden h-full shrink-0 z-35 select-none animate-in slide-in-from-right duration-200">
+              {/* Header */}
+              <div className="p-4 border-b border-border-custom flex items-center justify-between bg-[#f6f8fc] dark:bg-[#111214] shrink-0">
+                <span className="text-sm font-medium text-foreground flex items-center gap-2">
+                  {activeRightWidget === 'calendar' && <Calendar className="w-4 h-4 text-[#1a73e8]" />}
+                  {activeRightWidget === 'keep' && <Lightbulb className="w-4 h-4 text-[#fbbc04]" />}
+                  {activeRightWidget === 'tasks' && <CheckSquare className="w-4 h-4 text-[#1a73e8]" />}
+                  {activeRightWidget === 'maps' && <MapPin className="w-4 h-4 text-[#ea4335]" />}
+                  {activeRightWidget === 'calendar' && "Kalendář"}
+                  {activeRightWidget === 'keep' && "Keep"}
+                  {activeRightWidget === 'tasks' && "Úkoly"}
+                  {activeRightWidget === 'maps' && "Mapy"}
+                </span>
+                <button 
+                  onClick={() => setActiveRightWidget(null)} 
+                  className="p-1 hover:bg-[#e8eaed] dark:hover:bg-[#3c4043] rounded-full text-muted hover:text-foreground transition-colors"
+                  title="Zavřít"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Widget Body */}
+              <div className="flex-1 overflow-y-auto p-4 bg-slate-50/30 dark:bg-slate-900/10">
+                
+                {/* A. CALENDAR WIDGET */}
+                {activeRightWidget === 'calendar' && (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-muted uppercase tracking-wider">Dnešní program</span>
+                      <span className="text-xs font-medium text-primary font-mono">{new Date().toLocaleDateString("cs-CZ", { day: "numeric", month: "long" })}</span>
+                    </div>
+                    
+                    {/* List of events */}
+                    <div className="space-y-3">
+                      {events.slice(0, 8).map((e, idx) => {
+                        const h = households.find(house => house.id === e.household_id);
+                        const p = h ? persons.find(per => per.household_id === h.id && per.role === "foster_parent") : null;
+                        const eventDate = new Date(e.occurred_at);
+                        
+                        return (
+                          <div key={e.id || idx} className="p-3 bg-background border border-border-custom rounded-2xl shadow-3xs space-y-1 select-text">
+                            <div className="flex justify-between items-start gap-1">
+                              <span className="text-xs font-medium text-foreground leading-tight">{e.title}</span>
+                              <span className="text-[10px] text-muted shrink-0 font-mono">
+                                {eventDate.toLocaleDateString("cs-CZ", { day: "numeric", month: "numeric" })}
+                              </span>
+                            </div>
+                            {p && (
+                              <div className="text-[11px] text-primary font-medium">
+                                Rodina: {p.last_name}ových
+                              </div>
+                            )}
+                            <p className="text-[11px] text-muted line-clamp-2 leading-relaxed font-normal">
+                              {e.payload?.content || e.payload?.text || "Bez popisu."}
+                            </p>
+                          </div>
+                        );
+                      })}
+                      {events.length === 0 && (
+                        <div className="text-xs text-muted text-center italic py-4 font-normal">Žádné schůzky v plánu.</div>
+                      )}
+                    </div>
+
+                    {/* Add dynamic mock appointment */}
+                    <div className="pt-4 border-t border-border-custom space-y-2.5">
+                      <span className="text-xs font-medium text-foreground block">Naplánovat novou schůzku</span>
+                      <button 
+                        onClick={() => {
+                          const title = prompt("Zadejte název schůzky:");
+                          if (!title) return;
+                          const content = prompt("Zadejte popis schůzky:");
+                          const newEvent = {
+                            id: "event-" + Date.now(),
+                            title: title,
+                            type: "regular_visit",
+                            occurred_at: new Date().toISOString(),
+                            household_id: selectedFamilyId || (households[0]?.id || null),
+                            payload: { content: content || "" }
+                          };
+                          setEvents(prev => [newEvent, ...prev]);
+                        }}
+                        className="w-full py-2 bg-primary hover:bg-primary-hover text-white rounded-full text-xs font-medium transition-colors shadow-2xs"
+                      >
+                        + Rychlá schůzka
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* B. KEEP WIDGET */}
+                {activeRightWidget === 'keep' && (
+                  <div className="space-y-4">
+                    {/* Add Note Form */}
+                    <div className="p-3 bg-background border border-border-custom rounded-2xl shadow-3xs space-y-2">
+                      <input 
+                        type="text" 
+                        placeholder="Název poznámky..." 
+                        value={noteTitle}
+                        onChange={(e) => setNoteTitle(e.target.value)}
+                        className="w-full bg-transparent text-xs font-medium outline-none text-foreground placeholder-muted border-none"
+                      />
+                      <textarea 
+                        placeholder="Napište poznámku..." 
+                        value={noteContent}
+                        onChange={(e) => setNoteContent(e.target.value)}
+                        className="w-full bg-transparent text-xs outline-none text-foreground placeholder-muted min-h-[60px] resize-none leading-relaxed border-none"
+                      />
+                      <div className="flex items-center justify-between pt-2 border-t border-border-custom/50">
+                        {/* Note Color selection */}
+                        <div className="flex items-center gap-1.5">
+                          {[
+                            { bg: "bg-[#fff4b8] dark:bg-[#fff4b8]/20", border: "border-yellow-400" },
+                            { bg: "bg-[#e8f0fe] dark:bg-[#e8f0fe]/20", border: "border-blue-400" },
+                            { bg: "bg-[#e6c2ff] dark:bg-[#e6c2ff]/20", border: "border-purple-400" },
+                            { bg: "bg-[#f1f3f4] dark:bg-[#2d2f31]/50", border: "border-gray-400" }
+                          ].map((c, idx) => (
+                            <button 
+                              key={idx}
+                              onClick={() => setNoteColor(c.bg)}
+                              className={`w-3.5 h-3.5 rounded-full ${c.bg} border ${
+                                noteColor === c.bg ? "ring-1 ring-primary/80 scale-110" : "border-border-custom/80"
+                              } transition-all`}
+                            />
+                          ))}
+                        </div>
+                        <button 
+                          onClick={addKeepNote}
+                          className="px-3 py-1 bg-primary hover:bg-primary-hover text-white text-[11px] font-medium rounded-full transition-colors"
+                        >
+                          Přidat
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Notes List */}
+                    <div className="space-y-3">
+                      {keepNotes.map(note => (
+                        <div 
+                          key={note.id} 
+                          className={`p-3.5 rounded-2xl border border-border-custom/80 shadow-3xs relative group transition-all select-text ${note.color}`}
+                        >
+                          <button 
+                            onClick={() => deleteKeepNote(note.id)}
+                            className="absolute top-2 right-2 p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded-full text-muted hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                            title="Smazat poznámku"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                          <h4 className="text-xs font-semibold text-foreground mb-1 pr-6 leading-tight">{note.title}</h4>
+                          <p className="text-xs text-foreground/80 leading-relaxed font-normal whitespace-pre-wrap">{note.content}</p>
+                        </div>
+                      ))}
+                      {keepNotes.length === 0 && (
+                        <div className="text-xs text-muted text-center italic py-6 font-normal">Žádné poznámky. Napište první nahoře!</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* C. TASKS WIDGET */}
+                {activeRightWidget === 'tasks' && (
+                  <div className="space-y-4">
+                    {/* Add Task Input */}
+                    <div className="flex gap-2">
+                      <input 
+                        type="text" 
+                        placeholder="Přidat úkol..." 
+                        value={taskText}
+                        onChange={(e) => setTaskText(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") addTask();
+                        }}
+                        className="flex-1 bg-background border border-border-custom rounded-full px-3.5 py-1.5 text-xs outline-none text-foreground focus:ring-1 focus:ring-primary placeholder-muted"
+                      />
+                      <button 
+                        onClick={addTask}
+                        className="p-1.5 bg-primary hover:bg-primary-hover text-white rounded-full transition-colors flex items-center justify-center shrink-0"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    {/* Tasks List */}
+                    <div className="space-y-2.5">
+                      {/* Uncompleted tasks */}
+                      {tasks.filter(t => !t.completed).map(task => (
+                        <div key={task.id} className="flex items-center justify-between p-2.5 bg-background border border-border-custom rounded-2xl shadow-3xs group select-text">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <input 
+                              type="checkbox" 
+                              checked={false}
+                              onChange={() => toggleTask(task.id)}
+                              className="w-4 h-4 rounded-full cursor-pointer border-gray-300 text-primary focus:ring-primary shrink-0 bg-transparent"
+                            />
+                            <span className="text-xs text-foreground font-normal truncate leading-snug">{task.text}</span>
+                          </div>
+                          <button 
+                            onClick={() => deleteTask(task.id)}
+                            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded text-muted hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+
+                      {/* Divider if we have both states */}
+                      {tasks.some(t => !t.completed) && tasks.some(t => t.completed) && (
+                        <div className="w-full h-px bg-border-custom/60 my-2" />
+                      )}
+
+                      {/* Completed tasks */}
+                      {tasks.filter(t => t.completed).map(task => (
+                        <div key={task.id} className="flex items-center justify-between p-2.5 bg-slate-50/50 dark:bg-slate-900/5 border border-border-custom/60 rounded-2xl shadow-3xs group select-text">
+                          <div className="flex items-center gap-2.5 min-w-0 opacity-60">
+                            <input 
+                              type="checkbox" 
+                              checked={true}
+                              onChange={() => toggleTask(task.id)}
+                              className="w-4 h-4 rounded-full cursor-pointer border-gray-300 text-primary focus:ring-primary shrink-0 bg-transparent"
+                            />
+                            <span className="text-xs text-muted font-normal line-through truncate leading-snug">{task.text}</span>
+                          </div>
+                          <button 
+                            onClick={() => deleteTask(task.id)}
+                            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded text-muted hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+
+                      {tasks.length === 0 && (
+                        <div className="text-xs text-muted text-center italic py-6 font-normal">Bez úkolů.</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* D. MAPS WIDGET */}
+                {activeRightWidget === 'maps' && (
+                  <div className="space-y-4">
+                    {selectedHousehold ? (
+                      (() => {
+                        const h = households.find(house => house.id === selectedHousehold.id);
+                        const p = h ? persons.find(per => per.household_id === h.id && per.role === "foster_parent") : null;
+                        const pAddress = addresses.find(addr => addr.person_id === p?.id);
+                        
+                        return (
+                          <div className="space-y-4">
+                            <div className="space-y-1 select-text">
+                              <span className="text-xs font-semibold text-muted uppercase tracking-wider block">Rodinné bydliště</span>
+                              <span className="text-sm font-medium text-foreground block leading-tight font-sans">
+                                {p ? `${p.first_name} ${p.last_name}` : "Vybraná rodina"}
+                              </span>
+                              {pAddress ? (
+                                <p className="text-xs text-muted leading-relaxed font-sans font-normal">
+                                  {pAddress.street}<br />
+                                  {pAddress.zip ? `${pAddress.zip} ` : ""}{pAddress.city}
+                                  {pAddress.state && pAddress.state.toLowerCase() !== "česká republika" ? <><br />{pAddress.state}</> : ""}
+                                </p>
+                              ) : (
+                                <span className="text-xs text-muted italic block font-normal">Adresa není evidována.</span>
+                              )}
+                            </div>
+
+                            {/* Visual Mock Map */}
+                            {pAddress && (
+                              <div className="border border-border-custom rounded-2xl overflow-hidden shadow-xs bg-[#e8eaed] dark:bg-[#2d2f31] relative h-48 select-none flex items-center justify-center">
+                                {/* SVG Mock Map layout */}
+                                <svg className="absolute inset-0 w-full h-full opacity-60 dark:opacity-30" viewBox="0 0 100 100" preserveAspectRatio="none">
+                                  <path d="M0 10 H100 M0 30 H100 M0 50 H100 M0 70 H100 M0 90 H100" stroke="#c4c7c5" strokeWidth="0.5" />
+                                  <path d="M10 0 V100 M30 0 V100 M50 0 V100 M70 0 V100 M90 0 V100" stroke="#c4c7c5" strokeWidth="0.5" />
+                                  <path d="M0 45 L50 20 L100 80" stroke="#ffffff" strokeWidth="3" fill="none" />
+                                  <path d="M20 0 L40 60 L80 100" stroke="#ffffff" strokeWidth="4" fill="none" />
+                                </svg>
+                                {/* Blue radius circle */}
+                                <div className="absolute w-12 h-12 rounded-full bg-primary/15 animate-ping border border-primary/20" />
+                                {/* Glowing Locator Pin */}
+                                <div className="absolute flex flex-col items-center z-10">
+                                  <MapPin className="w-8 h-8 text-[#ea4335] drop-shadow-md fill-[#ea4335]/30 animate-bounce" />
+                                  <div className="w-2.5 h-1 bg-black/20 rounded-full blur-[1px] mt-0.5" />
+                                </div>
+                                <span className="absolute bottom-2 left-2 bg-black/60 text-[10px] text-white px-2 py-0.5 rounded-full font-mono font-medium tracking-wide">
+                                  Brno, CZ
+                                </span>
+                              </div>
+                            )}
+
+                            {pAddress && (
+                              <div className="space-y-2">
+                                <a 
+                                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${pAddress.street}, ${pAddress.city}`)}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="w-full py-2 bg-background hover:bg-[#f1f3f4] dark:hover:bg-[#2d2f31]/55 border border-border-custom rounded-full text-xs text-foreground font-medium text-center transition-colors block select-none shadow-3xs"
+                                >
+                                  Otevřít v Google Mapách
+                                </a>
+                                <button 
+                                  onClick={() => alert(`Plánování cesty na adresu: ${pAddress.street}, ${pAddress.city}`)}
+                                  className="w-full py-2 bg-primary hover:bg-primary-hover text-white rounded-full text-xs font-medium transition-colors text-center block select-none shadow-2xs"
+                                >
+                                  Naplánovat trasu
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()
+                    ) : (
+                      <div className="text-xs text-muted text-center italic py-12 font-normal leading-relaxed">
+                        Vyberte rodinu v kontaktech pro zobrazení polohy na mapě.
+                      </div>
+                    )}
+                  </div>
+                )}
+
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================= */}
+          {/* 5. GOOGLE APP SWITCHER RAIL (Far right narrow utility bar) */}
+          {/* ========================================================= */}
+          <div className="w-12 bg-[#f6f8fc] dark:bg-[#111214] border-l border-border-custom flex flex-col items-center py-4 justify-between shrink-0 select-none z-35 h-full">
+            <div className="flex flex-col items-center w-full space-y-5">
+              
+              {/* Calendar App */}
+              <button 
+                onClick={() => toggleRightWidget('calendar')}
+                className={`p-2 rounded-full transition-all relative group ${
+                  activeRightWidget === 'calendar'
+                    ? "bg-[#c2e7ff] text-[#001d35] dark:bg-[#004b87] dark:text-[#a8c7fa]"
+                    : "text-muted hover:bg-[#f1f3f4] dark:hover:bg-[#2d2f31] hover:text-foreground"
+                }`}
+                title="Kalendář"
+              >
+                <Calendar className="w-5 h-5 stroke-[1.5]" />
+              </button>
+
+              {/* Keep App */}
+              <button 
+                onClick={() => toggleRightWidget('keep')}
+                className={`p-2 rounded-full transition-all relative group ${
+                  activeRightWidget === 'keep'
+                    ? "bg-[#c2e7ff] text-[#001d35] dark:bg-[#004b87] dark:text-[#a8c7fa]"
+                    : "text-muted hover:bg-[#f1f3f4] dark:hover:bg-[#2d2f31] hover:text-foreground"
+                }`}
+                title="Keep"
+              >
+                <Lightbulb className="w-5 h-5 stroke-[1.5]" />
+              </button>
+
+              {/* Tasks App */}
+              <button 
+                onClick={() => toggleRightWidget('tasks')}
+                className={`p-2 rounded-full transition-all relative group ${
+                  activeRightWidget === 'tasks'
+                    ? "bg-[#c2e7ff] text-[#001d35] dark:bg-[#004b87] dark:text-[#a8c7fa]"
+                    : "text-muted hover:bg-[#f1f3f4] dark:hover:bg-[#2d2f31] hover:text-foreground"
+                }`}
+                title="Úkoly"
+              >
+                <CheckSquare className="w-5 h-5 stroke-[1.5]" />
+              </button>
+
+              {/* Maps App */}
+              <button 
+                onClick={() => toggleRightWidget('maps')}
+                className={`p-2 rounded-full transition-all relative group ${
+                  activeRightWidget === 'maps'
+                    ? "bg-[#c2e7ff] text-[#001d35] dark:bg-[#004b87] dark:text-[#a8c7fa]"
+                    : "text-muted hover:bg-[#f1f3f4] dark:hover:bg-[#2d2f31] hover:text-foreground"
+                }`}
+                title="Mapy"
+              >
+                <MapPin className="w-5 h-5 stroke-[1.5]" />
+              </button>
+
+              <div className="w-6 h-px bg-border-custom/75" />
+
+              {/* Bottom Add button */}
+              <button 
+                onClick={() => alert("Nainstalovat doplňky Google Workspace...")}
+                className="p-2 rounded-full text-muted hover:bg-[#f1f3f4] dark:hover:bg-[#2d2f31] hover:text-foreground transition-all"
+                title="Získat doplňky"
+              >
+                <Plus className="w-5 h-5 stroke-[1.5]" />
+              </button>
+
+            </div>
+          </div>
 
 
 
