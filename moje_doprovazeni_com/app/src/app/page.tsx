@@ -218,6 +218,10 @@ export default function Home() {
   const [newPhysDate, setNewPhysDate] = useState("");
   const [showAddPhysForm, setShowAddPhysForm] = useState(false);
 
+  // Dynamic Custom Fields Editing States
+  const [editingCustomFieldsPersonId, setEditingCustomFieldsPersonId] = useState<string | null>(null);
+  const [tempCustomFields, setTempCustomFields] = useState<Array<{ label: string, value: string }>>([]);
+
   // Load and initialize child registries from localStorage or seed fallback
   useEffect(() => {
     if (typeof window === "undefined" || persons.length === 0) return;
@@ -821,6 +825,57 @@ export default function Home() {
     setEditedPediatricianAddress(childMed.address || "");
     setEditedAllergies(childMed.allergies || "");
     setIsEditingPediatrician(true);
+  };
+
+  // Dynamic Custom Fields Helpers
+  const getDynamicCustomFields = (person: any) => {
+    if (!person || !person.custom_fields) return [];
+    const standardKeys = [
+      'avatar_url', 'avatarUrl', 'profession', 'school', 'hobby',
+      'foster_care_type', 'relationship_to_child', 'relationship_to_foster_parent',
+      'grade', 'allergies'
+    ];
+    return Object.entries(person.custom_fields)
+      .filter(([key]) => !standardKeys.includes(key))
+      .map(([key, value]) => ({ label: key, value: String(value) }));
+  };
+
+  const startEditCustomFields = (person: any) => {
+    if (!person) return;
+    setEditingCustomFieldsPersonId(person.id);
+    setTempCustomFields(getDynamicCustomFields(person));
+  };
+
+  const handleSaveCustomFields = async (person: any) => {
+    if (!person) return;
+    const standardKeys = [
+      'avatar_url', 'avatarUrl', 'profession', 'school', 'hobby',
+      'foster_care_type', 'relationship_to_child', 'relationship_to_foster_parent',
+      'grade', 'allergies'
+    ];
+    
+    const newCustomFields: Record<string, any> = {};
+    standardKeys.forEach(k => {
+      if (person.custom_fields && person.custom_fields[k] !== undefined) {
+        newCustomFields[k] = person.custom_fields[k];
+      }
+    });
+
+    tempCustomFields.forEach(f => {
+      if (f.label.trim()) {
+        newCustomFields[f.label.trim()] = f.value;
+      }
+    });
+
+    setPersons(prev => prev.map(p => p.id === person.id ? { ...p, custom_fields: newCustomFields } : p));
+    
+    try {
+      await supabase.from("persons").update({ custom_fields: newCustomFields }).eq("id", person.id);
+    } catch (err) {
+      console.error("Chyba při ukládání vlastních polí do DB:", err);
+    }
+
+    setEditingCustomFieldsPersonId(null);
   };
 
   // ==========================================
@@ -2448,138 +2503,361 @@ export default function Home() {
                 {/* Main panel body */}
                 <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50/50 dark:bg-slate-900/10">
                   
-                  {activeTab === "overview" && (
-                    <div className="space-y-6">
-                      
-                      {/* Main Foster parent */}
-                      <div className="bg-background border border-border-custom p-6 rounded-3xl space-y-5 shadow-xs">
-                        <div className="flex items-center justify-between gap-4 flex-wrap">
-                          <div className="flex items-center gap-4">
-                            {primaryFosterParent?.custom_fields?.avatar_url ? (
-                              <img src={primaryFosterParent.custom_fields.avatar_url} alt="avatar" className="w-14 h-14 rounded-full border border-border-custom object-cover" />
-                            ) : (
-                              <div className="w-14 h-14 rounded-full bg-primary/10 text-primary border border-primary/20 flex items-center justify-center font-medium text-xl shadow-xs">
-                                {primaryFosterParent?.first_name?.charAt(0) || "P"}
-                              </div>
-                            )}
-                            <div>
-                              <h4 className="text-lg font-medium text-foreground tracking-tight leading-snug">
-                                {renderFosterParentName(primaryFosterParent)}
-                              </h4>
-                              <p className="text-xs text-muted font-normal mt-0.5">Klíčový pěstoun domácnosti</p>
-                            </div>
-                          </div>
+                  {activeTab === "overview" && (() => {
+                    const primaryParentAddress = primaryFosterParent ? addresses.find(a => a.person_id === primaryFosterParent.id) : null;
+                    const otherPersonsAtSameAddress = primaryParentAddress ? addresses.filter(addr => 
+                      addr.street && primaryParentAddress.street &&
+                      addr.street.toLowerCase().replace(/\s+/g, '') === primaryParentAddress.street.toLowerCase().replace(/\s+/g, '') &&
+                      addr.city && primaryParentAddress.city &&
+                      addr.city.toLowerCase().replace(/\s+/g, '') === primaryParentAddress.city.toLowerCase().replace(/\s+/g, '') &&
+                      addr.person_id !== primaryFosterParent.id
+                    ).map(addr => {
+                      const p = persons.find(per => per.id === addr.person_id);
+                      if (!p) return null;
+                      const h = households.find(house => house.id === p.household_id);
+                      return { person: p, household: h };
+                    }).filter(item => item && item.person) : [];
 
-                          {/* Quick actions bridge */}
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => {
-                                setActiveService('chat');
-                                setSelectedFamilyId(selectedHousehold.id);
-                              }}
-                              className="px-3.5 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary rounded-full text-xs font-medium transition-colors flex items-center gap-1.5 select-none"
-                              title="Otevřít Chat s pěstounem"
-                            >
-                              <MessageSquare className="w-4 h-4 stroke-[1.8]" />
-                              <span>Otevřít Chat</span>
-                            </button>
-                            <button
-                              onClick={() => {
-                                setActiveService('mail');
-                                setSearchQuery(primaryFosterParent ? primaryFosterParent.last_name : "");
-                              }}
-                              className="px-3.5 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary rounded-full text-xs font-medium transition-colors flex items-center gap-1.5 select-none"
-                              title="Zobrazit poštu rodiny"
-                            >
-                              <Mail className="w-4 h-4 stroke-[1.8]" />
-                              <span>Zobrazit Poštu</span>
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-border-custom text-sm text-foreground/90 font-normal">
-                          <div className="space-y-0.5">
-                            <span className="text-muted font-medium text-xs block uppercase tracking-wider">Profese:</span>
-                            <span className="font-normal text-foreground">{primaryFosterParent?.custom_fields?.profession || "Neuvedeno"}</span>
-                          </div>
-                          <div className="space-y-0.5">
-                            <span className="text-muted font-medium text-xs block uppercase tracking-wider">Aktuální bydliště:</span>
-                            {primaryParentAddress ? (
-                              <div className="flex items-center justify-between bg-card px-3 py-1.5 rounded-2xl border border-border-custom/50 mt-1 shadow-xs">
-                                <span className="font-normal text-foreground">
-                                  {primaryParentAddress.street}, {primaryParentAddress.zip ? `${primaryParentAddress.zip} ` : ""}{primaryParentAddress.city}
-                                  {(primaryParentAddress as any).state && (primaryParentAddress as any).state.toLowerCase() !== "česká republika" ? `, ${(primaryParentAddress as any).state}` : ""}
-                                </span>
-                                <a 
-                                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${primaryParentAddress.street}, ${primaryParentAddress.city}`)}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-primary p-1 hover:bg-[#f1f3f4] dark:hover:bg-[#2d2f31]/55 rounded-full transition-colors"
-                                >
-                                  <Map className="w-4 h-4" />
-                                </a>
-                              </div>
-                            ) : (
-                              <span className="text-muted italic block mt-0.5">Neuvedeno</span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Children */}
-                      <div className="space-y-3">
-                        <h4 className="text-[11px] font-medium text-muted uppercase tracking-wider pl-1">Děti v pěstounské péči</h4>
-                        {fosterChildren.map((child) => (
-                          <div key={child.id} className="bg-background border border-border-custom p-5 rounded-3xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 hover:bg-[#f1f3f4]/50 dark:hover:bg-[#2d2f31]/20 transition-colors">
+                    return (
+                      <div className="space-y-6">
+                        
+                        {/* Main Foster parent */}
+                        <div className="bg-background border border-border-custom p-6 rounded-3xl space-y-5 shadow-xs">
+                          <div className="flex items-center justify-between gap-4 flex-wrap">
                             <div className="flex items-center gap-4">
-                              {child.custom_fields?.avatar_url ? (
-                                <img src={child.custom_fields.avatar_url} alt="child" className="w-12 h-12 rounded-full object-cover border border-border-custom" />
+                              {primaryFosterParent?.custom_fields?.avatar_url ? (
+                                <img src={primaryFosterParent.custom_fields.avatar_url} alt="avatar" className="w-14 h-14 rounded-full border border-border-custom object-cover" />
                               ) : (
-                                <div className="w-12 h-12 rounded-full bg-primary/10 text-primary border border-primary/20 flex items-center justify-center font-medium text-base shadow-xs">
-                                  {child.first_name?.charAt(0) || "D"}
+                                <div className="w-14 h-14 rounded-full bg-primary/10 text-primary border border-primary/20 flex items-center justify-center font-medium text-xl shadow-xs">
+                                  {primaryFosterParent?.first_name?.charAt(0) || "P"}
                                 </div>
                               )}
-                              <div className="space-y-0.5">
-                                <p className="text-sm font-medium text-foreground">{renderChildName(child)}</p>
-                                <div className="flex gap-2 items-center text-xs text-muted">
-                                  <span>Věk: {child.birth_date ? new Date().getFullYear() - new Date(child.birth_date).getFullYear() : "?"} let</span>
-                                  <span>•</span>
-                                  <span>Záliby: {child.custom_fields?.hobby || "Neuvedeno"}</span>
-                                </div>
+                              <div>
+                                <h4 className="text-lg font-medium text-foreground tracking-tight leading-snug">
+                                  {renderFosterParentName(primaryFosterParent)}
+                                </h4>
+                                <p className="text-xs text-muted font-normal mt-0.5">Klíčový pěstoun domácnosti</p>
                               </div>
                             </div>
-                            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-normal border bg-emerald-50 text-emerald-700 border-emerald-200">
-                              Hodnocení {child.safety_rating}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
 
-                      {/* Relatives and Bio parent details */}
-                      <div className="space-y-3">
-                        <h4 className="text-[11px] font-medium text-muted uppercase tracking-wider pl-1">Další kontakty a biologické vazby</h4>
-                        {biologicalParents.map((bio) => (
-                          <div key={bio.id} className={`p-4 rounded-3xl border ${bio.safety_rating === 'Z' ? 'bg-red-50/20 border-red-200 dark:bg-red-950/10' : 'bg-background border-border-custom'}`}>
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-full bg-slate-100 border border-border-custom flex items-center justify-center font-medium text-sm">B</div>
-                                <div>
-                                  <p className="text-sm font-medium text-foreground">{bio.first_name} {bio.last_name}</p>
-                                  <p className="text-xs text-muted">Biologický rodič</p>
+                            {/* Quick actions bridge */}
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => {
+                                  setActiveService('chat');
+                                  setSelectedFamilyId(selectedHousehold.id);
+                                }}
+                                className="px-3.5 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary rounded-full text-xs font-medium transition-colors flex items-center gap-1.5 select-none cursor-pointer"
+                                title="Otevřít Chat s pěstounem"
+                              >
+                                <MessageSquare className="w-4 h-4 stroke-[1.8]" />
+                                <span>Otevřít Chat</span>
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setActiveService('mail');
+                                  setSearchQuery(primaryFosterParent ? primaryFosterParent.last_name : "");
+                                }}
+                                className="px-3.5 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary rounded-full text-xs font-medium transition-colors flex items-center gap-1.5 select-none cursor-pointer"
+                                title="Zobrazit poštu rodiny"
+                              >
+                                <Mail className="w-4 h-4 stroke-[1.8]" />
+                                <span>Zobrazit Poštu</span>
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-border-custom text-sm text-foreground/90 font-normal">
+                            <div className="space-y-0.5">
+                              <span className="text-muted font-medium text-xs block uppercase tracking-wider">Profese:</span>
+                              <span className="font-normal text-foreground">{primaryFosterParent?.custom_fields?.profession || "Neuvedeno"}</span>
+                            </div>
+                            <div className="space-y-0.5">
+                              <span className="text-muted font-medium text-xs block uppercase tracking-wider">Aktuální bydliště:</span>
+                              {primaryParentAddress ? (
+                                <div className="space-y-2">
+                                  <div className="flex items-center justify-between bg-card px-3 py-1.5 rounded-2xl border border-border-custom/50 mt-1 shadow-xs">
+                                    <span className="font-normal text-foreground">
+                                      {primaryParentAddress.street}, {primaryParentAddress.zip ? `${primaryParentAddress.zip} ` : ""}{primaryParentAddress.city}
+                                      {(primaryParentAddress as any).state && (primaryParentAddress as any).state.toLowerCase() !== "česká republika" ? `, ${(primaryParentAddress as any).state}` : ""}
+                                    </span>
+                                    <a 
+                                      href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${primaryParentAddress.street}, ${primaryParentAddress.city}`)}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-primary p-1 hover:bg-[#f1f3f4] dark:hover:bg-[#2d2f31]/55 rounded-full transition-colors"
+                                    >
+                                      <Map className="w-4 h-4" />
+                                    </a>
+                                  </div>
+                                  
+                                  {/* Address Linkage (Chytré propojování) */}
+                                  {otherPersonsAtSameAddress.length > 0 && (
+                                    <div className="mt-2 p-3 bg-blue-50/40 dark:bg-blue-950/10 border border-blue-100 dark:border-blue-900/30 rounded-2xl space-y-1.5">
+                                      <span className="text-[10px] text-primary font-bold uppercase tracking-wider block">Na této adrese také bydlí:</span>
+                                      <div className="flex flex-wrap gap-1.5">
+                                        {otherPersonsAtSameAddress.map((item, idx) => {
+                                          if (!item || !item.person) return null;
+                                          return (
+                                            <button
+                                              key={idx}
+                                              onClick={() => {
+                                                if (item.household) {
+                                                  setSelectedFamilyId(item.household.id);
+                                                }
+                                              }}
+                                              className="text-xs bg-card hover:bg-gray-100 dark:hover:bg-[#2d2f31]/55 border border-border-custom/60 px-2.5 py-1 rounded-full text-foreground/95 transition-all flex items-center gap-1 cursor-pointer"
+                                            >
+                                              <User className="w-3 h-3 text-primary animate-pulse" />
+                                              <span className="font-medium">{item.person.first_name} {item.person.last_name}</span>
+                                              <span className="text-[10px] text-muted">({item.person.role === 'child' ? 'dítě' : item.person.role === 'foster_parent' ? 'pěstoun' : 'kontakt'})</span>
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
-                              </div>
-                              {bio.safety_rating === 'Z' ? (
-                                <span className="px-2.5 py-0.5 bg-red-100 text-red-800 text-xs font-medium rounded-full">Styk zakázán</span>
                               ) : (
-                                <span className="text-xs font-mono bg-card px-2 py-1 rounded border border-border-custom">{bio.phone || "Bez tel."}</span>
+                                <span className="text-muted italic block mt-0.5">Neuvedeno</span>
                               )}
                             </div>
                           </div>
-                        ))}
-                      </div>
 
-                    </div>
-                  )}
+                          {/* Dynamic Custom Fields Card for Foster Parent */}
+                          {primaryFosterParent && (
+                            <div className="mt-4 pt-4 border-t border-border-custom space-y-3">
+                              <div className="flex justify-between items-center">
+                                <span className="text-muted font-medium text-xs block uppercase tracking-wider">Vlastní pole (Custom Fields):</span>
+                                {editingCustomFieldsPersonId !== primaryFosterParent.id ? (
+                                  <button
+                                    onClick={() => startEditCustomFields(primaryFosterParent)}
+                                    className="text-[11px] text-primary hover:underline flex items-center gap-1 font-medium cursor-pointer"
+                                  >
+                                    <Edit2 className="w-3 h-3" /> Upravit pole
+                                  </button>
+                                ) : (
+                                  <div className="flex gap-2">
+                                    <button
+                                      onClick={() => handleSaveCustomFields(primaryFosterParent)}
+                                      className="text-[11px] bg-primary text-white px-2.5 py-1 rounded-full font-medium hover:bg-primary/95 cursor-pointer shadow-xs"
+                                    >
+                                      Uložit
+                                    </button>
+                                    <button
+                                      onClick={() => setEditingCustomFieldsPersonId(null)}
+                                      className="text-[11px] bg-card border border-border-custom px-2.5 py-1 rounded-full font-medium hover:bg-gray-100 cursor-pointer"
+                                    >
+                                      Zrušit
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+
+                              {editingCustomFieldsPersonId === primaryFosterParent.id ? (
+                                <div className="space-y-2.5">
+                                  {tempCustomFields.map((field, idx) => (
+                                    <div key={idx} className="flex gap-2 items-center">
+                                      <input
+                                        type="text"
+                                        placeholder="Štítek (např. Velikost bot)"
+                                        value={field.label}
+                                        onChange={(e) => {
+                                          const updated = [...tempCustomFields];
+                                          updated[idx].label = e.target.value;
+                                          setTempCustomFields(updated);
+                                        }}
+                                        className="p-1.5 bg-background border border-border-custom rounded-xl text-xs text-foreground flex-1"
+                                      />
+                                      <input
+                                        type="text"
+                                        placeholder="Hodnota"
+                                        value={field.value}
+                                        onChange={(e) => {
+                                          const updated = [...tempCustomFields];
+                                          updated[idx].value = e.target.value;
+                                          setTempCustomFields(updated);
+                                        }}
+                                        className="p-1.5 bg-background border border-border-custom rounded-xl text-xs text-foreground flex-1"
+                                      />
+                                      <button
+                                        onClick={() => setTempCustomFields(prev => prev.filter((_, i) => i !== idx))}
+                                        className="p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded-full cursor-pointer"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  ))}
+                                  <button
+                                    type="button"
+                                    onClick={() => setTempCustomFields(prev => [...prev, { label: "", value: "" }])}
+                                    className="text-xs text-primary font-medium hover:underline flex items-center gap-1 mt-1 cursor-pointer"
+                                  >
+                                    <Plus className="w-3.5 h-3.5" /> Přidat vlastní pole
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                                  {getDynamicCustomFields(primaryFosterParent).length > 0 ? (
+                                    getDynamicCustomFields(primaryFosterParent).map((f, idx) => (
+                                      <div key={idx} className="flex justify-between items-center p-2 bg-card border border-border-custom/40 rounded-xl">
+                                        <span className="text-muted font-medium">{f.label}:</span>
+                                        <span className="font-bold text-foreground">{f.value}</span>
+                                      </div>
+                                    ))
+                                  ) : (
+                                    <span className="text-muted italic col-span-2 text-xs">Žádná vlastní pole nebyla definována. Klikněte na Upravit pole.</span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Children */}
+                        <div className="space-y-3">
+                          <h4 className="text-[11px] font-medium text-muted uppercase tracking-wider pl-1">Děti v pěstounské péči</h4>
+                          {fosterChildren.map((child) => (
+                            <div key={child.id} className="bg-background border border-border-custom p-5 rounded-3xl space-y-4 hover:bg-[#f1f3f4]/30 dark:hover:bg-[#2d2f31]/10 transition-colors animate-in fade-in duration-200">
+                              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                                <div className="flex items-center gap-4">
+                                  {child.custom_fields?.avatar_url ? (
+                                    <img src={child.custom_fields.avatar_url} alt="child" className="w-12 h-12 rounded-full object-cover border border-border-custom" />
+                                  ) : (
+                                    <div className="w-12 h-12 rounded-full bg-primary/10 text-primary border border-primary/20 flex items-center justify-center font-medium text-base shadow-xs">
+                                      {child.first_name?.charAt(0) || "D"}
+                                    </div>
+                                  )}
+                                  <div className="space-y-0.5">
+                                    <p className="text-sm font-medium text-foreground">{renderChildName(child)}</p>
+                                    <div className="flex gap-2 items-center text-xs text-muted">
+                                      <span>Věk: {child.birth_date ? new Date().getFullYear() - new Date(child.birth_date).getFullYear() : "?"} let</span>
+                                      <span>•</span>
+                                      <span>Záliby: {child.custom_fields?.hobby || "Neuvedeno"}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-normal border bg-emerald-50 text-emerald-700 border-emerald-200">
+                                  Hodnocení {child.safety_rating}
+                                </span>
+                              </div>
+
+                              {/* Child-level Custom Fields widget */}
+                              <div className="pt-3 border-t border-border-custom/40 space-y-2">
+                                <div className="flex justify-between items-center">
+                                  <span className="text-[10px] text-muted font-bold uppercase tracking-wider">Vlastní pole dítěte (Custom Fields):</span>
+                                  {editingCustomFieldsPersonId !== child.id ? (
+                                    <button
+                                      onClick={() => startEditCustomFields(child)}
+                                      className="text-[10px] text-primary hover:underline flex items-center gap-1 font-medium cursor-pointer"
+                                    >
+                                      <Edit2 className="w-2.5 h-2.5" /> Upravit pole
+                                    </button>
+                                  ) : (
+                                    <div className="flex gap-1.5">
+                                      <button
+                                        onClick={() => handleSaveCustomFields(child)}
+                                        className="text-[10px] bg-primary text-white px-2.5 py-0.5 rounded-full font-medium hover:bg-primary/95 cursor-pointer shadow-xs"
+                                      >
+                                        Uložit
+                                      </button>
+                                      <button
+                                        onClick={() => setEditingCustomFieldsPersonId(null)}
+                                        className="text-[10px] bg-card border border-border-custom px-2.5 py-0.5 rounded-full font-medium hover:bg-gray-100 cursor-pointer"
+                                      >
+                                        Zrušit
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+
+                                {editingCustomFieldsPersonId === child.id ? (
+                                  <div className="space-y-2">
+                                    {tempCustomFields.map((field, idx) => (
+                                      <div key={idx} className="flex gap-1.5 items-center">
+                                        <input
+                                          type="text"
+                                          placeholder="Štítek (např. Velikost bot)"
+                                          value={field.label}
+                                          onChange={(e) => {
+                                            const updated = [...tempCustomFields];
+                                            updated[idx].label = e.target.value;
+                                            setTempCustomFields(updated);
+                                          }}
+                                          className="p-1.5 bg-background border border-border-custom rounded-xl text-xs text-foreground flex-1"
+                                        />
+                                        <input
+                                          type="text"
+                                          placeholder="Hodnota"
+                                          value={field.value}
+                                          onChange={(e) => {
+                                            const updated = [...tempCustomFields];
+                                            updated[idx].value = e.target.value;
+                                            setTempCustomFields(updated);
+                                          }}
+                                          className="p-1.5 bg-background border border-border-custom rounded-xl text-xs text-foreground flex-1"
+                                        />
+                                        <button
+                                          onClick={() => setTempCustomFields(prev => prev.filter((_, i) => i !== idx))}
+                                          className="p-1 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded-full cursor-pointer"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
+                                    ))}
+                                    <button
+                                      type="button"
+                                      onClick={() => setTempCustomFields(prev => [...prev, { label: "", value: "" }])}
+                                      className="text-[11px] text-primary font-medium hover:underline flex items-center gap-1 mt-1 cursor-pointer"
+                                    >
+                                      <Plus className="w-3 h-3" /> Přidat vlastní pole
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px]">
+                                    {getDynamicCustomFields(child).length > 0 ? (
+                                      getDynamicCustomFields(child).map((f, idx) => (
+                                        <div key={idx} className="flex justify-between items-center px-2 py-1 bg-card border border-border-custom/45 rounded-lg">
+                                          <span className="text-muted font-medium mr-1">{f.label}:</span>
+                                          <span className="font-semibold text-foreground">{f.value}</span>
+                                        </div>
+                                      ))
+                                    ) : (
+                                      <span className="text-muted italic col-span-3 text-[10px]">Žádná vlastní pole nebyla definována.</span>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Relatives and Bio parent details */}
+                        <div className="space-y-3">
+                          <h4 className="text-[11px] font-medium text-muted uppercase tracking-wider pl-1">Další kontakty a biologické vazby</h4>
+                          {biologicalParents.map((bio) => (
+                            <div key={bio.id} className={`p-4 rounded-3xl border ${bio.safety_rating === 'Z' ? 'bg-red-50/20 border-red-200 dark:bg-red-950/10' : 'bg-background border-border-custom'}`}>
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-10 h-10 rounded-full bg-slate-100 border border-border-custom flex items-center justify-center font-medium text-sm">B</div>
+                                  <div>
+                                    <p className="text-sm font-medium text-foreground">{bio.first_name} {bio.last_name}</p>
+                                    <p className="text-xs text-muted">Biologický rodič</p>
+                                  </div>
+                                </div>
+                                {bio.safety_rating === 'Z' ? (
+                                  <span className="px-2.5 py-0.5 bg-red-100 text-red-800 text-xs font-medium rounded-full">Styk zakázán</span>
+                                ) : (
+                                  <span className="text-xs font-mono bg-card px-2 py-1 rounded border border-border-custom">{bio.phone || "Bez tel."}</span>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                      </div>
+                    );
+                  })()}
 
                   {activeTab === "timeline" && (
                     <div className="bg-background border border-border-custom p-6 rounded-3xl space-y-5 shadow-xs">
