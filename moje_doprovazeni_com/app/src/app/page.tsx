@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useState, useEffect } from "react";
 import { 
@@ -208,20 +208,21 @@ export default function Home() {
 
   // Pomocník pro formátování jména pěstouna (odlišení duplicitních jmen)
   const getFosterParentDisplayName = (parent: any) => {
+    if (!parent) return "";
     // Najít všechny pěstouny se stejným příjmením v aktuálním seznamu
     const duplicates = persons.filter(p => 
       p.role === "foster_parent" && 
       p.last_name === parent.last_name
     );
 
-    let displayName = `${parent.first_name} ${parent.last_name}`;
+    let displayName = `${parent.first_name || ""} ${parent.last_name || ""}`.trim();
 
     if (duplicates.length > 1) {
       // Seřadit abecedně podle křestního jména, pak podle id
       const sorted = [...duplicates].sort((a, b) => {
-        const nameCompare = a.first_name.localeCompare(b.first_name, "cs-CZ");
+        const nameCompare = (a.first_name || "").localeCompare(b.first_name || "", "cs-CZ");
         if (nameCompare !== 0) return nameCompare;
-        return a.id.localeCompare(b.id);
+        return (a.id || "").localeCompare(b.id || "");
       });
       const index = sorted.findIndex(s => s.id === parent.id) + 1;
       displayName += ` (${index})`;
@@ -242,6 +243,7 @@ export default function Home() {
 
   // Pomocník pro formátování jména dítěte (odlišení duplicitních jmen v jedné rodině)
   const getChildDisplayName = (child: any) => {
+    if (!child) return "";
     // Najdeme děti se stejným jménem ve stejné domácnosti (rodině)
     const duplicates = persons.filter(p =>
       p.role === "child" &&
@@ -250,11 +252,11 @@ export default function Home() {
       p.last_name === child.last_name
     );
 
-    let displayName = `${child.first_name} ${child.last_name}`;
+    let displayName = `${child.first_name || ""} ${child.last_name || ""}`.trim();
 
     if (duplicates.length > 1) {
       // Očíslujeme je v závorce
-      const sorted = [...duplicates].sort((a, b) => a.id.localeCompare(b.id));
+      const sorted = [...duplicates].sort((a, b) => (a.id || "").localeCompare(b.id || ""));
       const index = sorted.findIndex(s => s.id === child.id) + 1;
       displayName += ` (${index})`;
     }
@@ -274,24 +276,26 @@ export default function Home() {
 
   // Pomocník pro zjištění, zda má pěstoun stejné příjmení jako jiné rodiny (pro zobrazení adresy pod jménem)
   const hasSurnameDuplicate = (lastName: string) => {
+    if (!lastName) return false;
     const matches = persons.filter(p => p.role === "foster_parent" && p.last_name === lastName);
     return matches.length > 1;
   };
 
   // React/JSX renderování jména pěstouna s tooltipem typu péče
   const renderFosterParentName = (parent: any) => {
+    if (!parent) return <span>Bez pěstouna</span>;
     const duplicates = persons.filter(p => 
       p.role === "foster_parent" && 
       p.last_name === parent.last_name
     );
 
-    let baseName = `${parent.first_name} ${parent.last_name}`;
+    let baseName = `${parent.first_name || ""} ${parent.last_name || ""}`.trim();
 
     if (duplicates.length > 1) {
       const sorted = [...duplicates].sort((a, b) => {
-        const nameCompare = a.first_name.localeCompare(b.first_name, "cs-CZ");
+        const nameCompare = (a.first_name || "").localeCompare(b.first_name || "", "cs-CZ");
         if (nameCompare !== 0) return nameCompare;
-        return a.id.localeCompare(b.id);
+        return (a.id || "").localeCompare(b.id || "");
       });
       const index = sorted.findIndex(s => s.id === parent.id) + 1;
       baseName += ` (${index})`;
@@ -319,6 +323,7 @@ export default function Home() {
 
   // React/JSX renderování jména dítěte s tooltipem typu péče
   const renderChildName = (child: any) => {
+    if (!child) return <span>Bez jména</span>;
     const duplicates = persons.filter(p =>
       p.role === "child" &&
       p.household_id === child.household_id &&
@@ -326,10 +331,10 @@ export default function Home() {
       p.last_name === child.last_name
     );
 
-    let baseName = `${child.first_name} ${child.last_name}`;
+    let baseName = `${child.first_name || ""} ${child.last_name || ""}`.trim();
 
     if (duplicates.length > 1) {
-      const sorted = [...duplicates].sort((a, b) => a.id.localeCompare(b.id));
+      const sorted = [...duplicates].sort((a, b) => (a.id || "").localeCompare(b.id || ""));
       const index = sorted.findIndex(s => s.id === child.id) + 1;
       baseName += ` (${index})`;
     }
