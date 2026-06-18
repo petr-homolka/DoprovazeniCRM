@@ -64,6 +64,16 @@ const CARE_TYPE_MAP: Record<string, { label: string, colorClass: string }> = {
   C: { label: "C | Nezprostředkovaná", colorClass: "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400" }
 };
 
+const COLUMN_LABELS: Record<string, string> = {
+  name: "Název / Jméno",
+  address: "Adresa",
+  phone: "Telefon",
+  email: "E-mail",
+  care_type: "Typ péče",
+  children_count: "Děti v péči",
+  status: "Stav"
+};
+
 export default function Home() {
   // Session / Auth state
   const [session, setSession] = useState<any>(null);
@@ -97,6 +107,13 @@ export default function Home() {
   // Google Workspace Service State
   // contacts = Google Contacts, mail = Gmail, chat = Google Chat
   const [activeService, setActiveService] = useState<'contacts' | 'mail' | 'chat'>('contacts');
+
+  // Contact sub-categories filtering
+  const [contactFilterType, setContactFilterType] = useState<'families' | 'foster_parents' | 'children' | 'others'>('families');
+
+  // Dynamic columns state
+  const [visibleColumns, setVisibleColumns] = useState<string[]>(['name', 'address', 'care_type', 'children_count', 'status']);
+  const [showColumnPicker, setShowColumnPicker] = useState<boolean>(false);
 
   // Gmail-specific folders and tabs
   const [activeMailFolder, setActiveMailFolder] = useState<'inbox' | 'starred' | 'sent' | 'drafts'>('inbox');
@@ -480,67 +497,168 @@ export default function Home() {
 
   // Dynamic household list filtering (Contacts tab)
   const getFilteredAndSortedHouseholds = () => {
-    return households
-      .filter(h => {
-        const p = persons.find(per => per.household_id === h.id && per.role === "foster_parent");
-        const c = persons.filter(per => per.household_id === h.id && per.role === "child");
-        const childNames = c.map(ch => `${ch.first_name || ""} ${ch.last_name || ""}`).join(" ");
-        const parentName = p ? `${p.first_name || ""} ${p.last_name || ""}` : "";
-        
-        // Vyhledávání podle adresy
-        const pAddress = p ? addresses.find(a => a.person_id === p.id) : null;
-        const addressText = pAddress ? `${pAddress.street || ""} ${pAddress.city || ""}` : "";
+    if (contactFilterType === 'families') {
+      return households
+        .filter(h => {
+          const p = persons.find(per => per.household_id === h.id && per.role === "foster_parent");
+          const c = persons.filter(per => per.household_id === h.id && per.role === "child");
+          const childNames = c.map(ch => `${ch.first_name || ""} ${ch.last_name || ""}`).join(" ");
+          const parentName = p ? `${p.first_name || ""} ${p.last_name || ""}` : "";
+          
+          // Vyhledávání podle adresy
+          const pAddress = p ? addresses.find(a => a.person_id === p.id) : null;
+          const addressText = pAddress ? `${pAddress.street || ""} ${pAddress.city || ""}` : "";
 
-        const matchesSearch = 
-          parentName.toLowerCase().includes(searchQuery.toLowerCase()) || 
-          childNames.toLowerCase().includes(searchQuery.toLowerCase()) || 
-          addressText.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          (h.foster_id || "").toLowerCase().includes(searchQuery.toLowerCase());
+          const matchesSearch = 
+            parentName.toLowerCase().includes(searchQuery.toLowerCase()) || 
+            childNames.toLowerCase().includes(searchQuery.toLowerCase()) || 
+            addressText.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            (h.foster_id || "").toLowerCase().includes(searchQuery.toLowerCase());
 
-        if (!matchesSearch) return false;
+          if (!matchesSearch) return false;
 
-        // Status check
-        const currentStatus = h.status || "lead";
-        if (!selectedStatuses.includes(currentStatus)) return false;
+          // Status check
+          const currentStatus = h.status || "lead";
+          if (!selectedStatuses.includes(currentStatus)) return false;
 
-        // Care type check
-        const fosterCareType = p?.custom_fields?.foster_care_type;
-        if (fosterCareType && !selectedCareTypes.includes(fosterCareType)) return false;
+          // Care type check
+          const fosterCareType = p?.custom_fields?.foster_care_type;
+          if (fosterCareType && !selectedCareTypes.includes(fosterCareType)) return false;
 
-        return true;
-      })
-      .sort((a, b) => {
-        const pA = persons.find(per => per.household_id === a.id && per.role === "foster_parent");
-        const pB = persons.find(per => per.household_id === b.id && per.role === "foster_parent");
-        
-        if (sortBy === "name") {
-          const nameA = pA ? `${pA.last_name || ""} ${pA.first_name || ""}` : "";
-          const nameB = pB ? `${pB.last_name || ""} ${pB.first_name || ""}` : "";
-          return nameA.localeCompare(nameB, "cs-CZ");
-        }
-        
-        if (sortBy === "address") {
-          const addrA = pA ? addresses.find(add => add.person_id === pA.id) : null;
-          const addrB = pB ? addresses.find(add => add.person_id === pB.id) : null;
-          const cityA = addrA?.city || "";
-          const cityB = addrB?.city || "";
-          return cityA.localeCompare(cityB, "cs-CZ");
-        }
-        
-        if (sortBy === "children_count") {
-          const countA = persons.filter(per => per.household_id === a.id && per.role === "child").length;
-          const countB = persons.filter(per => per.household_id === b.id && per.role === "child").length;
-          return countB - countA;
-        }
+          return true;
+        })
+        .map(h => {
+          const p = persons.find(per => per.household_id === h.id && per.role === "foster_parent");
+          const c = persons.filter(per => per.household_id === h.id && per.role === "child");
+          const pAddress = p ? addresses.find(a => a.person_id === p.id) : null;
+          const addressText = pAddress ? `${pAddress.street || ""}, ${pAddress.city || ""}` : "";
+          const phoneText = p?.phone || "";
+          const emailText = p?.email || "";
+          const careTypeVal = p?.custom_fields?.foster_care_type || "";
 
-        if (sortBy === "status") {
-          const statusA = a.status || "";
-          const statusB = b.status || "";
-          return statusA.localeCompare(statusB);
-        }
+          return {
+            id: h.id,
+            householdId: h.id,
+            fosterId: h.foster_id || "",
+            isPerson: false,
+            name: p ? `${p.first_name || ""} ${p.last_name || ""}`.trim() : "Bez pěstouna",
+            firstName: p?.first_name || "",
+            lastName: p?.last_name || "",
+            role: "",
+            status: h.status || "lead",
+            careType: careTypeVal,
+            address: addressText,
+            phone: phoneText,
+            email: emailText,
+            childrenCount: c.length,
+            childrenList: c.map(ch => `${ch.first_name || ""} ${ch.last_name || ""}`.trim()),
+            avatarUrl: p?.custom_fields?.avatarUrl || "",
+            profession: p?.custom_fields?.profession || "",
+            birthDate: "",
+            school: "",
+            hobby: "",
+            safetyRating: undefined as number | undefined,
+            rawItem: h
+          };
+        })
+        .sort((a, b) => {
+          if (sortBy === "name") {
+            return a.lastName.localeCompare(b.lastName, "cs-CZ");
+          }
+          if (sortBy === "address") {
+            return a.address.localeCompare(b.address, "cs-CZ");
+          }
+          if (sortBy === "children_count") {
+            return b.childrenCount - a.childrenCount;
+          }
+          if (sortBy === "status") {
+            return a.status.localeCompare(b.status);
+          }
+          return 0;
+        });
+    } else {
+      // Displaying individual persons
+      return persons
+        .filter(p => {
+          const h = households.find(house => house.id === p.household_id);
+          if (!h) return false;
 
-        return 0;
-      });
+          // Filter by category
+          if (contactFilterType === 'foster_parents' && p.role !== 'foster_parent') return false;
+          if (contactFilterType === 'children' && p.role !== 'child') return false;
+          if (contactFilterType === 'others' && (p.role === 'foster_parent' || p.role === 'child')) return false;
+
+          const pName = `${p.first_name || ""} ${p.last_name || ""}`;
+          const pAddress = addresses.find(a => a.person_id === p.id);
+          const addressText = pAddress ? `${pAddress.street || ""} ${pAddress.city || ""}` : "";
+
+          const matchesSearch = 
+            pName.toLowerCase().includes(searchQuery.toLowerCase()) || 
+            addressText.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            (p.phone || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+            (p.email || "").toLowerCase().includes(searchQuery.toLowerCase());
+
+          if (!matchesSearch) return false;
+
+          // Status check
+          const currentStatus = h.status || "lead";
+          if (!selectedStatuses.includes(currentStatus)) return false;
+
+          // Care type check
+          const fosterCareType = p.custom_fields?.foster_care_type;
+          if (fosterCareType && !selectedCareTypes.includes(fosterCareType)) return false;
+
+          return true;
+        })
+        .map(p => {
+          const h = households.find(house => house.id === p.household_id)!;
+          const pAddress = addresses.find(a => a.person_id === p.id);
+          const addressText = pAddress ? `${pAddress.street || ""}, ${pAddress.city || ""}` : "";
+          const phoneText = p.phone || "";
+          const emailText = p.email || "";
+          const careTypeVal = p.custom_fields?.foster_care_type || "";
+
+          return {
+            id: p.id,
+            householdId: p.household_id,
+            fosterId: h.foster_id || "",
+            isPerson: true,
+            name: `${p.first_name || ""} ${p.last_name || ""}`.trim(),
+            firstName: p.first_name || "",
+            lastName: p.last_name || "",
+            role: p.role || "",
+            status: h.status || "lead",
+            careType: careTypeVal,
+            address: addressText,
+            phone: phoneText,
+            email: emailText,
+            childrenCount: persons.filter(per => per.household_id === h.id && per.role === "child").length,
+            childrenList: persons.filter(per => per.household_id === h.id && per.role === "child").map(ch => `${ch.first_name || ""} ${ch.last_name || ""}`.trim()),
+            avatarUrl: p.custom_fields?.avatarUrl || "",
+            profession: p.custom_fields?.profession || "",
+            birthDate: p.birth_date || "",
+            school: p.custom_fields?.school || "",
+            hobby: p.custom_fields?.hobby || "",
+            safetyRating: p.safety_rating,
+            rawItem: p
+          };
+        })
+        .sort((a, b) => {
+          if (sortBy === "name") {
+            return a.lastName.localeCompare(b.lastName, "cs-CZ");
+          }
+          if (sortBy === "address") {
+            return a.address.localeCompare(b.address, "cs-CZ");
+          }
+          if (sortBy === "children_count") {
+            return b.childrenCount - a.childrenCount;
+          }
+          if (sortBy === "status") {
+            return a.status.localeCompare(b.status);
+          }
+          return 0;
+        });
+    }
   };
 
   // Gmail Filter and Map Database Events
@@ -785,18 +903,63 @@ export default function Home() {
             {/* Navigation links */}
             <nav className="px-3 space-y-0.5">
               <button 
-                onClick={() => { setSelectedFamilyId(null); }}
-                className={`w-full flex items-center justify-between px-4 py-2.5 rounded-full text-sm font-medium transition-all ${
-                  !selectedFamilyId 
+                onClick={() => { setContactFilterType('families'); setSelectedFamilyId(null); }}
+                className={`w-full flex items-center justify-between px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                  contactFilterType === 'families' 
                     ? "bg-[#e8f0fe] text-[#1a73e8] dark:bg-[#0842a0]/20 dark:text-[#a8c7fa]" 
                     : "text-foreground hover:bg-[#e8eaed]/80 dark:hover:bg-[#2d2f31]/50"
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  <User className="w-4.5 h-4.5 stroke-[1.5]" />
-                  <span>Kontakty</span>
+                  <Building2 className="w-4 h-4 stroke-[1.5]" />
+                  <span>Spisy rodin</span>
                 </div>
                 <span className="text-xs bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded-full text-foreground/80">{households.length}</span>
+              </button>
+
+              <button 
+                onClick={() => { setContactFilterType('foster_parents'); setSelectedFamilyId(null); }}
+                className={`w-full flex items-center justify-between px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                  contactFilterType === 'foster_parents' 
+                    ? "bg-[#e8f0fe] text-[#1a73e8] dark:bg-[#0842a0]/20 dark:text-[#a8c7fa]" 
+                    : "text-foreground hover:bg-[#e8eaed]/80 dark:hover:bg-[#2d2f31]/50"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <User className="w-4 h-4 stroke-[1.5]" />
+                  <span>Pěstouni</span>
+                </div>
+                <span className="text-xs bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded-full text-foreground/80">{persons.filter(p => p.role === 'foster_parent').length}</span>
+              </button>
+
+              <button 
+                onClick={() => { setContactFilterType('children'); setSelectedFamilyId(null); }}
+                className={`w-full flex items-center justify-between px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                  contactFilterType === 'children' 
+                    ? "bg-[#e8f0fe] text-[#1a73e8] dark:bg-[#0842a0]/20 dark:text-[#a8c7fa]" 
+                    : "text-foreground hover:bg-[#e8eaed]/80 dark:hover:bg-[#2d2f31]/50"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <GraduationCap className="w-4 h-4 stroke-[1.5]" />
+                  <span>Děti</span>
+                </div>
+                <span className="text-xs bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded-full text-foreground/80">{persons.filter(p => p.role === 'child').length}</span>
+              </button>
+
+              <button 
+                onClick={() => { setContactFilterType('others'); setSelectedFamilyId(null); }}
+                className={`w-full flex items-center justify-between px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                  contactFilterType === 'others' 
+                    ? "bg-[#e8f0fe] text-[#1a73e8] dark:bg-[#0842a0]/20 dark:text-[#a8c7fa]" 
+                    : "text-foreground hover:bg-[#e8eaed]/80 dark:hover:bg-[#2d2f31]/50"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <Users className="w-4 h-4 stroke-[1.5]" />
+                  <span>Ostatní lidé</span>
+                </div>
+                <span className="text-xs bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded-full text-foreground/80">{persons.filter(p => p.role !== 'foster_parent' && p.role !== 'child').length}</span>
               </button>
             </nav>
 
@@ -1002,21 +1165,6 @@ export default function Home() {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            {activeService === 'contacts' && (
-              <div className="relative">
-                <select
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value)}
-                  className="bg-transparent text-xs font-medium text-muted hover:text-foreground cursor-pointer focus:outline-none border-none py-1 pl-2 pr-6"
-                >
-                  <option value="name">Řadit: Jméno</option>
-                  <option value="address">Řadit: Město</option>
-                  <option value="children_count">Řadit: Počet dětí</option>
-                  <option value="status">Řadit: Stav</option>
-                </select>
-              </div>
-            )}
-
             <button 
               onClick={toggleDarkMode}
               title={darkMode ? "Světlý režim" : "Tmavý režim"}
@@ -1041,9 +1189,7 @@ export default function Home() {
           {/* A. VIEW 1: GOOGLE CONTACTS VIEW (Contacts active)         */}
           {/* ========================================================= */}
           {activeService === 'contacts' && (
-            <section className={`bg-background flex flex-col transition-all duration-200 overflow-hidden ${
-              selectedFamilyId ? "hidden" : "w-full flex-1"
-            }`}>
+            <section className="bg-background flex flex-col transition-all duration-200 overflow-hidden flex-1 min-w-[320px]">
               
               {/* Toolbar */}
               <div className="h-14 px-4 border-b border-border-custom flex items-center justify-between shrink-0 bg-background">
@@ -1091,6 +1237,121 @@ export default function Home() {
                     </span>
                   )}
                 </div>
+
+                {/* Right actions: sorting & column chooser */}
+                <div className="flex items-center gap-3 relative mr-2 select-none">
+                  {/* Sorting dropdown */}
+                  <div className="relative">
+                    <select
+                      value={sortBy}
+                      onChange={(e) => setSortBy(e.target.value)}
+                      className="bg-transparent text-xs font-medium text-muted hover:text-foreground cursor-pointer focus:outline-none border border-border-custom/50 rounded-lg py-1 pl-2 pr-6 bg-card"
+                    >
+                      <option value="name">Řadit: Jméno</option>
+                      <option value="address">Řadit: Město</option>
+                      <option value="children_count">Řadit: Počet dětí</option>
+                      <option value="status">Řadit: Stav</option>
+                    </select>
+                  </div>
+
+                  {/* Column Config Dropdown */}
+                  <div className="relative">
+                    <button 
+                      onClick={() => setShowColumnPicker(!showColumnPicker)}
+                      className="p-1 text-muted hover:text-foreground hover:bg-[#f1f3f4] dark:hover:bg-[#2d2f31]/50 rounded-lg transition-all flex items-center gap-1 border border-border-custom/50 px-2 py-1 cursor-pointer bg-card"
+                      title="Správa sloupců"
+                    >
+                      <Settings className="w-4 h-4 stroke-[1.8]" />
+                      <span className="text-xs font-medium">Sloupce</span>
+                    </button>
+
+                    {showColumnPicker && (
+                      <div className="absolute right-0 top-9 bg-card border border-border-custom shadow-lg rounded-2xl p-4 w-60 z-50 text-sm animate-in fade-in slide-in-from-top-2 duration-150">
+                        <div className="flex justify-between items-center pb-2 border-b border-border-custom mb-2">
+                          <span className="font-medium text-xs text-muted uppercase tracking-wider">Aktivní sloupce</span>
+                          <button 
+                            onClick={() => setShowColumnPicker(false)}
+                            className="p-1 hover:bg-[#f1f3f4] dark:hover:bg-[#2d2f31] rounded-full text-muted cursor-pointer"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        <div className="space-y-1 max-h-60 overflow-y-auto">
+                          {[
+                            ...visibleColumns,
+                            ...["name", "address", "phone", "email", "care_type", "children_count", "status"].filter(c => !visibleColumns.includes(c))
+                          ].map((colId, idx) => {
+                            const isVisible = visibleColumns.includes(colId);
+                            const label = COLUMN_LABELS[colId] || colId;
+                            return (
+                              <div key={colId} className="flex items-center justify-between py-1 px-1.5 hover:bg-[#f1f3f4] dark:hover:bg-[#2d2f31]/50 rounded-lg group/col text-xs">
+                                <label className="flex items-center gap-2 cursor-pointer flex-1 py-0.5">
+                                  <input 
+                                    type="checkbox"
+                                    checked={isVisible}
+                                    onChange={() => {
+                                      if (isVisible) {
+                                        if (visibleColumns.length > 1) {
+                                          setVisibleColumns(prev => prev.filter(c => c !== colId));
+                                        }
+                                      } else {
+                                        setVisibleColumns(prev => [...prev, colId]);
+                                      }
+                                    }}
+                                    className="w-3.5 h-3.5 rounded border-gray-300 text-primary bg-transparent focus:ring-primary"
+                                  />
+                                  <span className="text-foreground font-normal">{label}</span>
+                                </label>
+                                {isVisible && (
+                                  <div className="flex gap-0.5 opacity-0 group-hover/col:opacity-100 transition-opacity">
+                                    <button 
+                                      disabled={idx === 0}
+                                      onClick={() => {
+                                        setVisibleColumns(prev => {
+                                          const next = [...prev];
+                                          const pos = next.indexOf(colId);
+                                          if (pos > 0) {
+                                            const temp = next[pos];
+                                            next[pos] = next[pos - 1];
+                                            next[pos - 1] = temp;
+                                          }
+                                          return next;
+                                        });
+                                      }}
+                                      className="p-0.5 hover:bg-gray-250 dark:hover:bg-gray-750 rounded text-muted disabled:opacity-30 cursor-pointer text-[10px]"
+                                      title="Posunout vlevo"
+                                    >
+                                      ▲
+                                    </button>
+                                    <button 
+                                      disabled={idx === visibleColumns.length - 1}
+                                      onClick={() => {
+                                        setVisibleColumns(prev => {
+                                          const next = [...prev];
+                                          const pos = next.indexOf(colId);
+                                          if (pos >= 0 && pos < next.length - 1) {
+                                            const temp = next[pos];
+                                            next[pos] = next[pos + 1];
+                                            next[pos + 1] = temp;
+                                          }
+                                          return next;
+                                        });
+                                      }}
+                                      className="p-0.5 hover:bg-gray-250 dark:hover:bg-gray-700 rounded text-muted disabled:opacity-30 cursor-pointer text-[10px]"
+                                      title="Posunout vpravo"
+                                    >
+                                      ▼
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
 
               {/* Rows */}
@@ -1100,18 +1361,22 @@ export default function Home() {
                     <tr className="border-b border-border-custom text-xs font-medium text-muted">
                       <th className="py-2.5 px-4 w-12 text-center"></th>
                       <th className="py-2.5 px-1 w-8 text-center"></th>
-                      <th className="py-2.5 px-3">Název</th>
-                      {!selectedFamilyId && <th className="py-2.5 px-4">Adresa</th>}
-                      {!selectedFamilyId && <th className="py-2.5 px-4">Děti v péči</th>}
-                      <th className="py-2.5 px-4 text-right">Stav</th>
+                      {visibleColumns.map((colId) => {
+                        const label = COLUMN_LABELS[colId] || colId;
+                        return (
+                          <th 
+                            key={colId} 
+                            className={`py-2.5 px-3 ${colId === 'status' ? 'text-right pr-6' : ''}`}
+                          >
+                            {label}
+                          </th>
+                        );
+                      })}
+                      <th className="py-2.5 px-4 w-16 text-center"></th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredHouseholds.map((h) => {
-                      const p = persons.find(per => per.household_id === h.id && per.role === "foster_parent");
-                      const children = persons.filter(per => per.household_id === h.id && per.role === "child");
-                      const pAddress = p ? addresses.find(a => a.person_id === p.id) : null;
-                      const statusObj = getStatusObj(h.status);
                       const isChecked = checkedHouseholds.has(h.id);
                       const isStarred = starredHouseholds.has(h.id);
 
@@ -1119,31 +1384,31 @@ export default function Home() {
                         <tr 
                           key={h.id}
                           onClick={() => {
-                            setSelectedFamilyId(h.id);
+                            setSelectedFamilyId(h.householdId);
                             setActiveTab("overview");
                           }}
                           className={`group border-b border-border-custom cursor-pointer transition-colors ${
                             isChecked ? "bg-[#e8f0fe]/50 dark:bg-[#0842a0]/10" : "hover:bg-[#f1f3f4]/70 dark:hover:bg-[#2d2f31]/30"
                           } ${
-                            selectedFamilyId === h.id ? "bg-[#e8f0fe] dark:bg-[#0842a0]/20" : ""
+                            selectedFamilyId === h.householdId ? "bg-[#e8f0fe] dark:bg-[#0842a0]/20" : ""
                           }`}
                         >
                           {/* Avatar checkbox */}
                           <td className="py-3 px-4 w-12 align-middle text-center select-none" onClick={(e) => e.stopPropagation()}>
-                            <div className="relative w-8 h-8 flex items-center justify-center">
-                              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-medium text-xs transition-all duration-155 ${
-                                isChecked ? "scale-0 opacity-0 absolute" : "group-hover:scale-0 group-hover:opacity-0"
+                            <div className="relative w-8 h-8 flex items-center justify-center mx-auto">
+                              <div className={`absolute w-8 h-8 rounded-full flex items-center justify-center font-medium text-xs transition-all duration-150 ${
+                                isChecked ? "scale-0 opacity-0" : "scale-100 opacity-100 group-hover:scale-0 group-hover:opacity-0"
                               } ${
                                 h.status === "active" ? "bg-emerald-100 text-emerald-850 dark:bg-emerald-950 dark:text-emerald-300" : "bg-blue-100 text-blue-855 dark:bg-blue-950 dark:text-blue-300"
                               }`}>
-                                {p?.first_name?.charAt(0) || "P"}
+                                {h.name?.charAt(0) || "P"}
                               </div>
                               <input 
                                 type="checkbox"
                                 checked={isChecked}
                                 onChange={() => toggleCheckedHousehold(h.id)}
-                                className={`w-4 h-4 cursor-pointer rounded border-gray-300 text-primary focus:ring-primary transition-all duration-155 ${
-                                  isChecked ? "scale-100 opacity-100" : "scale-0 opacity-0 absolute group-hover:scale-100 group-hover:opacity-100 group-hover:relative"
+                                className={`absolute w-4 h-4 cursor-pointer rounded border-gray-300 text-primary focus:ring-primary transition-all duration-150 ${
+                                  isChecked ? "scale-100 opacity-100" : "scale-0 opacity-0 group-hover:scale-100 group-hover:opacity-100"
                                 }`}
                               />
                             </div>
@@ -1158,48 +1423,103 @@ export default function Home() {
                             </button>
                           </td>
 
-                          {/* Foster parent display name */}
-                          <td className="py-3 px-3 align-middle text-sm text-foreground">
-                            <div className="flex flex-col">
-                              {renderFosterParentName(p)}
-                              {!selectedFamilyId && children.length > 0 && (
-                                <span className="text-xs text-muted mt-0.5 truncate max-w-sm">
-                                  Děti: {children.map(ch => ch.first_name).join(", ")}
-                                </span>
-                              )}
-                            </div>
-                          </td>
+                          {/* Dynamic columns */}
+                          {visibleColumns.map((colId) => {
+                            if (colId === "name") {
+                              return (
+                                <td key={colId} className="py-3 px-3 align-middle text-sm text-foreground">
+                                  <div className="flex flex-col">
+                                    <span className="font-medium text-foreground">
+                                      {h.name}
+                                      {h.isPerson && h.role === "child" && h.birthDate && (
+                                        <span className="text-xs text-muted ml-2 font-normal">
+                                          (Dítě, {new Date().getFullYear() - new Date(h.birthDate).getFullYear()} let)
+                                        </span>
+                                      )}
+                                      {h.isPerson && h.role === "foster_parent" && (
+                                        <span className="text-xs text-muted ml-2 font-normal">
+                                          (Pěstoun)
+                                        </span>
+                                      )}
+                                      {h.isPerson && h.role !== "child" && h.role !== "foster_parent" && h.role && (
+                                        <span className="text-xs text-muted ml-2 font-normal">
+                                          ({h.role === 'bio_parent' ? 'Biologický rodič' : 'Sociální kontakt'})
+                                        </span>
+                                      )}
+                                    </span>
+                                    {!h.isPerson && h.childrenList && h.childrenList.length > 0 && (
+                                      <span className="text-xs text-muted mt-0.5 truncate max-w-xs font-normal">
+                                        Děti: {h.childrenList.join(", ")}
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                              );
+                            }
 
-                          {/* Address (only visible in full grid) */}
-                          {!selectedFamilyId && (
-                            <td className="py-3 px-4 align-middle text-sm text-foreground/80 font-normal">
-                              {pAddress ? `${pAddress.street}, ${pAddress.city}` : <span className="text-muted italic">Bez adresy</span>}
-                            </td>
-                          )}
+                            if (colId === "address") {
+                              return (
+                                <td key={colId} className="py-3 px-4 align-middle text-sm text-foreground/80 font-normal">
+                                  {h.address || <span className="text-muted italic">Bez adresy</span>}
+                                </td>
+                              );
+                            }
 
-                          {/* Children count (only visible in full grid) */}
-                          {!selectedFamilyId && (
-                            <td className="py-3 px-4 align-middle text-sm text-foreground/80 font-normal">
-                              {children.length > 0 ? `${children.length} dětí` : "Bez dětí"}
-                            </td>
-                          )}
+                            if (colId === "phone") {
+                              return (
+                                <td key={colId} className="py-3 px-4 align-middle text-sm text-foreground/80 font-normal">
+                                  {h.phone || <span className="text-muted italic">-</span>}
+                                </td>
+                              );
+                            }
 
-                          {/* Action badge / Hover icons */}
-                          <td className="py-3 px-4 text-right align-middle w-28 text-xs select-none" onClick={(e) => e.stopPropagation()}>
-                            <div className="flex items-center justify-end relative h-7">
-                              <div className="group-hover:opacity-0 group-hover:scale-95 transition-all duration-150 absolute right-0">
-                                <span className={`inline-block px-2.5 py-0.5 rounded-full border text-[11px] font-normal tracking-wide ${statusObj.colorClass}`}>
-                                  {statusObj.label}
-                                </span>
-                              </div>
-                              <div className="opacity-0 scale-95 group-hover:opacity-100 group-hover:scale-100 transition-all duration-150 flex items-center gap-1 absolute right-0 bg-background/90 dark:bg-[#131314]/90 pl-2">
-                                <button onClick={() => alert(`Upravit rodinu: ${h.foster_id}`)} className="p-1 hover:bg-[#e8eaed] dark:hover:bg-[#3c4043] rounded-full text-muted hover:text-foreground transition-colors">
-                                  <Edit2 className="w-3.5 h-3.5" />
-                                </button>
-                                <button onClick={() => alert(`Odebrat: ${h.foster_id}`)} className="p-1 hover:bg-red-500/10 dark:hover:bg-red-950/20 rounded-full text-muted hover:text-red-500 transition-colors">
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
+                            if (colId === "email") {
+                              return (
+                                <td key={colId} className="py-3 px-4 align-middle text-sm text-foreground/80 font-normal">
+                                  {h.email || <span className="text-muted italic">-</span>}
+                                </td>
+                              );
+                            }
+
+                            if (colId === "care_type") {
+                              return (
+                                <td key={colId} className="py-3 px-4 align-middle text-sm">
+                                  {h.careType ? renderCareTypeBadge(h.careType) : <span className="text-muted italic">-</span>}
+                                </td>
+                              );
+                            }
+
+                            if (colId === "children_count") {
+                              return (
+                                <td key={colId} className="py-3 px-4 align-middle text-sm text-foreground/80 font-normal">
+                                  {h.childrenCount > 0 ? `${h.childrenCount} dětí` : "Bez dětí"}
+                                </td>
+                              );
+                            }
+
+                            if (colId === "status") {
+                              const statusObj = getStatusObj(h.status);
+                              return (
+                                <td key={colId} className="py-3 px-4 text-right pr-6 align-middle text-xs select-none">
+                                  <span className={`inline-block px-2.5 py-0.5 rounded-full border text-[11px] font-normal tracking-wide ${statusObj.colorClass}`}>
+                                    {statusObj.label}
+                                  </span>
+                                </td>
+                              );
+                            }
+
+                            return null;
+                          })}
+
+                          {/* Hover Actions column at the end */}
+                          <td className="py-3 px-4 w-16 text-center align-middle" onClick={(e) => e.stopPropagation()}>
+                            <div className="opacity-0 group-hover:opacity-100 transition-all duration-150 flex items-center justify-center gap-1">
+                              <button onClick={() => alert(`Upravit: ${h.name}`)} className="p-1 hover:bg-[#e8eaed] dark:hover:bg-[#3c4043] rounded-full text-muted hover:text-foreground transition-colors cursor-pointer" title="Upravit">
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button onClick={() => alert(`Odebrat: ${h.name}`)} className="p-1 hover:bg-red-500/10 dark:hover:bg-red-950/20 rounded-full text-muted hover:text-red-500 transition-colors cursor-pointer" title="Smazat">
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
                             </div>
                           </td>
                         </tr>
@@ -1215,9 +1535,7 @@ export default function Home() {
           {/* B. VIEW 2: GMAIL STYLE EVENTS VIEW (Mail active)          */}
           {/* ========================================================= */}
           {activeService === 'mail' && (
-            <section className={`bg-background flex flex-col transition-all duration-200 overflow-hidden ${
-              selectedEventId ? "hidden" : "w-full flex-1"
-            }`}>
+            <section className="bg-background flex flex-col transition-all duration-200 overflow-hidden flex-1 min-w-[320px]">
               
               {/* Gmail Inbox tabs header */}
               <div className="border-b border-border-custom flex bg-background shrink-0 select-none">
@@ -1418,7 +1736,21 @@ export default function Home() {
           
           {/* Contacts active: detail of the household */}
           {activeService === 'contacts' && selectedHousehold && (
-            <div className="flex-1 w-full bg-card flex flex-col overflow-hidden transition-all duration-75 border-l border-border-custom">
+            <>
+              {/* Divider drag Splitter line */}
+              <div 
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  setIsResizing(true);
+                }}
+                className={`w-1 cursor-col-resize hover:bg-primary/55 active:bg-primary transition-colors shrink-0 z-30 ${
+                  isResizing ? "bg-primary" : "bg-border-custom"
+                }`}
+              />
+              <div 
+                style={{ width: typeof window !== 'undefined' && window.innerWidth < 768 ? '100%' : `${detailWidth}px` }} 
+                className="bg-card shrink-0 flex flex-col overflow-hidden transition-all duration-75 border-l border-border-custom w-full md:w-auto"
+              >
                 
                 {/* Header detail */}
                 <div className="p-6 border-b border-border-custom flex items-center justify-between bg-card shrink-0">
@@ -1663,11 +1995,26 @@ export default function Home() {
                 </div>
 
               </div>
+            </>
           )}
 
           {/* Mail active: selected timeline event detail (Gmail detail card - Screen 3 style) */}
           {activeService === 'mail' && selectedGmailEvent && (
-            <div className="flex-1 w-full bg-card flex flex-col overflow-hidden transition-all duration-75 border-l border-border-custom">
+            <>
+              {/* Divider drag Splitter line */}
+              <div 
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  setIsResizing(true);
+                }}
+                className={`w-1 cursor-col-resize hover:bg-primary/55 active:bg-primary transition-colors shrink-0 z-30 ${
+                  isResizing ? "bg-primary" : "bg-border-custom"
+                }`}
+              />
+              <div 
+                style={{ width: typeof window !== 'undefined' && window.innerWidth < 768 ? '100%' : `${detailWidth}px` }} 
+                className="bg-card shrink-0 flex flex-col overflow-hidden transition-all duration-75 border-l border-border-custom w-full md:w-auto"
+              >
                 {/* Gmail-style toolbar above email */}
                 <div className="h-14 border-b border-border-custom px-4 flex items-center justify-between shrink-0 bg-background">
                   <div className="flex items-center gap-1">
@@ -1753,7 +2100,8 @@ export default function Home() {
 
                 </div>
               </div>
-            )}
+            </>
+          )}
 
           {/* Chat active: resizable right panel showing shared Google Drive files (Screen 4 style) */}
           {activeService === 'chat' && selectedFamilyId && (
