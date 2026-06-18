@@ -70,7 +70,7 @@ const COLUMN_LABELS: Record<string, string> = {
   phone: "Telefon",
   email: "E-mail",
   care_type: "Typ péče",
-  children_count: "Děti v péči",
+  children_count: "Dětí v péči",
   status: "Stav"
 };
 
@@ -112,8 +112,52 @@ export default function Home() {
   const [contactFilterType, setContactFilterType] = useState<'families' | 'foster_parents' | 'children' | 'others'>('families');
 
   // Dynamic columns state
+  const [columnsOrder, setColumnsOrder] = useState<string[]>(['name', 'address', 'care_type', 'children_count', 'status', 'phone', 'email']);
   const [visibleColumns, setVisibleColumns] = useState<string[]>(['name', 'address', 'care_type', 'children_count', 'status']);
   const [showColumnPicker, setShowColumnPicker] = useState<boolean>(false);
+  const [draggedColId, setDraggedColId] = useState<string | null>(null);
+  const [dragOverColId, setDragOverColId] = useState<string | null>(null);
+  const [hoveredChildId, setHoveredChildId] = useState<string | null>(null);
+
+  // Drag and drop column handlers
+  const handleDragStart = (e: React.DragEvent, colId: string) => {
+    setDraggedColId(colId);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", colId);
+  };
+
+  const handleDragOver = (e: React.DragEvent, colId: string) => {
+    e.preventDefault();
+    if (draggedColId === colId) return;
+    setDragOverColId(colId);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedColId(null);
+    setDragOverColId(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, targetColId: string) => {
+    e.preventDefault();
+    if (!draggedColId || draggedColId === targetColId) {
+      setDraggedColId(null);
+      setDragOverColId(null);
+      return;
+    }
+
+    const nextOrder = [...columnsOrder];
+    const draggedIdx = nextOrder.indexOf(draggedColId);
+    const targetIdx = nextOrder.indexOf(targetColId);
+
+    if (draggedIdx !== -1 && targetIdx !== -1) {
+      nextOrder.splice(draggedIdx, 1);
+      nextOrder.splice(targetIdx, 0, draggedColId);
+      setColumnsOrder(nextOrder);
+    }
+
+    setDraggedColId(null);
+    setDragOverColId(null);
+  };
 
   // Gmail-specific folders and tabs
   const [activeMailFolder, setActiveMailFolder] = useState<'inbox' | 'starred' | 'sent' | 'drafts'>('inbox');
@@ -327,6 +371,34 @@ export default function Home() {
   // HELPERS (No semibold / extrabold)
   // ==========================================
 
+  const hasAlertOrDeadline = (householdId: string) => {
+    const householdEvents = events.filter(e => e.household_id === householdId);
+    
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const hasRecentCrisis = householdEvents.some(e => 
+      e.type === "crisis_event" && new Date(e.occurred_at) >= thirtyDaysAgo
+    );
+    if (hasRecentCrisis) return true;
+
+    const now = new Date();
+    const sevenDaysFromNow = new Date();
+    sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
+    const hasUpcomingEvent = householdEvents.some(e => {
+      const d = new Date(e.occurred_at);
+      return d >= now && d <= sevenDaysFromNow;
+    });
+
+    return hasUpcomingEvent;
+  };
+
+  const formatChildrenCount = (count: number) => {
+    if (count === 0) return "0 dětí";
+    if (count === 1) return "1 dítě";
+    if (count >= 2 && count <= 4) return `${count} děti`;
+    return `${count} dětí`;
+  };
+
   const getCareTypeDescription = (type: string) => {
     if (type === "A") return "Dlouhodobá zprostředkovaná pěstounská péče";
     if (type === "B") return "Přechodná zprostředkovaná pěstounská péče";
@@ -531,7 +603,7 @@ export default function Home() {
           const p = persons.find(per => per.household_id === h.id && per.role === "foster_parent");
           const c = persons.filter(per => per.household_id === h.id && per.role === "child");
           const pAddress = p ? addresses.find(a => a.person_id === p.id) : null;
-          const addressText = pAddress ? `${pAddress.street || ""}, ${pAddress.city || ""}` : "";
+          const addressText = pAddress ? (pAddress.city && pAddress.street ? `${pAddress.city}, ${pAddress.street}` : (pAddress.city || pAddress.street || "")) : "";
           const phoneText = p?.phone || "";
           const emailText = p?.email || "";
           const careTypeVal = p?.custom_fields?.foster_care_type || "";
@@ -551,8 +623,19 @@ export default function Home() {
             phone: phoneText,
             email: emailText,
             childrenCount: c.length,
-            childrenList: c.map(ch => `${ch.first_name || ""} ${ch.last_name || ""}`.trim()),
-            avatarUrl: p?.custom_fields?.avatarUrl || "",
+            childrenList: c.map(ch => ({
+              id: ch.id,
+              name: `${ch.first_name || ""} ${ch.last_name || ""}`.trim(),
+              firstName: ch.first_name || "",
+              lastName: ch.last_name || "",
+              phone: ch.phone || "",
+              email: ch.email || "",
+              avatarUrl: ch.custom_fields?.avatar_url || ch.custom_fields?.avatarUrl || "",
+              school: ch.custom_fields?.school || "",
+              hobby: ch.custom_fields?.hobby || "",
+              householdId: h.id
+            })),
+            avatarUrl: p?.custom_fields?.avatar_url || p?.custom_fields?.avatarUrl || "",
             profession: p?.custom_fields?.profession || "",
             birthDate: "",
             school: "",
@@ -613,7 +696,7 @@ export default function Home() {
         .map(p => {
           const h = households.find(house => house.id === p.household_id)!;
           const pAddress = addresses.find(a => a.person_id === p.id);
-          const addressText = pAddress ? `${pAddress.street || ""}, ${pAddress.city || ""}` : "";
+          const addressText = pAddress ? (pAddress.city && pAddress.street ? `${pAddress.city}, ${pAddress.street}` : (pAddress.city || pAddress.street || "")) : "";
           const phoneText = p.phone || "";
           const emailText = p.email || "";
           const careTypeVal = p.custom_fields?.foster_care_type || "";
@@ -633,8 +716,19 @@ export default function Home() {
             phone: phoneText,
             email: emailText,
             childrenCount: persons.filter(per => per.household_id === h.id && per.role === "child").length,
-            childrenList: persons.filter(per => per.household_id === h.id && per.role === "child").map(ch => `${ch.first_name || ""} ${ch.last_name || ""}`.trim()),
-            avatarUrl: p.custom_fields?.avatarUrl || "",
+            childrenList: persons.filter(per => per.household_id === h.id && per.role === "child").map(ch => ({
+              id: ch.id,
+              name: `${ch.first_name || ""} ${ch.last_name || ""}`.trim(),
+              firstName: ch.first_name || "",
+              lastName: ch.last_name || "",
+              phone: ch.phone || "",
+              email: ch.email || "",
+              avatarUrl: ch.custom_fields?.avatar_url || ch.custom_fields?.avatarUrl || "",
+              school: ch.custom_fields?.school || "",
+              hobby: ch.custom_fields?.hobby || "",
+              householdId: h.id
+            })),
+            avatarUrl: p.custom_fields?.avatar_url || p.custom_fields?.avatarUrl || "",
             profession: p.custom_fields?.profession || "",
             birthDate: p.birth_date || "",
             school: p.custom_fields?.school || "",
@@ -1255,7 +1349,7 @@ export default function Home() {
                   </div>
 
                   {/* Column Config Dropdown */}
-                  <div className="relative">
+                  <div className="relative bg-transparent select-none">
                     <button 
                       onClick={() => setShowColumnPicker(!showColumnPicker)}
                       className="p-1 text-muted hover:text-foreground hover:bg-[#f1f3f4] dark:hover:bg-[#2d2f31]/50 rounded-lg transition-all flex items-center gap-1 border border-border-custom/50 px-2 py-1 cursor-pointer bg-card"
@@ -1277,15 +1371,30 @@ export default function Home() {
                           </button>
                         </div>
                         <div className="space-y-1 max-h-60 overflow-y-auto">
-                          {[
-                            ...visibleColumns,
-                            ...["name", "address", "phone", "email", "care_type", "children_count", "status"].filter(c => !visibleColumns.includes(c))
-                          ].map((colId, idx) => {
+                          {columnsOrder.map((colId) => {
                             const isVisible = visibleColumns.includes(colId);
                             const label = COLUMN_LABELS[colId] || colId;
+                            const isDragged = draggedColId === colId;
+                            const isDragOver = dragOverColId === colId && draggedColId !== colId;
+                            const draggedIdx = columnsOrder.indexOf(draggedColId || "");
+                            const targetIdx = columnsOrder.indexOf(colId);
+                            const borderStyle = isDragOver 
+                              ? (draggedIdx < targetIdx ? "border-b-2 border-blue-500" : "border-t-2 border-blue-500") 
+                              : "";
+
                             return (
-                              <div key={colId} className="flex items-center justify-between py-1 px-1.5 hover:bg-[#f1f3f4] dark:hover:bg-[#2d2f31]/50 rounded-lg group/col text-xs">
-                                <label className="flex items-center gap-2 cursor-pointer flex-1 py-0.5">
+                              <div 
+                                key={colId} 
+                                draggable
+                                onDragStart={(e) => handleDragStart(e, colId)}
+                                onDragOver={(e) => handleDragOver(e, colId)}
+                                onDragEnd={handleDragEnd}
+                                onDrop={(e) => handleDrop(e, colId)}
+                                className={`flex items-center justify-between py-1.5 px-2 hover:bg-[#f1f3f4] dark:hover:bg-[#2d2f31]/50 rounded-lg group/col text-xs cursor-grab active:cursor-grabbing select-none transition-all ${
+                                  isDragged ? "opacity-40 bg-gray-100 dark:bg-gray-800" : ""
+                                } ${borderStyle}`}
+                              >
+                                <label className="flex items-center gap-2 cursor-pointer flex-1 py-0.5 animate-none" onClick={(e) => e.stopPropagation()}>
                                   <input 
                                     type="checkbox"
                                     checked={isVisible}
@@ -1295,55 +1404,21 @@ export default function Home() {
                                           setVisibleColumns(prev => prev.filter(c => c !== colId));
                                         }
                                       } else {
-                                        setVisibleColumns(prev => [...prev, colId]);
+                                        setVisibleColumns(prev => {
+                                          const next = [...prev, colId];
+                                          return next.sort((a, b) => columnsOrder.indexOf(a) - columnsOrder.indexOf(b));
+                                        });
                                       }
                                     }}
                                     className="w-3.5 h-3.5 rounded border-gray-300 text-primary bg-transparent focus:ring-primary"
                                   />
                                   <span className="text-foreground font-normal">{label}</span>
                                 </label>
-                                {isVisible && (
-                                  <div className="flex gap-0.5 opacity-0 group-hover/col:opacity-100 transition-opacity">
-                                    <button 
-                                      disabled={idx === 0}
-                                      onClick={() => {
-                                        setVisibleColumns(prev => {
-                                          const next = [...prev];
-                                          const pos = next.indexOf(colId);
-                                          if (pos > 0) {
-                                            const temp = next[pos];
-                                            next[pos] = next[pos - 1];
-                                            next[pos - 1] = temp;
-                                          }
-                                          return next;
-                                        });
-                                      }}
-                                      className="p-0.5 hover:bg-gray-250 dark:hover:bg-gray-750 rounded text-muted disabled:opacity-30 cursor-pointer text-[10px]"
-                                      title="Posunout vlevo"
-                                    >
-                                      ▲
-                                    </button>
-                                    <button 
-                                      disabled={idx === visibleColumns.length - 1}
-                                      onClick={() => {
-                                        setVisibleColumns(prev => {
-                                          const next = [...prev];
-                                          const pos = next.indexOf(colId);
-                                          if (pos >= 0 && pos < next.length - 1) {
-                                            const temp = next[pos];
-                                            next[pos] = next[pos + 1];
-                                            next[pos + 1] = temp;
-                                          }
-                                          return next;
-                                        });
-                                      }}
-                                      className="p-0.5 hover:bg-gray-250 dark:hover:bg-gray-700 rounded text-muted disabled:opacity-30 cursor-pointer text-[10px]"
-                                      title="Posunout vpravo"
-                                    >
-                                      ▼
-                                    </button>
-                                  </div>
-                                )}
+                                <div className="text-muted opacity-40 group-hover/col:opacity-100 transition-opacity">
+                                  <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                                    <path d="M11 18c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2zm-2-8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0-6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 4c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
+                                  </svg>
+                                </div>
                               </div>
                             );
                           })}
@@ -1361,7 +1436,7 @@ export default function Home() {
                     <tr className="border-b border-border-custom text-xs font-medium text-muted">
                       <th className="py-2.5 px-4 w-12 text-center"></th>
                       <th className="py-2.5 px-1 w-8 text-center"></th>
-                      {visibleColumns.map((colId) => {
+                      {columnsOrder.filter(c => visibleColumns.includes(c)).map((colId) => {
                         const label = COLUMN_LABELS[colId] || colId;
                         return (
                           <th 
@@ -1379,6 +1454,8 @@ export default function Home() {
                     {filteredHouseholds.map((h) => {
                       const isChecked = checkedHouseholds.has(h.id);
                       const isStarred = starredHouseholds.has(h.id);
+                      const hasAlert = hasAlertOrDeadline(h.householdId);
+                      const parentPerson = persons.find(per => per.household_id === h.householdId && per.role === "foster_parent");
 
                       return (
                         <tr 
@@ -1388,13 +1465,17 @@ export default function Home() {
                             setActiveTab("overview");
                           }}
                           className={`group border-b border-border-custom cursor-pointer transition-colors ${
-                            isChecked ? "bg-[#e8f0fe]/50 dark:bg-[#0842a0]/10" : "hover:bg-[#f1f3f4]/70 dark:hover:bg-[#2d2f31]/30"
-                          } ${
-                            selectedFamilyId === h.householdId ? "bg-[#e8f0fe] dark:bg-[#0842a0]/20" : ""
+                            selectedFamilyId === h.householdId 
+                              ? "bg-[#e8f0fe] dark:bg-[#0842a0]/20" 
+                              : isChecked 
+                                ? "bg-[#e8f0fe]/50 dark:bg-[#0842a0]/10" 
+                                : hasAlert 
+                                  ? "bg-rose-50/50 dark:bg-rose-950/10 hover:bg-rose-100/40 dark:hover:bg-rose-900/20" 
+                                  : "hover:bg-[#f1f3f4]/70 dark:hover:bg-[#2d2f31]/30"
                           }`}
                         >
                           {/* Avatar checkbox */}
-                          <td className="py-3 px-4 w-12 align-middle text-center select-none" onClick={(e) => e.stopPropagation()}>
+                          <td className={`py-3 px-4 w-12 align-middle text-center select-none ${hasAlert ? "border-l-4 border-l-rose-500" : ""}`} onClick={(e) => e.stopPropagation()}>
                             <div className="relative w-8 h-8 flex items-center justify-center mx-auto">
                               <div className={`absolute w-8 h-8 rounded-full flex items-center justify-center font-medium text-xs transition-all duration-150 ${
                                 isChecked ? "scale-0 opacity-0" : "scale-100 opacity-100 group-hover:scale-0 group-hover:opacity-0"
@@ -1424,33 +1505,123 @@ export default function Home() {
                           </td>
 
                           {/* Dynamic columns */}
-                          {visibleColumns.map((colId) => {
+                          {columnsOrder.filter(c => visibleColumns.includes(c)).map((colId) => {
                             if (colId === "name") {
                               return (
                                 <td key={colId} className="py-3 px-3 align-middle text-sm text-foreground">
                                   <div className="flex flex-col">
-                                    <span className="font-medium text-foreground">
-                                      {h.name}
+                                    <span className={`${h.isPerson && h.role === "child" ? "font-normal" : "font-bold"} text-foreground`}>
+                                      {h.isPerson 
+                                        ? (h.role === "child" ? renderChildName(h.rawItem) : renderFosterParentName(h.rawItem)) 
+                                        : renderFosterParentName(parentPerson)}
                                       {h.isPerson && h.role === "child" && h.birthDate && (
-                                        <span className="text-xs text-muted ml-2 font-normal">
+                                        <span className="text-xs text-muted ml-2 font-normal animate-none">
                                           (Dítě, {new Date().getFullYear() - new Date(h.birthDate).getFullYear()} let)
                                         </span>
                                       )}
                                       {h.isPerson && h.role === "foster_parent" && (
-                                        <span className="text-xs text-muted ml-2 font-normal">
+                                        <span className="text-xs text-muted ml-2 font-normal animate-none">
                                           (Pěstoun)
                                         </span>
                                       )}
                                       {h.isPerson && h.role !== "child" && h.role !== "foster_parent" && h.role && (
-                                        <span className="text-xs text-muted ml-2 font-normal">
+                                        <span className="text-xs text-muted ml-2 font-normal animate-none">
                                           ({h.role === 'bio_parent' ? 'Biologický rodič' : 'Sociální kontakt'})
                                         </span>
                                       )}
                                     </span>
                                     {!h.isPerson && h.childrenList && h.childrenList.length > 0 && (
-                                      <span className="text-xs text-muted mt-0.5 truncate max-w-xs font-normal">
-                                        Děti: {h.childrenList.join(", ")}
-                                      </span>
+                                      <div className="flex flex-col gap-1 mt-1 pl-2 text-xs text-muted font-normal">
+                                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                          <span className="text-gray-400">↳</span>
+                                          {h.childrenList.map((child: any, cIdx: number) => (
+                                            <React.Fragment key={child.id}>
+                                              {cIdx > 0 && <span className="text-gray-300">,</span>}
+                                              <span 
+                                                className="relative inline-block"
+                                                onMouseEnter={() => setHoveredChildId(child.id)}
+                                                onMouseLeave={() => setHoveredChildId(null)}
+                                              >
+                                                <span 
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setSelectedFamilyId(child.householdId);
+                                                    setActiveTab("overview");
+                                                  }}
+                                                  className="text-primary hover:underline hover:text-primary-hover font-normal cursor-pointer"
+                                                >
+                                                  {child.name}
+                                                </span>
+                                                {hoveredChildId === child.id && (
+                                                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-80 bg-card border border-border-custom shadow-xl rounded-2xl p-4 z-50 animate-in fade-in slide-in-from-bottom-2 duration-150 text-left text-foreground normal-case font-sans">
+                                                    {/* Hover bubble card content */}
+                                                    <div className="flex items-center gap-3 pb-3 border-b border-border-custom">
+                                                      {child.avatarUrl ? (
+                                                        <img src={child.avatarUrl} alt={child.name} className="w-12 h-12 rounded-full object-cover border border-border-custom" />
+                                                      ) : (
+                                                        <div className="w-12 h-12 rounded-full bg-primary/10 text-primary border border-primary/20 flex items-center justify-center font-medium text-base">
+                                                          {child.firstName?.charAt(0) || "D"}
+                                                        </div>
+                                                      )}
+                                                      <div>
+                                                        <h5 className="font-bold text-sm text-foreground">{child.name}</h5>
+                                                        <p className="text-[10px] text-muted font-normal">Dítě v pěstounské péči</p>
+                                                      </div>
+                                                    </div>
+                                                    
+                                                    <div className="py-2.5 space-y-1.5 text-xs text-foreground/80 border-b border-border-custom">
+                                                      {child.phone && (
+                                                        <div className="flex items-center gap-2">
+                                                          <Phone className="w-3.5 h-3.5 text-muted shrink-0" />
+                                                          <span>{child.phone}</span>
+                                                        </div>
+                                                      )}
+                                                      {child.email && (
+                                                        <div className="flex items-center gap-2">
+                                                          <Mail className="w-3.5 h-3.5 text-muted shrink-0" />
+                                                          <span className="truncate">{child.email}</span>
+                                                        </div>
+                                                      )}
+                                                      {child.school && (
+                                                        <div className="flex items-center gap-2">
+                                                          <GraduationCap className="w-3.5 h-3.5 text-muted shrink-0" />
+                                                          <span>Škola: {child.school}</span>
+                                                        </div>
+                                                      )}
+                                                      {child.hobby && (
+                                                        <div className="flex items-center gap-2">
+                                                          <Star className="w-3.5 h-3.5 text-muted shrink-0" />
+                                                          <span>Záliby: {child.hobby}</span>
+                                                        </div>
+                                                      )}
+                                                    </div>
+
+                                                    <div className="pt-2.5">
+                                                      <p className="text-[10px] font-bold text-muted uppercase tracking-wider mb-1.5">Poslední 3 záznamy ze života:</p>
+                                                      <div className="space-y-1.5">
+                                                        {events
+                                                          .filter(ev => ev.household_id === child.householdId)
+                                                          .slice(0, 3)
+                                                          .map((ev, evIdx) => (
+                                                            <div key={evIdx} className="text-[11px] leading-snug">
+                                                              <span className="font-medium text-foreground">{ev.title}</span>
+                                                              <span className="text-muted text-[10px] ml-1.5">
+                                                                ({new Date(ev.occurred_at).toLocaleDateString("cs-CZ")})
+                                                              </span>
+                                                            </div>
+                                                          ))}
+                                                        {events.filter(ev => ev.household_id === child.householdId).length === 0 && (
+                                                          <p className="text-[11px] text-muted italic">Žádné události</p>
+                                                        )}
+                                                      </div>
+                                                    </div>
+                                                  </div>
+                                                )}
+                                              </span>
+                                            </React.Fragment>
+                                          ))}
+                                        </div>
+                                      </div>
                                     )}
                                   </div>
                                 </td>
@@ -1492,7 +1663,7 @@ export default function Home() {
                             if (colId === "children_count") {
                               return (
                                 <td key={colId} className="py-3 px-4 align-middle text-sm text-foreground/80 font-normal">
-                                  {h.childrenCount > 0 ? `${h.childrenCount} dětí` : "Bez dětí"}
+                                  {formatChildrenCount(h.childrenCount)}
                                 </td>
                               );
                             }
@@ -1846,7 +2017,8 @@ export default function Home() {
                             {primaryParentAddress ? (
                               <div className="flex items-center justify-between bg-card px-3 py-1.5 rounded-2xl border border-border-custom/50 mt-1 shadow-xs">
                                 <span className="font-normal text-foreground">
-                                  {primaryParentAddress.street}, {primaryParentAddress.city}
+                                  {primaryParentAddress.street}, {primaryParentAddress.zip ? `${primaryParentAddress.zip} ` : ""}{primaryParentAddress.city}
+                                  {(primaryParentAddress as any).state && (primaryParentAddress as any).state.toLowerCase() !== "česká republika" ? `, ${(primaryParentAddress as any).state}` : ""}
                                 </span>
                                 <a 
                                   href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${primaryParentAddress.street}, ${primaryParentAddress.city}`)}`}
