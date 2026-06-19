@@ -2,6 +2,7 @@
 @import "tailwindcss";
 
 @custom-variant dark (&:where(.dark, .dark *));
+@custom-variant theme-yandex (&:where(.theme-yandex, .theme-yandex *));
 
 :root {
   /* Google Sans Font Overrides */
@@ -198,3 +199,22 @@ body {
 }
 
 
+
+/* Yandex Dark Mode Overrides */
+.dark.theme-yandex, .dark .theme-yandex {
+  --background: #1b1c20;
+  --foreground: #e3e4e6;
+  --card: #232429;
+  --border: #33353c;
+  --secondary-color: #2b2c31;
+  --primary-color: #fc0;
+  --primary-hover: #ffd633;
+}
+
+/* Force dark theme icons/text color adjustment in Yandex mode */
+.dark.theme-yandex .text-muted, .dark .theme-yandex .text-muted {
+  color: #909399 !important;
+}
+.dark.theme-yandex .bg-slate-50\/30, .dark .theme-yandex .bg-slate-50\/30 {
+  background-color: rgba(255, 255, 255, 0.02) !important;
+}
