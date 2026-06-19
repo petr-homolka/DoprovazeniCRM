@@ -112,3 +112,89 @@ body {
   background: rgba(128, 128, 128, 0.4);
 }
 
+/* ========================================================= */
+/* YANDEX 360 DESIGN MODE OVERRIDES (Verze B)                 */
+/* ========================================================= */
+
+.theme-yandex, .theme-yandex body {
+  /* Font Override */
+  font-family: Arial, Helvetica, sans-serif !important;
+  --font-sans: Arial, Helvetica, sans-serif !important;
+  --font-mono: Courier, monospace !important;
+
+  /* Colors */
+  --background: #f3f4f5; /* Yandex base cool gray 50 */
+  --foreground: #42424b; /* Yandex text cool gray 900 */
+  --card: #ffffff;
+  --border: #e1e3e7; /* Yandex border cool gray 200 */
+  
+  --primary-color: #fc0; /* Yandex Yellow */
+  --primary-hover: #f2c200;
+  --primary-active: #e6b800;
+  --secondary-color: #edeff0;
+
+  --md-sys-color-primary-container: #fc0;
+  --md-sys-color-on-primary-container: #000000;
+  --md-sys-color-surface-variant: #edeff0;
+  --md-sys-color-outline: #e1e3e7;
+
+  /* Compact Padding Override & Border Radius Overrides */
+  --radius-full: 6px !important;
+  --radius-3xl: 8px !important;
+  --radius-2xl: 8px !important;
+  --radius-xl: 6px !important;
+  --radius-lg: 6px !important;
+  --radius-md: 4px !important;
+  --radius-sm: 2px !important;
+}
+
+/* Force text on primary yellow buttons/actions to black in Yandex Mode */
+.theme-yandex .bg-primary {
+  background-color: var(--primary-color) !important;
+  color: #000000 !important;
+  font-weight: 500 !important;
+}
+.theme-yandex .bg-primary * {
+  color: #000000 !important;
+}
+
+.theme-yandex .hover\:bg-primary\/95:hover {
+  background-color: var(--primary-hover) !important;
+}
+
+.theme-yandex .hover\:bg-primary\/90:hover {
+  background-color: var(--primary-hover) !important;
+}
+
+.theme-yandex .text-primary {
+  color: #04b !important; /* Yandex royal blue for links and tags */
+}
+
+.theme-yandex .border-primary {
+  border-color: #fc0 !important;
+}
+
+.theme-yandex .bg-primary\/10 {
+  background-color: rgba(255, 204, 0, 0.15) !important;
+}
+
+/* Yandex custom shadows and scrollbars */
+.theme-yandex .shadow-sm,
+.theme-yandex .shadow-md,
+.theme-yandex .shadow-xs,
+.theme-yandex .shadow-xl {
+  box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05), 0 1px 3px 0 rgba(0,0,0,0.08) !important;
+}
+
+/* Clean compact inputs */
+.theme-yandex input[type="text"],
+.theme-yandex input[type="email"],
+.theme-yandex input[type="password"],
+.theme-yandex textarea,
+.theme-yandex select {
+  font-size: 13px !important;
+  border-radius: 6px !important;
+  border-color: #cbd0d5 !important;
+}
+
+
