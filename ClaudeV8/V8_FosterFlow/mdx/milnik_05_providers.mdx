@@ -1,0 +1,138 @@
+---
+title: "Milník 5: Svoboda volby ekosystému"
+description: "Aktivace Google/Microsoft/interních adaptérů pro storage, kalendář a autentizaci (včetně SSO), úrovně integrace, hloubkový whitelabeling, sandbox prostředí, import wizard z konkurenčních systémů."
+icon: "shuffle"
+---
+
+<Info>
+**Proč SSO a Google/Microsoft integrace jsou TADY, ne v M1:** Toto bylo explicitní architektonické rozhodnutí od počátku projektu. Kontrakty (`StorageAdapterInterface`, `CalendarAdapterInterface`, `AuthAdapterInterface`) existují od M1.1, ale konkrétní Google/Microsoft implementace a UI pro jejich volbu se aktivují až zde — po stabilizaci financí (M3) a multi-tenancy (M4), kdy je systém ověřený v reálném provozu a riziko nové integrace nekombinuje s rizikem nezralého jádra.
+</Info>
+
+## Co tento milník obsahuje
+
+<CardGroup cols={2}>
+  <Card title="Co JE v M5" icon="check">
+    Google Drive/OneDrive storage adaptéry, Google Calendar/MS Graph kalendář adaptéry, Google/Microsoft SSO auth adaptéry, konfigurační UI pro úrovně integrace (0/1/2), hloubkový whitelabel (font, layout, custom CSS), sandbox/demo prostředí, import wizard.
+  </Card>
+  <Card title="Co NENÍ v M5" icon="circle-xmark">
+    AI adaptéry (Gemini/OpenAI/Anthropic) čekají na M6 — i když jsou v `provider_key` enumu od M1, AI kategorie integrace se aktivuje samostatně.
+  </Card>
+</CardGroup>
+
+---
+
+## Fáze 5.1 — Storage adaptéry: Google Drive / OneDrive
+
+Implementace `GoogleDriveAdapter` a `OneDriveAdapter` podle kontraktu `StorageAdapterInterface` definovaného v M1.1. **Kontrakt se nemění** — pouze se doplňují konkrétní implementace.
+
+```typescript
+class GoogleDriveAdapter implements StorageAdapterInterface {
+  async uploadFile(orgId: string, file: Buffer, metadata: FileMetadata): Promise<StorageReference> {
+    const settings = await getIntegrationSettings(orgId, 'storage');
+    const driveClient = await getGoogleDriveClient(settings.oauth_access_token_encrypted);
+    // ... implementace
+  }
+}
+```
+
+Migrace existujících dokumentů: organizace, která PŘEPNE z `internal` na `google` storage, NESMÍ ztratit přístup k již nahraným souborům — buď se provede dávková migrace, nebo `storage_provider_key` zůstává per-dokument (starší dokumenty v `internal`, nové v `google`).
+
+<Check>
+**Acceptance test:** Organizace aktivuje Google Drive integraci (level_2_deep), nahraje nový dokument → uloží se do jejího Google Drive, `external_file_reference` obsahuje Google fileId. Starší dokumenty uložené v M1 jako `internal` zůstávají přístupné a stahovatelné beze změny.
+</Check>
+
+---
+
+## Fáze 5.2 — Kalendář adaptéry: Google Calendar / MS Graph
+
+`calendar_sync_links` váže interní entitu (soudní jednání, kontakt s bio rodinou, úkol s termínem) na externí kalendářovou událost. Oboustranná synchronizace na úrovni `level_2_deep`: změna termínu v systému → update v Google Calendar, a naopak (pokud adaptér podporuje webhook z Google/MS).
+
+<Check>
+**Acceptance test:** Soudní jednání vytvořené v systému s aktivní `level_2_deep` Google Calendar integrací se objeví v Google Calendar přihlášeného KO do 1 minuty. Posun termínu v systému aktualizuje externí událost, ne vytváří duplicitní.
+</Check>
+
+---
+
+## Fáze 5.3 — Auth adaptéry: Google SSO / Microsoft SSO
+
+<Warning>
+**Toto je ten případ "SSO ne na začátku, ale ve verzi 5", explicitně zmíněný v zadání projektu.** Implementace OAuth flow pro Google a Microsoft přihlášení, jako ALTERNATIVA k interní Magic Link autentizaci z M1 — NIKDY jako náhrada. Organizace si vybírá, ne je nucena.
+</Warning>
+
+```typescript
+class GoogleOAuthAdapter implements AuthAdapterInterface {
+  async initiateLogin(email: string): Promise<void> {
+    // Redirect na Google OAuth consent screen
+  }
+  async verifyCallback(token: string): Promise<UserSession> {
+    // Výměna OAuth code za token, vytvoření/napojení profiles záznamu
+  }
+}
+```
+
+<Check>
+**Acceptance test:** Organizace s aktivní Google SSO integrací umožní uživateli přihlásit se přes Google tlačítko I ZÁROVEŇ stávajícím Magic Linkem (pokud to organizace nezakázala) — žádný uživatel není nuceně odhlášen ze staré metody bez varování.
+</Check>
+
+---
+
+## Fáze 5.4 — Konfigurační UI pro úrovně integrace
+
+Administrátorské rozhraní per organizace: pro každou kategorii (storage/calendar/auth) volba providera a úrovně:
+
+```
+Úroveň 0 — Žádná: vlastní interní řešení, žádná data neopouští systém
+Úroveň 1 — Export/Import: jednosměrný export (.ics feed, ZIP), žádné live čtení zpět
+Úroveň 2 — Hluboká integrace: oboustranná synchronizace, systém je "součástí" ekosystému DO
+```
+
+<Check>
+**Acceptance test:** Administrátor DO přepne kalendářovou integraci z "Žádná" na "Úroveň 2 — Google" přes UI bez zásahu programátora, autorizuje OAuth, a od té chvíle nové soudní termíny synchronizují do Google Calendar.
+</Check>
+
+---
+
+## Fáze 5.5 — Hloubkový whitelabel (font, layout, custom CSS)
+
+`organization_theme_config` rozšiřuje basic branding z M4.4: `font_family`, `layout_template_key` (default/compact/high_contrast), `custom_css`.
+
+<Danger>
+`custom_css` MUSÍ procházet sanitizací před uložením: žádné `<script>` tagy, žádný `@import` na externí domény mimo allowlist. Bezpečnostní review povinný před aktivací této funkce v produkci — toto je vektor pro XSS, pokud se zanedbá.
+</Danger>
+
+<Check>
+**Acceptance test:** Pokus o uložení `custom_css` obsahujícího `<script>alert(1)</script>` nebo `@import url(http://evil.com/x.css)` je odmítnut sanitizační vrstvou. Validní CSS (změna border-radius, font-size tlačítek) se uloží a projeví.
+</Check>
+
+---
+
+## Fáze 5.6 — Sandbox/demo prostředí
+
+`organizations.is_sandbox = TRUE` s automatickým periodickým resetem dat (CRON dle `sandbox_reset_interval_hours`). Zájemce o systém vyzkouší plně funkční instanci s fiktivními daty bez rizika pro reálné citlivé údaje.
+
+<Check>
+**Acceptance test:** Sandbox organizace se po uplynutí reset intervalu vrátí na definovanou výchozí demo sadu dat, i kdyby uživatel mezitím vytvořil/smazal libovolný počet záznamů.
+</Check>
+
+---
+
+## Fáze 5.7 — Import wizard z konkurenčních systémů
+
+`import_mapping_templates` (Excel obecný, konkrétní konkurenční CRM) + `import_jobs` s validací a reportem chybných řádků před finálním importem.
+
+<Check>
+**Acceptance test:** Upload Excel souboru se 50 rodinami přes obecnou šablonu vytvoří 50 nových `households`/`persons` záznamů, řádky s chybějícími povinnými poli se reportují jako `error_rows` bez přerušení zpracování validních řádků.
+</Check>
+
+---
+
+## Souhrnný GATE pro M5
+
+<Checklist>
+- [ ] Regresní sada M1–M4 stále projde
+- [ ] Nová DO si může zvolit "Google-heavy" NEBO "naprosto nezávislé" nastavení a obojí funguje
+- [ ] Žádný existující dokument/kalendářová událost vytvořená v M1–M4 nebyla touto změnou poškozena
+- [ ] custom_css sanitizace ověřena bezpečnostním testem
+</Checklist>
+
+Pokračuj Milníkem 6 — AI vrstva.

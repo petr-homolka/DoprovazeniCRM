@@ -1,0 +1,145 @@
+---
+title: "Milník 7: Analytika, měření a benchmarking"
+description: "Vážené vytížení KO, materializované pohledy, čtyřúrovňová statistická nadstavba, anonymizovaný globální benchmarking, produktová analytika (Google Analytics a ekvivalenty) na globální i per-DO úrovni."
+icon: "chart-mixed"
+---
+
+## Co tento milník obsahuje
+
+<CardGroup cols={2}>
+  <Card title="Co JE v M7" icon="check">
+    Vážené vytížení KO, materializované views s nočním refreshem, čtyřúrovňová statistická nadstavba, anonymizovaný benchmarking mezi DO, produktová/webová analytika (GA nebo ekvivalent) dvouúrovňově.
+  </Card>
+  <Card title="Co NENÍ v M7" icon="circle-xmark">
+    Žádné prediktivní modely. Analytika je popisná (co se stalo, jak se to srovnává), ne prediktivní.
+  </Card>
+</CardGroup>
+
+---
+
+## Fáze 7.1 — Vážené vytížení KO
+
+<Warning>
+Analytické dotazy NESMÍ běžet živě nad primárními tabulkami (`events`, `payment_documents`), aby nezpomalovaly mobilní aplikaci v terénu. Systém využívá `MATERIALIZED VIEW` aktualizované na pozadí.
+</Warning>
+
+```sql
+-- Vážené vytížení: rodina 1 bod, soudní spor +1, aktivní krize +3
+weighted_workload_score = households_count + active_court_cases + 3 * active_crises
+```
+
+Ředitel jasně vidí, že pracovník s 10 rodinami a dvěma aktivními krizemi (skóre 16) je na pokraji vyhoření, zatímco pracovník s 15 běžnými rodinami (skóre 15) může přijmout novou rodinu.
+
+<Check>
+**Acceptance test:** `mv_ko_workload.weighted_workload_score` se správně počítá na testovacích datech se známou kombinací rodin/sporů/krizí. Noční CRON `REFRESH MATERIALIZED VIEW CONCURRENTLY` neuzamyká tabulku pro čtení během refreshe.
+</Check>
+
+---
+
+## Fáze 7.2 — Materializované pohledy (rozšíření)
+
+`mv_cost_per_child` páruje čerpání SPVPP s konkrétním dítětem (navazuje na `payment_document_items.person_id` z M3.2) pro detekci rodin vyžadujících extrémní podporu — NE pro penalizaci pěstounů, ale signál pro případovou supervizi.
+
+<Check>
+**Acceptance test:** Změna v `payment_documents.status` na `paid` se po nočním refreshi promítne do `mv_cost_per_child`, ale NE okamžitě (potvrzuje asynchronní/dávkový charakter, ne živý dotaz).
+</Check>
+
+---
+
+## Fáze 7.3 — Statistická nadstavba (čtyři úrovně viditelnosti)
+
+<Warning>
+Žádný uživatel nesmí vidět detailní osobní údaje z jiných tenantů. Provozovatel vidí globální statistiky pouze v agregované, anonymizované formě.
+</Warning>
+
+| Úroveň | Co vidí |
+|---|---|
+| 1. Provozovatel | Celorepublikové agregované statistiky všech DO |
+| 2. Ředitel DO | Celá organizace + rozpad na pobočky + anonymní ČR průměr |
+| 3. Vedoucí pobočky | Agregace rodin a KO dané pobočky |
+| 4. Klíčová osoba | Osobní dashboard (read-only) |
+
+Čtyři oblasti metrik: klientské/demografické, výkonnostní/provozní (návazně na Fázi 7.1), dotační/ekonomické (Index čerpání SPVPP), compliance (% pěstounů se splněnými 24 h vzdělávání).
+
+<Check>
+**Acceptance test:** Ředitel Organizace A vidí benchmarking "Vaše doba řešení krize 18h, ČR průměr 28h" BEZ možnosti zjistit, která konkrétní jiná organizace má jakou hodnotu (jen agregovaný anonymní průměr).
+</Check>
+
+---
+
+## Fáze 7.4 — Anonymizovaný globální benchmarking
+
+```sql
+CREATE POLICY "global_statistics_operator_only" ON global_statistics_daily FOR SELECT
+USING (is_system_operator());
+```
+
+`global_statistics_daily` je přístupná POUZE provozovateli přímým SELECT. Benchmarking pro jednotlivé DO běží přes samostatnou funkci s explicitním maskováním ID organizací ("Organizace 1", "Organizace 2") — nikdy přímý přístup k datům konkurence.
+
+<Check>
+**Acceptance test:** Pokus libovolné DO o přímý SELECT nad `global_statistics_daily` je odmítnut RLS. Benchmarking funkce vrací jen anonymizované srovnání, nikdy skutečné ID nebo název jiné organizace.
+</Check>
+
+---
+
+## Fáze 7.5 — Produktová analytika (Google Analytics a ekvivalenty)
+
+<Info>
+**Nová kapitola dle explicitního požadavku.** Dvouúrovňové měření: GLOBÁLNÍ (provozovatel sleduje používání produktu napříč všemi DO pro produktová rozhodnutí) a PER-DO (jednotlivá organizace sleduje vlastní provozní vhled).
+</Info>
+
+<Warning>
+Provider-agnostic stejně jako storage/calendar/auth/AI z M5/M6. Google Analytics je VOLBA, ne závislost. `analytics_provider_config.provider` může být `google_analytics`, `plausible`, `matomo`, nebo `internal_only` pro DO chtějící "absolutní svobodu" i v měření.
+</Warning>
+
+```sql
+CREATE TABLE analytics_events (
+    organization_id UUID REFERENCES organizations(id), -- NULL pro anonymní marketing stránky
+    user_id UUID REFERENCES profiles(id),
+    event_name TEXT NOT NULL,  -- 'page_view', 'event_created', 'payment_approved'
+    event_category TEXT,
+    properties JSONB DEFAULT '{}'::jsonb,
+    occurred_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+```
+
+### Dvě úrovně použití
+
+<Tabs>
+  <Tab title="Globální (provozovatel)">
+    Agregovaná anonymizovaná data napříč VŠEMI organizacemi pro produktová rozhodnutí: která funkce se používá nejvíc, kde uživatelé "zamrznou" ve flow (např. mnoho rozkliknutí formuláře nové události bez uložení = signál na zlepšení UX).
+
+    Pokud je zvolen `google_analytics` jako globální provider, marketingové stránky (ne přihlášená aplikace) mohou používat standardní GA4 tracking s cookie consent bannerem.
+  </Tab>
+  <Tab title="Per-DO (organizace)">
+    Organizace vidí JEN svoje vlastní eventy (RLS), využívá je pro vlastní provozní vhled: kolik KO používá AI záznamník (návaznost na M6), jak často se generují reporty, jaké funkce jsou nejpoužívanější v jejich provozu.
+
+    DŮLEŽITÉ: toto NENÍ totéž jako benchmarking z Fáze 7.4 — per-DO analytika je čistě o vlastním provozu, ne o srovnání s jinými.
+  </Tab>
+</Tabs>
+
+<Warning>
+Interní `analytics_events` tabulka funguje VŽDY, i při `provider = 'internal_only'`. Externí GA/Plausible/Matomo je navíc, ne náhrada — zajišťuje to, že provozovatel i DO mají vlastní data nezávislá na výpadku/zrušení externí analytické služby (návaznost na princip provider-agnostické architektury a na bod o dlouhověkosti z M10).
+</Warning>
+
+<Check>
+**Acceptance test:**
+1. DO s `provider = 'internal_only'` má funkční `analytics_events` tracking bez jakékoliv externí závislosti.
+2. DO, která aktivuje `google_analytics`, vidí cookie consent banner před spuštěním trackingu.
+3. KO (role bez `analytics.view_global`) vidí jen vlastní eventy v `analytics_events` (`user_id = auth.uid()`), ne data celé organizace.
+4. Ředitel s `analytics.view_organization` vidí agregovaná data celé své DO, ale ne jiných organizací.
+5. Provozovatel s `analytics.view_global` vidí cross-tenant agregace pro produktová rozhodnutí.
+</Check>
+
+---
+
+## Souhrnný GATE pro M7
+
+<Checklist>
+- [ ] Regresní sada M1–M6 stále projde
+- [ ] Provozovatel i jednotlivé DO mají datově podložené rozhodování
+- [ ] Anonymizace benchmarkingu ověřena — žádný způsob, jak z UI zjistit data konkrétní jiné organizace
+- [ ] Analytika funguje i bez externí služby (internal_only provider)
+</Checklist>
+
+Pokračuj Milníkem 8 — klientská zóna a externí přístupy.

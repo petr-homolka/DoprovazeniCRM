@@ -1,0 +1,170 @@
+---
+title: "Milník 2: Provozní nezbytnosti"
+description: "Soudní agenda, biologická rodina, krizový management, úkoly, supervize, vzdělávání, dokumentové šablony, notifikace a retenční politika — stále jedna DO, ale plně provozuschopná pro reálnou sociální práci."
+icon: "briefcase-medical"
+---
+
+<Info>
+**Předpoklad:** Milník 1 je v produkčním provozu a splňuje všechny gate podmínky. Tento milník PŘIDÁVÁ funkčnost — žádná fáze M2 nesmí změnit chování existujících tabulek/komponent z M1 jiným způsobem než `ALTER TABLE ADD COLUMN` nebo nové tabulky.
+</Info>
+
+## Co tento milník obsahuje
+
+<CardGroup cols={2}>
+  <Card title="Co JE v M2" icon="check">
+    Soudní agenda, kontakty s biologickou rodinou, krizový management, úkoly a projekty, supervize zaměstnanců, vzdělávání pěstounů, generování PDF dokumentů ze šablon, notifikace (in-app + e-mail), retenční politika.
+  </Card>
+  <Card title="Co NENÍ v M2" icon="circle-xmark">
+    Žádné finance (M3), žádná druhá organizace (M4), žádné externí kalendáře (M5), žádná AI (M6). SMS a push notifikace čekají na M8 (jen in-app a e-mail v M2).
+  </Card>
+</CardGroup>
+
+---
+
+## Fáze 2.1 — Soudní agenda
+
+<Warning>
+Soudní řízení se táhne měsíce i roky, má svá stání, opravné prostředky a nabývá právní moci. Události na timeline (`events`) jen ZOBRAZUJÍ změny — samotná data žijí ve vlastních relačních tabulkách jako kontejnerech.
+</Warning>
+
+Tabulky: `court_cases` (kontejner řízení se spisovou značkou `sp_zn`), `court_hearings` (jednotlivá stání), `court_decisions` (rozhodnutí s `effective_date` = datum nabytí právní moci).
+
+### Nejkritičtější moment: nabytí právní moci
+
+```
+Rozhodnutí s issue_date vyplněným, effective_date prázdným
+  → žluté varování "Rozsudek čeká na vyznačení doložky právní moci"
+Jakmile se effective_date doplní:
+  → stav řízení → closed_final
+  → kritická událost (severity 3) s úkolem "Aktualizujte IPOD a plán kontaktů"
+```
+
+<Check>
+**Acceptance test:** Vytvoření `court_decisions` záznamu bez `effective_date` zobrazí varování v UI. Doplnění `effective_date` automaticky vytvoří úkol v `tasks` (návaznost na Fázi 2.4).
+</Check>
+
+---
+
+## Fáze 2.2 — Kontakty s biologickou rodinou
+
+Třístupňová struktura: **Plán** (`contact_plans` — co je povoleno/nařízeno, vazba na `court_decisions`) → **Harmonogram** (`contact_schedules` — kdy se to stane) → **Supervize** (`contact_supervisions` — jak proběhlo, povinná tři pole: reakce dítěte před/průběh/reakce po).
+
+<Warning>
+Pokus o naplánování formy styku, kterou rozsudek nepovoluje (např. `osobni_neasistovany` když `contact_plans.allowed_forms` obsahuje jen `osobni_asistovany`), vyvolá **soft-blokaci**: žluté varování s odkazem na konkrétní rozsudek, možnost vynuceného uložení s povinným odůvodněním zapsaným do `audit_logs`.
+</Warning>
+
+Neuskutečněné styky (`cancelled_by_bio`, `no_show`...) jsou právně stejně důležité jako uskutečněné — `cancellation_reason` je povinný a pololetně se agreguje do reportu pro OSPOD.
+
+<Check>
+**Acceptance test:** Pokus o naplánování nepovoleného typu styku zobrazí varování, vynucené uložení vyžaduje odůvodnění a zapíše ho do audit logu. Status `no_show` bez vyplněného `cancellation_reason` je odmítnut na úrovni API (400).
+</Check>
+
+---
+
+## Fáze 2.3 — Krizový management
+
+<Danger>
+Krize má začátek, průběh a konec. Vyžaduje vlastní tabulkovou strukturu, která ji **drží otevřenou**, dokud není formálně vyřešena — nesmí se ztratit jako jedna z mnoha položek na timeline.
+</Danger>
+
+`crisis_cases` (typ: útěk dítěte, hospitalizace, zásah policie, domácí násilí, sebepoškozování...) → `crisis_actions` (intervence v reálném čase) → `crisis_resolutions` (povinné vyhodnocení a preventivní opatření před uzavřením).
+
+```
+Vznik krize → status active_escalated → okamžitá notifikace (in-app + e-mail) vedení
+Průběh → více pracovníků přidává záznamy do crisis_actions
+Uzavření → SYSTÉM TVRDĖ VYŽADUJE vyplnění crisis_resolutions, jinak nelze status → resolved_closed
+```
+
+<Check>
+**Acceptance test:** Pokus o změnu `crisis_cases.status` na `resolved_closed` BEZ existujícího záznamu v `crisis_resolutions` je odmítnut databázovým constraintem nebo API validací. Vznik krize vygeneruje notifikaci do 1 minuty.
+</Check>
+
+---
+
+## Fáze 2.4 — Úkoly a projekty
+
+Oddělení od `events`: **Event** je nezměnitelný historický záznam, **Task** je dynamický objekt vyžadující akci s řešitelem a termínem.
+
+Polymorfní vazby (`task_entity_links`) namísto pevných sloupců `household_id`/`person_id` — jeden úkol "Příprava na líčení" může být navázán na soudní případ, rodinu i konkrétní osobu zároveň. Strom max 3 úrovně (Projekt → Úkol → Podúkol), vynuceno triggerem `check_task_nesting_depth()`.
+
+Automatické generování: uzavření dohody → úkol "Zpracovat vstupní IPOD" (30 dní); právní moc rozsudku (Fáze 2.1) → úkol aktualizace plánu kontaktů.
+
+<Check>
+**Acceptance test:** Pokus o vytvoření 4. úrovně zanoření úkolu (podúkol podúkolu podúkolu) vyvolá `RAISE EXCEPTION` z databázového triggeru. Polymorfní vazba na `court_case` i `household` zároveň funguje a úkol se zobrazí v detailu obou entit.
+</Check>
+
+---
+
+## Fáze 2.5 — Supervize zaměstnanců a vzdělávání pěstounů
+
+<Warning>
+Osobní supervizní poznámky (`supervision_notes.is_private = TRUE`) podléhají nejpřísnějšímu RLS — vidí je jen autor a držitel oprávnění `admin.view_audit_logs`. Nikdy se nepropisují do `events` k pěstounským rodinám.
+</Warning>
+
+Vzdělávání pěstounů: dvoukolejný proces (výchovně-vzdělávací povinnost 24 h/rok + finanční transakce při proplácení pobytového školení — propojeno přes `financial_transaction_id`, plně aktivní až po M3). CRON job k 1. říjnu kontroluje minimum 18 hodin, generuje `system_alert` a úkol pro KO při nedostatku.
+
+<Check>
+**Acceptance test:** Pěstoun s 15 hodinami vzdělávání k 1. říjnu vygeneruje kritický úkol pro přidělenou KO. Ředitel vidí supervizní poznámku jiného zaměstnance, KO (bez `admin.view_audit_logs`) ji nevidí.
+</Check>
+
+---
+
+## Fáze 2.6 — Dokumentové šablony (verzované generování PDF)
+
+<Warning>
+Organizace musí upravovat textace dokumentů (IPOD, zpráva pro soud) BEZ zásahu programátora. Každá šablona je verzována (`template_versions` s `valid_from`/`valid_to`), aby šlo vygenerovat historický dokument do šablony platné v daném roce.
+</Warning>
+
+```
+Workflow generování:
+1. Metodik vytvoří novou verzi šablony s proměnnými {{child.first_name}}
+2. KO klikne "Vygenerovat zprávu za 1. pololetí" → systém sesbírá relevantní events
+3. Backend nahradí proměnné, převede na PDF, vypočítá SHA-256, uloží do generated_documents
+```
+
+<Check>
+**Acceptance test:** Vygenerování zprávy podle šablony platné k 1.1.2025 a podle novější verze platné od 1.6.2025 dává různý výstupní text pro stejná data, podle toho, jaké datum reportu se zadá.
+</Check>
+
+---
+
+## Fáze 2.7 — Notifikace (in-app + e-mail, BEZ SMS/push zatím)
+
+<Info>
+Event je historický záznam, Task je práce k vyřešení, Notification je **pomíjivé** upozornění na jedno z předchozích — bezpečně smazatelné po přečtení.
+</Info>
+
+Notification Dispatcher rozlišuje prioritu: urgentní (krize) ignoruje uživatelské preference a jde okamžitě; běžné respektují `user_notification_preferences`; nízká priorita jen in-app zvoneček. Denní souhrn v 7:00 místo spamu přes den, pokud `preferred_daily_summary = TRUE`.
+
+<Note>
+SMS a push mobile kanály existují jako `notification_channel` ENUM hodnoty od M1, ale **implementace odesílání** (Firebase Cloud Messaging, SMS gateway) čeká na M8 — v M2 tyto kanály jen zapisují do `notification_delivery_logs` se statusem `pending` bez reálného doručení, nebo se v UI nenabízí jako volba.
+</Note>
+
+<Check>
+**Acceptance test:** Krizová notifikace dorazí do in-app zvonečku a e-mailem do 1 minuty nezávisle na uživatelských preferencích. Nový dokument s `notify_on_document_upload = FALSE` u příjemce nevygeneruje žádnou notifikaci.
+</Check>
+
+---
+
+## Fáze 2.8 — Retenční politika a GDPR (manuální spouštění)
+
+`retention_policies` definuje pravidla (např. "při uzavření spisu počkej 3650 dní, pak anonymizuj"). V M2 se zpracování spouští **manuálně** administrátorem (UI tlačítko "Zkontrolovat a zpracovat retenční fronta") — automatický noční scheduler přijde až s celkovou stabilizací systému v pozdějším milníku, aby se nezavedlo riziko nekontrolovaného mazání dat v rané fázi provozu.
+
+Anonymizace zachovává statistiky (`first_name` → "ANONYMIZED", `birth_date` → 1. leden daného roku), GDPR výmaz kontroluje neexistenci aktivní finanční transakce před `hard_delete`.
+
+<Check>
+**Acceptance test:** Manuální spuštění retenční kontroly korektně identifikuje záznamy k anonymizaci podle `retention_policies`, ale NEPROVEDE nic bez explicitního potvrzení administrátorem (dry-run režim jako výchozí).
+</Check>
+
+---
+
+## Souhrnný GATE pro M2
+
+<Checklist>
+- [ ] Regresní sada M1 (všechny acceptance testy) stále projde
+- [ ] Soud, krize, úkoly a supervize plně funkční v produkčním prostředí M1
+- [ ] Generování PDF zpráv ověřeno na reálném testovacím případu
+- [ ] Notifikace doručovány spolehlivě (in-app + e-mail)
+</Checklist>
+
+Po splnění: DO reálně pracuje se soudy, krizemi a úkoly v systému, ne v papírových šanonech nebo Excelu. Pokračuj Milníkem 3.

@@ -1,0 +1,122 @@
+---
+title: "Milník 4: Multi-tenancy a SaaS základ"
+description: "Přechod ze samostatné instalace pro jednu DO na skutečný multi-tenant SaaS — pobočky, vlastní role per organizace, tarify a billing, basic branding, migrace dat mezi organizacemi, provozovatelský admin panel."
+icon: "building-columns"
+---
+
+<Warning>
+**Toto je první milník, kde do systému vstupuje DRUHÁ nezávislá organizace.** Vše z M1–M3 bylo navrženo s `organization_id` od počátku, ale teprve zde se to reálně testuje s víc než jedním tenantem v produkci současně. Pokud RLS politiky z M1 mají skrytou chybu, tady se poprvé objeví.
+</Warning>
+
+## Co tento milník obsahuje
+
+<CardGroup cols={2}>
+  <Card title="Co JE v M4" icon="check">
+    Aktivace poboček, custom role per organizace, subscription tiers s feature flags, basic whitelabel (logo+barvy), case transfer mezi organizacemi, provozovatelský cross-tenant admin panel, právní/smluvní evidence (SLA, DPA).
+  </Card>
+  <Card title="Co NENÍ v M4" icon="circle-xmark">
+    Hloubkový whitelabel (font/layout/CSS čeká na M5.5). Google/Microsoft integrace (M5). Živé bankovní API zůstává podmíněno tarifem `tier_custom`, ale implementace je až M9.5.
+  </Card>
+</CardGroup>
+
+---
+
+## Fáze 4.1 — Hierarchie multi-tenancy (aktivace pro 2.+ DO)
+
+Šestistupňová hierarchie: Provozovatel → Organizace → Pobočka → Klíčová osoba → Domácnost → Dítě. `organization_branches` umožňuje sdílet zaměstnance napříč pobočkami, ale omezit jim viditelnost rodin jen na rodiny dané pobočky.
+
+```sql
+CREATE POLICY "Multi-tenant isolation policy"
+ON households FOR ALL
+USING (
+    (organization_id = current_user_org_id())
+    OR (is_system_operator() = TRUE)
+);
+```
+
+<Warning>
+Pokud je uživatel `is_system_operator = TRUE`, RLS mu umožní náhled pro účely podpory, ale **každé takové zobrazení je striktně zaznamenáno** v `audit_logs` — toto musí být ověřeno v acceptance testu, ne jen deklarováno.
+</Warning>
+
+<Check>
+**Acceptance test:** Druhá organizace (Organizace B) se zaregistruje a vytvoří rodinu. Uživatel Organizace A nikdy nevidí žádné záznamy Organizace B v žádném API endpointu ani exportu, i při manipulaci s ID v URL. `is_system_operator` přístup k datům Organizace B vytvoří záznam v audit_logs viditelný v rámci Organizace B (transparentnost).
+</Check>
+
+---
+
+## Fáze 4.2 — Granulární RBAC rozšíření pro custom role
+
+Organizace (Organizace B) si vytvoří vlastní roli "Asistentka" s vybranými oprávněními (`cases.view_assigned`, `documents.upload`), bez `finance.view` — bez nutnosti zásahu programátora.
+
+<Check>
+**Acceptance test:** Nová organizace vytvoří vlastní roli přes UI, přiřadí ji uživateli, a oprávnění se okamžitě promítnou do viditelnosti menu i API odpovědí — bez nasazení nového kódu.
+</Check>
+
+---
+
+## Fáze 4.3 — Subscription tiers a billing
+
+```
+free_trial (7 dní) → tier_1_basic → tier_2_pro → tier_3_ultra → tier_custom
+```
+
+Feature flags (`feature_branding_allowed`, `feature_ai_allowed`, `feature_bank_import_allowed`, `feature_bank_live_api_allowed`...) řídí, co organizace vidí v UI. Limity (`max_households`, `max_ko_users`) se vynucují i na backendu — pokus o vytvoření 21. rodiny při limitu 20 vrací HTTP 402.
+
+### Právní a smluvní vrstva
+
+`organization_legal_agreements` evidují podepsané SLA a zpracovatelské smlouvy (DPA dle GDPR) — architektura M1–M3 (multi-tenancy izolace, audit, export dat) **podpírá** to, co se zde smluvně garantuje, ale toto je evidence smluv samotných, ne vynucovací mechanismus.
+
+<Check>
+**Acceptance test:** Organizace na `tier_1_basic` s `max_households = 20` při pokusu o 21. rodinu dostane HTTP 402 s jasnou zprávou o překročení limitu, frontend zobrazí výzvu k upgradu. Vypršení 7denního trialu uzamkne zápisy (read-only), ale čtení zůstává funkční.
+</Check>
+
+---
+
+## Fáze 4.4 — Whitelabeling HLOUBKA 1 (basic: logo + barvy)
+
+`organizations.brand_colors` JSONB + `logo_url`. Dynamické CSS proměnné injektované do Tailwindu při načtení podle přihlášené organizace.
+
+<Note>
+Toto je ZÁKLADNÍ úroveň. Font, layout šablony a vlastní CSS přichází v M5.5 jako "hloubkový" whitelabel — rozdělení do dvou fází je záměrné, aby základní branding (nejčastěji žádaná funkce) nebyl blokován na komplexnější template systém.
+</Note>
+
+<Check>
+**Acceptance test:** Organizace nahraje vlastní logo a změní primární barvu — změna se projeví v UI bez nutnosti redeploy, a další organizace na systému vidí svůj vlastní (nebo výchozí) branding nezměněný.
+</Check>
+
+---
+
+## Fáze 4.5 — Migrace dat mezi organizacemi (case transfer)
+
+<Warning>
+Převod rodiny z Organizace A do Organizace B NESMÍ být řešen přepsáním `organization_id` — poškodilo by to auditní stopu a ekonomické výkazy zdrojové organizace.
+</Warning>
+
+Tři fáze: **Export** (manifest.json + ZIP zašifrovaný AES-256, zdrojová rodina → `lifecycle_state = termination`) → **Předání** (odkaz platný 7 dní + SMS kód jako heslo) → **Import** (kontrola SHA-256, remapping na NOVÁ UUID, providers se párují podle IČO aby nevznikaly duplicity).
+
+<Check>
+**Acceptance test:** Export rodiny z Organizace A a import do Organizace B zachová kompletní historii `events`, vytvoří nová UUID (ne kolize se zdrojovými), a providers vázané k rodině se spárují s existujícími providery cílové organizace podle IČO, pokud existují, jinak se vytvoří nové.
+</Check>
+
+---
+
+## Fáze 4.6 — Provozovatelský admin panel
+
+Cross-tenant pohled pro `is_system_operator = TRUE`: přehled všech organizací, jejich tarifů, využití limitů, otevřených bezpečnostních findings. Anonymizace při zobrazení detailních dat (jméno dítěte se nezobrazuje provozovateli bez explicitního "podpora" scénáře s auditním zápisem).
+
+<Check>
+**Acceptance test:** Provozovatel vidí seznam všech organizací s agregovanými čísly (počet rodin, aktivní tarif), ale NEVIDÍ jména konkrétních dětí bez aktivace podpůrného režimu, který se zaznamená do audit_logs.
+</Check>
+
+---
+
+## Souhrnný GATE pro M4
+
+<Checklist>
+- [ ] Regresní sada M1–M3 stále projde, NYNÍ testovaná s minimálně 2 organizacemi současně
+- [ ] Druhá nezávislá organizace běží v produkci bez jakékoliv kolize s první
+- [ ] Billing a limity vynucené i na backendu, ne jen v UI
+- [ ] Case transfer ověřen end-to-end mezi dvěma reálnými organizacemi
+</Checklist>
+
+Pokračuj Milníkem 5 — svoboda volby ekosystému (Google/Microsoft/nezávislost).

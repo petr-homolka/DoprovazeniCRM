@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Google+Sans+Text:wght@400;500;700&family=Roboto:wght@400;500;700&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0..1,0&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Google+Sans+Text:wght@400;500;700&family=Roboto:wght@400;500;700&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0..1,0&family=Inter:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 
 @custom-variant dark (&:where(.dark, .dark *));
@@ -118,73 +118,382 @@ body {
 /* ========================================================= */
 
 .theme-yandex, .theme-yandex body {
+  /* Yandex 360 Design Tokens matching claude.doprovazeni.com prototype */
+  --ya-yellow: #FFDB4D; /* prototype yellow */
+  --ya-yellow-hover: #FBCF2E;
+  --ya-bg-global-sidebar: #ffffff; /* White global sidebar in light mode */
+  --ya-bg-sub-sidebar: #ffffff; /* White sub-sidebar in light mode */
+  --ya-bg-main: #FFFFFF;
+  --ya-border-color: #ECECEE; /* prototype border light */
+  
+  /* Textové barvy */
+  --ya-text-primary: #1A1A1A;
+  --ya-text-secondary: #6E7079;
+  --ya-text-muted: #A6A8B0;
+  
+  /* Interaktivní stavy */
+  --ya-item-hover: #F3F3F4; /* prototype hover */
+  --ya-item-active: #EFEFF1; /* prototype active */
+  --ya-accent-blue: #3380FF; /* prototype blue */
+
+  /* Geometrie */
+  --ya-radius-pill: 100px;
+  --ya-radius-base: 16px; /* prototype large radius */
+  --ya-radius-item: 12px; /* prototype medium radius */
+  --ya-font: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+
   /* Font Override */
-  font-family: Arial, Helvetica, sans-serif !important;
-  --font-sans: Arial, Helvetica, sans-serif !important;
+  font-family: var(--ya-font) !important;
+  --font-sans: var(--ya-font) !important;
   --font-mono: Courier, monospace !important;
 
   /* Colors */
-  --background: #f3f4f5; /* Yandex base cool gray 50 */
-  --foreground: #42424b; /* Yandex text cool gray 900 */
-  --card: #ffffff;
-  --border: #e1e3e7; /* Yandex border cool gray 200 */
+  --background: var(--ya-bg-main);
+  --foreground: var(--ya-text-primary);
+  --card: var(--ya-bg-main);
+  --border: var(--ya-border-color);
   
-  --primary-color: #fc0; /* Yandex Yellow */
-  --primary-hover: #f2c200;
+  --primary-color: var(--ya-yellow);
+  --primary-hover: var(--ya-yellow-hover);
   --primary-active: #e6b800;
-  --secondary-color: #edeff0;
+  --secondary-color: var(--ya-bg-sub-sidebar);
 
-  --md-sys-color-primary-container: #fc0;
-  --md-sys-color-on-primary-container: #000000;
-  --md-sys-color-surface-variant: #edeff0;
-  --md-sys-color-outline: #e1e3e7;
+  --md-sys-color-primary-container: var(--ya-yellow);
+  --md-sys-color-on-primary-container: var(--ya-text-primary);
+  --md-sys-color-surface-variant: var(--ya-item-hover);
+  --md-sys-color-outline: var(--ya-border-color);
 
   /* Compact Padding Override & Border Radius Overrides */
-  --radius-full: 6px !important;
-  --radius-3xl: 8px !important;
-  --radius-2xl: 8px !important;
-  --radius-xl: 6px !important;
-  --radius-lg: 6px !important;
-  --radius-md: 4px !important;
-  --radius-sm: 2px !important;
+  --radius-full: var(--ya-radius-pill) !important;
+  --radius-3xl: var(--ya-radius-base) !important;
+  --radius-2xl: var(--ya-radius-base) !important;
+  --radius-xl: var(--ya-radius-item) !important;
+  --radius-lg: var(--ya-radius-item) !important;
+  --radius-md: 8px !important; /* prototype small radius */
+  --radius-sm: 4px !important;
 }
 
-/* Force text on primary yellow buttons/actions to black in Yandex Mode */
-.theme-yandex .bg-primary {
-  background-color: var(--primary-color) !important;
-  color: #000000 !important;
+/* Yandex Layout BEM Classes */
+.theme-yandex.Ya-Layout,
+.theme-yandex .Ya-Layout {
+  display: flex !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  overflow: hidden !important;
+  font-family: var(--ya-font) !important;
+  background-color: var(--ya-bg-main) !important;
+}
+
+.theme-yandex .Ya-Layout__global-sidebar {
+  width: 56px !important;
+  background-color: var(--ya-bg-global-sidebar) !important;
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  padding: 16px 0 !important;
+  flex-shrink: 0 !important;
+  border-right: 1px solid var(--ya-border-color) !important;
+  border-left: none !important;
+  border-top: none !important;
+  border-bottom: none !important;
+  box-shadow: none !important;
+}
+
+.theme-yandex .Ya-Layout__sub-sidebar {
+  width: 240px !important;
+  background-color: var(--ya-bg-sub-sidebar) !important;
+  border-right: 1px solid var(--ya-border-color) !important;
+  padding: 24px 12px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  flex-shrink: 0 !important;
+}
+
+.theme-yandex .Ya-Layout__content {
+  flex: 1 !important;
+  background-color: #F4F4F5 !important; /* Workspace gray background in light mode matching prototype */
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+  position: relative !important;
+  padding: 20px !important;
+  gap: 16px !important;
+  box-sizing: border-box !important;
+}
+
+/* Global Nav Switcher */
+.theme-yandex .Global-Nav {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.theme-yandex .Global-Nav__logo {
+  margin-bottom: 24px !important;
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  height: 40px !important;
+  width: 100% !important;
+}
+
+.theme-yandex .Global-Nav__items {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 12px !important;
+  width: 100% !important;
+  align-items: center !important;
+}
+
+.theme-yandex .Global-Nav__item {
+  width: 44px !important;
+  height: 44px !important;
+  border-radius: var(--ya-radius-item) !important; /* prototype r-md radius */
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  color: var(--ya-text-secondary) !important;
+  cursor: pointer !important;
+  transition: all 0.12s ease !important;
+  position: relative !important;
+}
+
+.theme-yandex .Global-Nav__item:hover {
+  background-color: var(--ya-item-hover) !important;
+  color: var(--ya-text-primary) !important;
+}
+
+.theme-yandex .Global-Nav__item_active {
+  background-color: transparent !important; /* transparent background chip */
+  color: #FF7F4D !important; /* orange active icon */
+}
+.theme-yandex .Global-Nav__item_active::before {
+  content: '' !important;
+  position: absolute !important;
+  left: -6px !important; /* positioned on left edge of switcher */
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  width: 4px !important;
+  height: 22px !important;
+  border-radius: 0 4px 4px 0 !important;
+  background-color: #FF7F4D !important;
+}
+
+.theme-yandex .Global-Nav__footer {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  gap: 16px !important;
+  width: 100% !important;
+}
+
+/* Sub Navigation Sidebar Container */
+.theme-yandex .Sub-Nav {
+  display: flex !important;
+  flex-direction: column !important;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* Yandex Action Button */
+.theme-yandex .Button_view_action {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 8px !important;
+  width: 100% !important;
+  height: 44px !important;
+  background-color: var(--ya-yellow) !important;
+  border: none !important;
+  border-radius: var(--ya-radius-pill) !important;
+  color: var(--ya-text-primary) !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  transition: background-color 0.15s ease !important;
+  margin-bottom: 20px !important;
+  box-shadow: none !important;
+}
+
+.theme-yandex .Button_view_action:hover {
+  background-color: var(--ya-yellow-hover) !important;
+}
+
+/* Yandex Menu Items */
+.theme-yandex .Menu-Group {
+  display: flex !important;
+  flex-direction: column !important;
+  width: 100% !important;
+  gap: 2px !important;
+}
+
+.theme-yandex .Menu-Item {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding: 10px 14px !important;
+  border-radius: var(--ya-radius-item) !important;
+  color: var(--ya-text-primary) !important;
+  font-size: 14px !important;
+  cursor: pointer !important;
+  margin-bottom: 2px !important;
+  transition: background-color 0.1s ease !important;
+  width: 100% !important;
+  background: transparent !important;
+}
+
+.theme-yandex .Menu-Item:hover {
+  background-color: var(--ya-item-hover) !important;
+}
+
+.theme-yandex .Menu-Item_active {
+  background-color: var(--ya-item-active) !important;
   font-weight: 500 !important;
 }
-.theme-yandex .bg-primary * {
-  color: #000000 !important;
+
+.theme-yandex .Menu-Item__text {
+  font-size: 14px !important;
 }
 
-.theme-yandex .hover\:bg-primary\/95:hover {
-  background-color: var(--primary-hover) !important;
+/* Yandex Listing Row Layout */
+.theme-yandex .Listing-Row {
+  display: flex !important;
+  align-items: center !important;
+  padding: 12px 20px !important;
+  border-bottom: 1px solid var(--ya-border-color) !important;
+  position: relative !important;
+  background-color: var(--ya-bg-main) !important;
 }
 
-.theme-yandex .hover\:bg-primary\/90:hover {
-  background-color: var(--primary-hover) !important;
+.theme-yandex .Listing-Row:hover {
+  background-color: var(--ya-bg-sub-sidebar) !important;
 }
 
-.theme-yandex .text-primary {
-  color: #04b !important; /* Yandex royal blue for links and tags */
+.theme-yandex .Listing-Row_active {
+  background-color: var(--ya-item-active) !important;
 }
 
-.theme-yandex .border-primary {
-  border-color: #fc0 !important;
+.theme-yandex .Listing-Row__cell {
+  padding: 0 8px !important;
+  display: block !important;
 }
 
-.theme-yandex .bg-primary\/10 {
-  background-color: rgba(255, 204, 0, 0.15) !important;
+.theme-yandex .Listing-Row__cell_type_checkbox {
+  width: 48px !important;
+  flex-shrink: 0 !important;
+  text-align: center !important;
 }
 
-/* Yandex custom shadows and scrollbars */
+.theme-yandex .Listing-Row__cell_type_star {
+  width: 32px !important;
+  flex-shrink: 0 !important;
+  text-align: center !important;
+}
+
+.theme-yandex .Listing-Row__cell_type_title {
+  flex: 1 !important;
+  color: var(--ya-text-primary) !important;
+  font-weight: 500 !important;
+}
+
+.theme-yandex .Listing-Row__cell_type_status {
+  width: 120px !important;
+  flex-shrink: 0 !important;
+  text-align: right !important;
+}
+
+.theme-yandex .Listing-Row__actions {
+  display: none !important;
+  position: absolute !important;
+  right: 20px !important;
+  background: transparent !important;
+  gap: 8px !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  height: 100% !important;
+  top: 0 !important;
+}
+
+.theme-yandex .Listing-Row:hover .Listing-Row__actions {
+  display: flex !important;
+}
+
+.theme-yandex .Action-Button {
+  background: none !important;
+  border: none !important;
+  cursor: pointer !important;
+  color: var(--ya-text-secondary) !important;
+  padding: 4px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 50% !important;
+  transition: color 0.15s ease !important;
+}
+
+.theme-yandex .Action-Button:hover {
+  color: var(--ya-text-primary) !important;
+  background-color: var(--ya-item-hover) !important;
+}
+
+/* Yandex Typography: Compact & Small */
+.theme-yandex {
+  font-size: 13px !important;
+}
+.theme-yandex .text-sm,
+.theme-yandex table td,
+.theme-yandex table th {
+  font-size: 13px !important;
+}
+.theme-yandex .text-xs {
+  font-size: 11px !important;
+}
+.theme-yandex .text-base {
+  font-size: 13px !important;
+}
+.theme-yandex .text-lg {
+  font-size: 14px !important;
+}
+.theme-yandex .text-xl {
+  font-size: 15px !important;
+}
+.theme-yandex .text-2xl {
+  font-size: 17px !important;
+}
+
+/* Force flat design by overriding corner radius to 8px max (except full for buttons/avatars) */
+.theme-yandex .rounded-3xl,
+.theme-yandex .rounded-2xl,
+.theme-yandex .rounded-xl,
+.theme-yandex .rounded-lg {
+  border-radius: 8px !important;
+}
+
+.theme-yandex .rounded-md {
+  border-radius: 4px !important;
+}
+
+/* Strip all shadows to achieve Yandex's extremely flat layout */
 .theme-yandex .shadow-sm,
 .theme-yandex .shadow-md,
 .theme-yandex .shadow-xs,
-.theme-yandex .shadow-xl {
-  box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05), 0 1px 3px 0 rgba(0,0,0,0.08) !important;
+.theme-yandex .shadow-lg,
+.theme-yandex .shadow-xl,
+.theme-yandex .shadow-2xl,
+.theme-yandex .shadow {
+  box-shadow: none !important;
+}
+
+/* Add custom subtle shadow for modals only */
+.theme-yandex div[role="dialog"],
+.theme-yandex .dialog-content {
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15) !important;
+  border: 1px solid #cbd0d5 !important;
 }
 
 /* Clean compact inputs */
@@ -196,25 +505,813 @@ body {
   font-size: 13px !important;
   border-radius: 6px !important;
   border-color: #cbd0d5 !important;
+  background-color: #ffffff !important;
+  color: #333333 !important;
 }
 
+.theme-yandex input[type="text"]:focus,
+.theme-yandex input[type="email"]:focus,
+.theme-yandex input[type="password"]:focus,
+.theme-yandex textarea:focus,
+.theme-yandex select:focus {
+  border-color: #fc0 !important;
+  box-shadow: 0 0 0 1px #fc0 !important;
+}
 
+/* Yandex Flat Table Design */
+.theme-yandex table {
+  background-color: #ffffff !important;
+  border-collapse: collapse !important;
+  width: 100% !important;
+}
+
+.theme-yandex table thead tr {
+  border-bottom: 1.5px solid #e1e3e7 !important;
+  background-color: #ffffff !important;
+}
+
+.theme-yandex table thead th {
+  color: #7f7f7f !important;
+  font-weight: 500 !important;
+  padding: 8px 12px !important;
+}
+
+.theme-yandex table tbody tr {
+  border-bottom: 1px solid #e1e3e7 !important;
+  background-color: #ffffff !important;
+  transition: background-color 0.1s ease !important;
+}
+
+.theme-yandex table tbody tr:hover {
+  background-color: #edeff0 !important; /* Yandex hover light gray */
+}
+
+.theme-yandex table tbody td {
+  padding: 8px 12px !important;
+  color: #333333 !important;
+  vertical-align: middle !important;
+}
+
+/* Black text/links inside tables, except tags */
+.theme-yandex table td a,
+.theme-yandex table td .text-primary,
+.theme-yandex table td .text-primary-hover {
+  color: #333333 !important;
+}
+
+.theme-yandex table td a:hover,
+.theme-yandex table td .text-primary:hover,
+.theme-yandex table td .text-primary-hover:hover {
+  color: #04b !important; /* Turns blue on hover with underline */
+  text-decoration: underline !important;
+}
+
+/* Layout container background colors for flat Yandex look */
+.theme-yandex section.bg-background,
+.theme-yandex div.bg-background {
+  background-color: #ffffff !important;
+}
+
+.theme-yandex header.bg-background {
+  background-color: #ffffff !important;
+  border-bottom: 1px solid #e1e3e7 !important;
+}
+
+/* Sidebar aside background - very light gray */
+.theme-yandex aside.bg-card,
+.theme-yandex div.bg-card.w-64 {
+  background-color: #f6f6f6 !important;
+  border-right: 1px solid #e1e3e7 !important;
+}
+
+/* Contact detail card right drawer - flat white/dark */
+.theme-yandex div.bg-card.shrink-0 {
+  background-color: #ffffff !important;
+}
+
+.theme-yandex div.bg-slate-50\/50,
+.theme-yandex div.bg-slate-50\/30 {
+  background-color: #ffffff !important;
+}
+
+/* Yandex Search Box styling */
+.theme-yandex .Search-Box {
+  display: flex !important;
+  align-items: center !important;
+  background-color: #ffffff !important; /* prototype search background */
+  border-radius: var(--ya-radius-item) !important; /* prototype rounded-md (12px) */
+  padding: 8px 14px !important;
+  width: 100% !important;
+  transition: all 0.2s ease !important;
+  border: 1px solid var(--ya-border-color) !important;
+}
+.theme-yandex .Search-Box:focus-within {
+  background-color: #ffffff !important;
+  border-color: var(--ya-accent-blue) !important;
+  box-shadow: 0 0 0 1px var(--ya-accent-blue) !important;
+}
+
+/* Yandex Pill Shapes for buttons & selects */
+.theme-yandex .bg-primary {
+  background-color: var(--primary-color) !important;
+  color: #1A1A1A !important; /* prototype dark text */
+  font-weight: 600 !important;
+  border-radius: 9999px !important; /* Force pill shape */
+  border: none !important;
+  box-shadow: none !important;
+}
+.theme-yandex select,
+.theme-yandex button:not(.bg-primary):not(.bg-transparent):not(.Global-Nav__item):not(.Action-Button):not(.p-1) {
+  background-color: var(--ya-item-hover) !important; /* prototype hover gray */
+  color: var(--ya-text-primary) !important;
+  border: none !important;
+  box-shadow: none !important;
+  border-radius: 9999px !important;
+  padding: 6px 14px !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  cursor: pointer !important;
+  transition: background-color 0.1s ease !important;
+}
+.theme-yandex select {
+  padding-right: 28px !important;
+}
+.theme-yandex button:not(.bg-primary):not(.bg-transparent):not(.Global-Nav__item):not(.Action-Button):not(.p-1):hover {
+  background-color: var(--ya-item-active) !important;
+}
+
+/* Custom Checkbox Styling matching prototype */
+.theme-yandex input[type="checkbox"] {
+  appearance: none !important;
+  width: 18px !important;
+  height: 18px !important;
+  border: 2px solid var(--ya-border-color) !important;
+  border-radius: 5px !important;
+  background-color: #ffffff !important;
+  cursor: pointer !important;
+  display: inline-grid !important;
+  place-items: center !important;
+  position: relative !important;
+  transition: all 0.1s ease !important;
+}
+.theme-yandex input[type="checkbox"]:checked {
+  background-color: var(--ya-accent-blue) !important; /* Blue checkbox active */
+  border-color: var(--ya-accent-blue) !important;
+}
+.theme-yandex input[type="checkbox"]:checked::after {
+  content: "" !important;
+  position: absolute !important;
+  width: 5px !important;
+  height: 10px !important;
+  border: solid #ffffff !important;
+  border-width: 0 2px 2px 0 !important;
+  transform: rotate(45deg) !important;
+  top: 1px !important;
+  left: 5px !important;
+}
+
+/* Selected row styling matching prototype */
+.theme-yandex tr.Listing-Row:has(input[type="checkbox"]:checked) {
+  background-color: #EEF4FF !important; /* prototype checked row background */
+}
+.theme-yandex tr.Listing-Row:has(input[type="checkbox"]:checked):hover {
+  background-color: #E6EFFF !important;
+}
+
+/* Custom care type colors matching prototype */
+.theme-yandex .bg-sky-50 {
+  background-color: rgba(51, 128, 255, 0.1) !important;
+  color: #3380FF !important;
+  border-color: rgba(51, 128, 255, 0.2) !important;
+}
+.theme-yandex .bg-purple-50 {
+  background-color: rgba(255, 127, 77, 0.1) !important;
+  color: #FF7F4D !important;
+  border-color: rgba(255, 127, 77, 0.2) !important;
+}
+.theme-yandex .bg-amber-50 {
+  background-color: rgba(34, 197, 94, 0.1) !important;
+  color: #22C55E !important;
+  border-color: rgba(34, 197, 94, 0.2) !important;
+}
+
+/* Custom status colors matching prototype */
+.theme-yandex .bg-emerald-50 {
+  background-color: #E7F8EE !important;
+  color: #15914B !important;
+  border-color: #c3ebd4 !important;
+}
+.theme-yandex .bg-orange-50 {
+  background-color: #FFF3E0 !important;
+  color: #B7791F !important;
+  border-color: #f7e3c1 !important;
+}
+.theme-yandex .bg-slate-100 {
+  background-color: #f1f3f4 !important;
+  color: #5f6368 !important;
+  border-color: #e8eaed !important;
+}
+.theme-yandex .bg-red-50,
+.theme-yandex .bg-rose-50 {
+  background-color: #FDECEA !important;
+  color: #D43A28 !important;
+  border-color: #f9d2ce !important;
+}
+.theme-yandex .bg-blue-50 {
+  background-color: #EEF4FF !important;
+  color: #3380FF !important;
+  border-color: #dbe7ff !important;
+}
+
+/* Float Detail Drawer cards */
+.theme-yandex .Ya-Layout__content div.absolute.top-0.bottom-0.right-0.bg-card {
+  top: 20px !important;
+  bottom: 20px !important;
+  right: 20px !important;
+  height: calc(100% - 40px) !important;
+  border-radius: 16px !important;
+  background-color: #ffffff !important;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.08) !important; /* prototype shadow pop */
+  border: 1px solid var(--ya-border-color) !important;
+}
+.theme-yandex .Ya-Layout__content div.absolute.top-0.bottom-0.cursor-col-resize {
+  top: 20px !important;
+  bottom: 20px !important;
+  margin-right: 20px !important;
+}
+
+/* Floating behavior for right widgets drawer (Calendar/Keep) */
+.theme-yandex div.w-80.border-l.border-border-custom.bg-card {
+  border-left: none !important;
+  background-color: #ffffff !important;
+  border-radius: 16px !important; /* prototype rounded-lg */
+  box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 4px 16px rgba(0,0,0,.04) !important; /* prototype shadow card */
+  margin-left: 16px !important;
+}
+.theme-yandex div.w-80.border-l.border-border-custom.bg-card > div.border-b {
+  background-color: transparent !important;
+  border-bottom: 1px solid var(--ya-border-color) !important;
+}
+
+/* Card lists inside absolute detail panels */
+.theme-yandex div.absolute.top-0.bottom-0.right-0.bg-card div.rounded-3xl {
+  background-color: transparent !important;
+  border-top: none !important;
+  border-left: none !important;
+  border-right: none !important;
+  border-bottom: 1px solid var(--ya-border-color) !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+/* Group headers matching prototype */
+.theme-yandex .group-head {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  font-weight: 700 !important;
+  color: var(--ya-text-primary) !important;
+  font-size: 14px !important;
+  padding: 16px 4px 8px !important;
+}
+.theme-yandex .group-head .pill {
+  background-color: var(--ya-item-active) !important;
+  color: var(--ya-text-secondary) !important;
+  border-radius: 100px !important;
+  padding: 2px 9px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+}
+
+/* Sentence case styling */
+.theme-yandex .uppercase,
+.theme-yandex th,
+.theme-yandex label {
+  text-transform: none !important;
+  letter-spacing: normal !important;
+}
+
+/* Right App Switcher Rail BEM styles */
+.theme-yandex .Ya-Layout__right-sidebar {
+  width: 56px !important;
+  background-color: var(--ya-bg-global-sidebar) !important;
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  padding: 16px 0 !important;
+  flex-shrink: 0 !important;
+  border-left: 1px solid var(--ya-border-color) !important;
+  box-shadow: none !important;
+}
+.theme-yandex .Ya-Layout__right-sidebar button {
+  width: 44px !important;
+  height: 44px !important;
+  border-radius: var(--ya-radius-item) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  color: var(--ya-text-secondary) !important;
+  background-color: transparent !important;
+  transition: all 0.12s ease !important;
+  border: none !important;
+}
+.theme-yandex .Ya-Layout__right-sidebar button:hover {
+  background-color: var(--ya-item-hover) !important;
+  color: var(--ya-text-primary) !important;
+}
+.theme-yandex .Ya-Layout__right-sidebar button.bg-\[\#c2e7ff\] {
+  background-color: transparent !important;
+  color: #FF7F4D !important;
+}
+.theme-yandex .Ya-Layout__right-sidebar button.bg-\[\#c2e7ff\]::after {
+  content: '' !important;
+  position: absolute !important;
+  right: -6px !important; /* positioned on right edge of switcher */
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  width: 4px !important;
+  height: 22px !important;
+  border-radius: 4px 0 0 4px !important;
+  background-color: #FF7F4D !important;
+}
 
 /* Yandex Dark Mode Overrides */
 .dark.theme-yandex, .dark .theme-yandex {
   --background: #1b1c20;
   --foreground: #e3e4e6;
-  --card: #232429;
-  --border: #33353c;
+  --card: #1b1c20;
+  --border: #2b2c31;
   --secondary-color: #2b2c31;
   --primary-color: #fc0;
   --primary-hover: #ffd633;
+  --ya-bg-global-sidebar: #1A1A1C;
 }
 
-/* Force dark theme icons/text color adjustment in Yandex mode */
-.dark.theme-yandex .text-muted, .dark .theme-yandex .text-muted {
+.dark.theme-yandex .Ya-Layout__sub-sidebar,
+.dark .theme-yandex .Ya-Layout__sub-sidebar {
+  background-color: #232429 !important;
+  border-right: 1px solid #2b2c31 !important;
+}
+
+.dark.theme-yandex .Global-Nav__item,
+.dark .theme-yandex .Global-Nav__item {
+  color: #979799 !important;
+}
+.dark.theme-yandex .Global-Nav__item:hover,
+.dark .theme-yandex .Global-Nav__item:hover {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+  color: #ffffff !important;
+}
+.dark.theme-yandex .Global-Nav__item_active,
+.dark .theme-yandex .Global-Nav__item_active {
+  background-color: transparent !important;
+  color: #FF7F4D !important;
+}
+.dark.theme-yandex .Global-Nav__item_active::before,
+.dark .theme-yandex .Global-Nav__item_active::before {
+  background-color: #FF7F4D !important;
+}
+
+.dark.theme-yandex .Ya-Layout__right-sidebar,
+.dark .theme-yandex .Ya-Layout__right-sidebar {
+  background-color: #1a1a1c !important;
+  border-left: 1px solid #2b2c31 !important;
+}
+.dark.theme-yandex .Ya-Layout__right-sidebar button,
+.dark .theme-yandex .Ya-Layout__right-sidebar button {
+  color: #979799 !important;
+}
+.dark.theme-yandex .Ya-Layout__right-sidebar button:hover,
+.dark .theme-yandex .Ya-Layout__right-sidebar button:hover {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+  color: #ffffff !important;
+}
+.dark.theme-yandex .Ya-Layout__right-sidebar button.bg-\[\#c2e7ff\],
+.dark .theme-yandex .Ya-Layout__right-sidebar button.bg-\[\#c2e7ff\] {
+  background-color: transparent !important;
+  color: #FF7F4D !important;
+}
+.dark.theme-yandex .Ya-Layout__right-sidebar button.bg-\[\#c2e7ff\]::after,
+.dark .theme-yandex .Ya-Layout__right-sidebar button.bg-\[\#c2e7ff\]::after {
+  background-color: #FF7F4D !important;
+}
+
+.dark.theme-yandex .Search-Box,
+.dark .theme-yandex .Search-Box {
+  background-color: #2b2c31 !important;
+  border-color: #3f4248 !important;
+}
+.dark.theme-yandex .Search-Box:focus-within,
+.dark .theme-yandex .Search-Box:focus-within {
+  background-color: #1b1c20 !important;
+  border-color: var(--ya-accent-blue) !important;
+  box-shadow: 0 0 0 1px var(--ya-accent-blue) !important;
+}
+
+.dark.theme-yandex select,
+.dark.theme-yandex button:not(.bg-primary):not(.bg-transparent):not(.Global-Nav__item):not(.Action-Button):not(.p-1),
+.dark .theme-yandex select,
+.dark .theme-yandex button:not(.bg-primary):not(.bg-transparent):not(.Global-Nav__item):not(.Action-Button):not(.p-1) {
+  background-color: #2b2c31 !important;
+  color: #e3e4e6 !important;
+  border: none !important;
+}
+.dark.theme-yandex button:not(.bg-primary):not(.bg-transparent):not(.Global-Nav__item):not(.Action-Button):not(.p-1):hover,
+.dark .theme-yandex button:not(.bg-primary):not(.bg-transparent):not(.Global-Nav__item):not(.Action-Button):not(.p-1):hover {
+  background-color: #35363c !important;
+}
+
+.dark.theme-yandex input[type="checkbox"],
+.dark .theme-yandex input[type="checkbox"] {
+  border-color: #3f4248 !important;
+  background-color: #1b1c20 !important;
+}
+
+.dark.theme-yandex tr.Listing-Row:has(input[type="checkbox"]:checked),
+.dark .theme-yandex tr.Listing-Row:has(input[type="checkbox"]:checked) {
+  background-color: #1e293b !important;
+}
+.dark.theme-yandex tr.Listing-Row:has(input[type="checkbox"]:checked):hover,
+.dark .theme-yandex tr.Listing-Row:has(input[type="checkbox"]:checked):hover {
+  background-color: #23354f !important;
+}
+
+/* Dark mode for care types */
+.dark.theme-yandex .bg-sky-50,
+.dark .theme-yandex .bg-sky-50 {
+  background-color: rgba(51, 128, 255, 0.15) !important;
+  color: #8ab4f8 !important;
+  border-color: rgba(51, 128, 255, 0.3) !important;
+}
+.dark.theme-yandex .bg-purple-50,
+.dark .theme-yandex .bg-purple-50 {
+  background-color: rgba(255, 127, 77, 0.15) !important;
+  color: #f89c52 !important;
+  border-color: rgba(255, 127, 77, 0.3) !important;
+}
+.dark.theme-yandex .bg-amber-50,
+.dark .theme-yandex .bg-amber-50 {
+  background-color: rgba(34, 197, 94, 0.15) !important;
+  color: #52c48a !important;
+  border-color: rgba(34, 197, 94, 0.3) !important;
+}
+
+/* Dark mode statuses */
+.dark.theme-yandex .bg-emerald-50,
+.dark .theme-yandex .bg-emerald-50 {
+  background-color: rgba(21, 145, 75, 0.15) !important;
+  color: #52c48a !important;
+  border-color: rgba(21, 145, 75, 0.3) !important;
+}
+.dark.theme-yandex .bg-orange-50,
+.dark .theme-yandex .bg-orange-50 {
+  background-color: rgba(183, 121, 31, 0.15) !important;
+  color: #f89c52 !important;
+  border-color: rgba(183, 121, 31, 0.3) !important;
+}
+.dark.theme-yandex .bg-slate-100,
+.dark .theme-yandex .bg-slate-100 {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+  color: #a6a8b0 !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+.dark.theme-yandex .bg-red-50,
+.dark.theme-yandex .bg-rose-50,
+.dark .theme-yandex .bg-red-50,
+.dark .theme-yandex .bg-rose-50 {
+  background-color: rgba(212, 58, 40, 0.15) !important;
+  color: #f88a7e !important;
+  border-color: rgba(212, 58, 40, 0.3) !important;
+}
+.dark.theme-yandex .bg-blue-50,
+.dark .theme-yandex .bg-blue-50 {
+  background-color: rgba(51, 128, 255, 0.15) !important;
+  color: #8ab4f8 !important;
+  border-color: rgba(51, 128, 255, 0.3) !important;
+}
+
+.dark.theme-yandex .Ya-Layout__content div.absolute.top-0.bottom-0.right-0.bg-card,
+.dark .theme-yandex .Ya-Layout__content div.absolute.top-0.bottom-0.right-0.bg-card {
+  background-color: #1b1c20 !important;
+  box-shadow: 0 4px 32px rgba(0,0,0,0.3) !important;
+  border: 1px solid #2b2c31 !important;
+}
+
+.dark.theme-yandex div.w-80.border-l.border-border-custom.bg-card,
+.dark .theme-yandex div.w-80.border-l.border-border-custom.bg-card {
+  background-color: #1b1c20 !important;
+}
+.dark.theme-yandex div.w-80.border-l.border-border-custom.bg-card > div.border-b,
+.dark .theme-yandex div.w-80.border-l.border-border-custom.bg-card > div.border-b {
+  border-bottom: 1px solid #2b2c31 !important;
+}
+
+.dark.theme-yandex div.absolute.top-0.bottom-0.right-0.bg-card div.rounded-3xl,
+.dark .theme-yandex div.absolute.top-0.bottom-0.right-0.bg-card div.rounded-3xl {
+  border-bottom: 1px solid #2b2c31 !important;
+}
+
+.dark.theme-yandex table,
+.dark.theme-yandex table thead tr,
+.dark.theme-yandex table tbody tr,
+.dark.theme-yandex section.bg-background,
+.dark.theme-yandex div.bg-background,
+.dark.theme-yandex header.bg-background,
+.dark.theme-yandex div.bg-card.shrink-0,
+.dark.theme-yandex div.bg-slate-50\/50,
+.dark.theme-yandex div.bg-slate-50\/30 {
+  background-color: #1b1c20 !important;
+}
+
+.dark.theme-yandex table tbody tr:hover {
+  background-color: #2b2c31 !important;
+}
+
+.dark.theme-yandex table thead tr {
+  border-bottom: 1.5px solid #2b2c31 !important;
+}
+
+.dark.theme-yandex table tbody tr {
+  border-bottom: 1px solid #2b2c31 !important;
+}
+
+.dark.theme-yandex table thead th {
   color: #909399 !important;
 }
-.dark.theme-yandex .bg-slate-50\/30, .dark .theme-yandex .bg-slate-50\/30 {
-  background-color: rgba(255, 255, 255, 0.02) !important;
+
+.dark.theme-yandex table td,
+.dark.theme-yandex table td a,
+.dark.theme-yandex table td .text-primary {
+  color: #e3e4e6 !important;
+}
+
+.dark.theme-yandex table td a:hover,
+.dark.theme-yandex table td .text-primary:hover {
+  color: #8ab4f8 !important;
+}
+
+.dark.theme-yandex aside.bg-card,
+.dark.theme-yandex div.bg-card.w-64 {
+  background-color: #232429 !important;
+  border-right: 1px solid #2b2c31 !important;
+}
+
+.dark.theme-yandex input[type="text"],
+.dark.theme-yandex input[type="email"],
+.dark.theme-yandex input[type="password"],
+.dark.theme-yandex textarea,
+.dark.theme-yandex select {
+  background-color: #2b2c31 !important;
+  color: #e3e4e6 !important;
+  border-color: #3f4248 !important;
+}
+
+.dark.theme-yandex input[type="text"]:focus,
+.dark.theme-yandex input[type="email"]:focus,
+.dark.theme-yandex input[type="password"]:focus,
+.dark.theme-yandex textarea:focus,
+.dark.theme-yandex select:focus {
+  border-color: #fc0 !important;
+  box-shadow: 0 0 0 1px #fc0 !important;
+}
+
+.dark.theme-yandex .text-muted {
+  color: #909399 !important;
+}
+
+/* ============================================================
+   YANDEX 360 – DOPLŇKOVÉ OPRAVY (přesná replika prototypu)
+   ============================================================ */
+
+/* Menu-Item ikona – definice chybějící třídy */
+.theme-yandex .Menu-Item__icon {
+  flex-shrink: 0 !important;
+  color: var(--ya-text-secondary) !important;
+}
+.theme-yandex .Menu-Item_active .Menu-Item__icon {
+  color: var(--ya-text-primary) !important;
+}
+
+/* Počítadla/badge v sub-sidebaru – přepsání Tailwind bg-gray-200 */
+.theme-yandex .Ya-Layout__sub-sidebar span.bg-gray-200,
+.theme-yandex .Ya-Layout__sub-sidebar span.rounded-full {
+  background-color: transparent !important;
+  color: var(--ya-text-secondary) !important;
+  font-size: 12px !important;
+  font-weight: 400 !important;
+  padding: 0 !important;
+}
+
+/* Výchozí badge počtu ve filtrovacím sidebaru */
+.theme-yandex .Menu-Item .text-xs {
+  color: var(--ya-text-muted) !important;
+  background-color: transparent !important;
+  font-weight: 400 !important;
+}
+
+/* Nadpisy sekcí v sub-sidebaru (Stavy rodin, Typy péče) */
+.theme-yandex .Ya-Layout__sub-sidebar h4 {
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  color: var(--ya-text-muted) !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.04em !important;
+}
+
+/* Button (alias pro Button_view_action) */
+.theme-yandex .Button {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 8px !important;
+  width: 100% !important;
+  height: 44px !important;
+  background-color: var(--ya-yellow) !important;
+  border: none !important;
+  border-radius: var(--ya-radius-pill) !important;
+  color: var(--ya-text-primary) !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  transition: background-color 0.15s ease !important;
+  box-shadow: none !important;
+}
+.theme-yandex .Button:hover {
+  background-color: var(--ya-yellow-hover) !important;
+}
+
+/* Tabulka jako floating card (white card s border-radius) */
+.theme-yandex table {
+  border-radius: var(--ya-radius-lg, 16px) !important;
+  overflow: hidden !important;
+}
+.theme-yandex section.bg-background > div > table,
+.theme-yandex .Ya-Layout__content table {
+  box-shadow: var(--shadow-card, 0 1px 2px rgba(0,0,0,.04), 0 4px 16px rgba(0,0,0,.04)) !important;
+}
+
+/* Workspace header — přidat card shadow při scroll */
+.theme-yandex .Ya-Layout__content header.bg-background {
+  border-radius: var(--ya-radius-lg, 16px) !important;
+  border: 1px solid var(--ya-border-color) !important;
+  border-bottom: 1px solid var(--ya-border-color) !important;
+  box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 4px 16px rgba(0,0,0,.04) !important;
+  position: relative !important;
+  z-index: 5 !important;
+}
+
+/* Workspace sekce kontaktů — card wrapper */
+.theme-yandex .Ya-Layout__content section.bg-background {
+  border-radius: var(--ya-radius-lg, 16px) !important;
+  overflow: hidden !important;
+  box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 4px 16px rgba(0,0,0,.04) !important;
+  background-color: var(--ya-bg-main) !important;
+}
+
+/* Toolbar nad tabulkou — flat */
+.theme-yandex .Ya-Layout__content section.bg-background > div.border-b {
+  border-bottom: 1px solid var(--ya-border-color) !important;
+  background-color: var(--ya-bg-main) !important;
+}
+
+/* Overlay drawer resize handle lepší zobrazení */
+.theme-yandex .Ya-Layout__content div.absolute.top-0.bottom-0.cursor-col-resize:hover {
+  background-color: var(--ya-accent-blue) !important;
+  opacity: 0.4 !important;
+}
+
+/* Hover efekt na filtrovacích položkách v sidebaru */
+.theme-yandex .Ya-Layout__sub-sidebar label {
+  border-radius: var(--ya-radius-item) !important;
+  transition: background-color 0.1s ease !important;
+}
+.theme-yandex .Ya-Layout__sub-sidebar label:hover {
+  background-color: var(--ya-item-hover) !important;
+}
+
+/* Oddělovač sekcí v sidebaru */
+.theme-yandex .Ya-Layout__sub-sidebar .border-t {
+  border-top: 1px solid var(--ya-border-color) !important;
+}
+
+/* Dark mode – Menu-Item ikona */
+.dark.theme-yandex .Menu-Item__icon,
+.dark .theme-yandex .Menu-Item__icon {
+  color: #979799 !important;
+}
+.dark.theme-yandex .Menu-Item_active .Menu-Item__icon,
+.dark .theme-yandex .Menu-Item_active .Menu-Item__icon {
+  color: #e3e4e6 !important;
+}
+
+/* Dark mode – Badge v sidebaru */
+.dark.theme-yandex .Ya-Layout__sub-sidebar span.bg-gray-200,
+.dark .theme-yandex .Ya-Layout__sub-sidebar span.bg-gray-200 {
+  background-color: transparent !important;
+  color: #6e7079 !important;
+}
+
+/* Dark mode – Tabulka jako card */
+.dark.theme-yandex section.bg-background,
+.dark.theme-yandex .Ya-Layout__content section.bg-background {
+  box-shadow: 0 1px 2px rgba(0,0,0,.2), 0 4px 16px rgba(0,0,0,.2) !important;
+}
+
+/* Dark mode – Workspace header card */
+.dark.theme-yandex .Ya-Layout__content header.bg-background {
+  border-color: #2b2c31 !important;
+  box-shadow: 0 1px 2px rgba(0,0,0,.2), 0 4px 16px rgba(0,0,0,.2) !important;
+}
+
+/* Dark mode – Button alias */
+.dark.theme-yandex .Button,
+.dark .theme-yandex .Button {
+  background-color: #fc0 !important;
+  color: #1a1a1a !important;
+}
+.dark.theme-yandex .Button:hover,
+.dark .theme-yandex .Button:hover {
+  background-color: #ffd633 !important;
+}
+
+/* Tab buttony v detail draweru – sentence case (žádný uppercase) */
+.theme-yandex div.absolute.top-0.bottom-0.right-0.bg-card button.uppercase,
+.theme-yandex div.absolute.top-0.bottom-0.right-0.bg-card button[class*="uppercase"],
+.theme-yandex div.absolute.top-0.bottom-0.right-0.bg-card button[class*="tracking-wider"] {
+  text-transform: none !important;
+  letter-spacing: normal !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+}
+
+/* Aktivní tab v draweru – yandex accent yellow místo primary modré */
+.theme-yandex div.absolute.top-0.bottom-0.right-0.bg-card button.border-primary {
+  border-bottom-color: var(--ya-accent-blue) !important;
+  color: var(--ya-accent-blue) !important;
+}
+
+/* Header draweru */
+.theme-yandex div.absolute.top-0.bottom-0.right-0.bg-card > div.border-b {
+  border-bottom: 1px solid var(--ya-border-color) !important;
+  padding: 20px 24px !important;
+}
+
+/* Body draweru – světlé pozadí */
+.theme-yandex div.absolute.top-0.bottom-0.right-0.bg-card div.bg-slate-50\/50 {
+  background-color: #F4F4F5 !important;
+}
+
+/* Dark mode pro tab buttons v draweru */
+.dark.theme-yandex div.absolute.top-0.bottom-0.right-0.bg-card button.border-primary {
+  border-bottom-color: var(--ya-accent-blue) !important;
+  color: var(--ya-accent-blue) !important;
+}
+
+/* ============================================================
+   DETAIL PANEL (DRAWER) – Tlačítka v headeru
+   ============================================================ */
+
+/* Primární akční tlačítko "Upravit" v headeru draweru */
+.theme-yandex div.absolute.top-0.bottom-0.right-0.bg-card button.bg-primary {
+  background-color: var(--ya-yellow) !important;
+  color: var(--ya-text-primary) !important;
+  border-radius: var(--ya-radius-item) !important;
+  box-shadow: none !important;
+  font-weight: 600 !important;
+}
+.theme-yandex div.absolute.top-0.bottom-0.right-0.bg-card button.bg-primary:hover {
+  background-color: var(--ya-yellow-hover) !important;
+}
+
+/* Sekundární tlačítko "Export" v headeru draweru */
+.theme-yandex div.absolute.top-0.bottom-0.right-0.bg-card > div.border-b button.bg-background {
+  background-color: var(--ya-item-hover) !important;
+  border: none !important;
+  border-radius: var(--ya-radius-item) !important;
+  color: var(--ya-text-primary) !important;
+}
+.theme-yandex div.absolute.top-0.bottom-0.right-0.bg-card > div.border-b button.bg-background:hover {
+  background-color: var(--ya-item-active) !important;
+}
+
+/* Dark mode – Primární tlačítko v draweru */
+.dark.theme-yandex div.absolute.top-0.bottom-0.right-0.bg-card button.bg-primary {
+  background-color: #fc0 !important;
+  color: #1a1a1a !important;
+}
+
+/* ============================================================
+   TABULKOVÝ HEADER SLOUPEC – Sorting ikony
+   ============================================================ */
+
+/* Sorting ikonka v tabulce */
+.theme-yandex table thead th button,
+.theme-yandex table thead th svg {
+  color: var(--ya-text-secondary) !important;
+}
+.theme-yandex table thead th:hover {
+  color: var(--ya-text-primary) !important;
 }

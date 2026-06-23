@@ -1,0 +1,137 @@
+---
+title: "Fáze 0: Briefing pro AI programátora"
+description: "Technický start projektu před Milníkem 1 — tech stack, .env, pravidla chování při nejistotě, repo struktura."
+icon: "rocket"
+---
+
+<Info>
+Tento dokument je určen jako PRVNÍ kontext předaný AI programátorovi (Claude Code, Google Antigravity). Neobsahuje byznys logiku (ta je v jednotlivých milníkových dokumentech) — řeší jen technický start a pravidla práce.
+</Info>
+
+## Soubory, které k tomuto briefingu patří
+
+- `schema.sql` — spustit v Supabase SQL Editoru jako první, jedním během
+- `seed.sql` — spustit hned po schema.sql
+- Milníkové dokumenty (`milnik_01_zaklad.mdx` až `milnik_10_dlouhovekost.mdx`) — krmit AGENTOVI POSTUPNĖ, jeden milník v jednu chvíli, NIKDY všech 10 najednou
+
+## Tech stack — pevné verze
+
+<CodeGroup>
+```json package.json
+{
+  "name": "fosterflow",
+  "engines": { "node": ">=20.0.0" },
+  "dependencies": {
+    "next": "^14.2.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "@supabase/supabase-js": "^2.45.0",
+    "@supabase/ssr": "^0.5.0",
+    "tailwindcss": "^3.4.0",
+    "lucide-react": "^0.400.0",
+    "ajv": "^8.17.0",
+    "zod": "^3.23.0",
+    "@tiptap/react": "^2.5.0",
+    "@tiptap/starter-kit": "^2.5.0",
+    "next-pwa": "^5.6.0",
+    "date-fns": "^3.6.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "@types/node": "^20.14.0",
+    "@types/react": "^18.3.0",
+    "@axe-core/playwright": "^4.9.0"
+  }
+}
+```
+
+```bash .env.example
+# Supabase
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+
+# Aplikace
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+NODE_ENV=development
+
+# Observabilita (M1.11) - volitelné, fallback na interní error_logs
+ERROR_TRACKING_PROVIDER=internal
+SENTRY_DSN=
+
+# Provider integrace - VYPLŇUJE SE POSTUPNĖ, NE VŠE OD ZAČÁTKU
+# M5: GOOGLE_OAUTH_CLIENT_ID=, MICROSOFT_OAUTH_CLIENT_ID=
+# M6: GEMINI_API_KEY=, OPENAI_API_KEY=, ANTHROPIC_API_KEY=
+# M9: PSD2_AGGREGATOR_API_KEY=
+```
+</CodeGroup>
+
+<Warning>
+Pokud se verze ukáže jako nedostupná nebo nekompatibilní, agent **MUSÍ se zastavit** a nahlásit to s návrhem náhrady — nikdy tiše zvolit jinou verzi bez upozornění.
+</Warning>
+
+## Pravidlo krmení kontextu
+
+<Danger>
+**Nejdůležitější procesní pravidlo tohoto projektu:** Pro každý milník přilož AGENTOVI jen `milnik_0X_*.mdx` dokument, který je aktuálně předmětem práce, plus `schema.sql`/`seed.sql` jako referenci. NIKDY nepředkládej všech 10 milníkových dokumentů najednou — to vede k povrchnímu, ne hloubkovému respektování detailů, a agent může omylem začít implementovat funkce z pozdějších milníků předčasně (např. SSO v M1, AI v M2).
+</Danger>
+
+## Pravidlo chování při nejistotě
+
+| Typ nejasnosti | Co dělat |
+|---|---|
+| **Implementační detail** (přesný název komponenty, CSS třída, formát logu) | Zvol konzervativní výklad konzistentní s existující architekturou, pokračuj bez zastavení |
+| **Byznys rozhodnutí** (přesný formát PDF zprávy, konkrétní legislativní hodnota, jak se má systém chovat v hraničním případě) | ZASTAV SE, popiš nejasnost, počkej na odpověď |
+| **Architektonický rozpor** (specifikace milníku N vyžaduje něco, co kontrakt z dřívějšího milníku nepodporuje) | ZASTAV SE, popiš rozpor, NIKDY tiše neměň dřívější kontrakt bez schválení |
+
+## Pravidlo "žádné tiché přejmenování ani breaking change"
+
+Pokud agent během práce zjistí, že tabulka/sloupec/rozhraní by se mělo jmenovat jinak nebo má chybnou strukturu:
+1. Zastavit se
+2. Popsat nález a navrhovanou opravu
+3. Počkat na potvrzení
+4. Teprve po potvrzení provést migraci (číslovaný soubor v `/migrations`, viz M10.1) se zdůvodněním
+
+## Repo struktura
+
+```
+fosterflow/
+├── schema.sql
+├── seed.sql
+├── migrations/              -- formalizováno od M10.1, ale číslovat od začátku
+├── docs/
+│   ├── 00_index.mdx
+│   ├── milnik_01_zaklad.mdx
+│   ├── ... (milnik_02 až milnik_10)
+│   ├── registr_rozhodnuti_v8.md
+│   └── milnikova_mapa.md
+├── src/
+│   ├── app/
+│   │   ├── (worker)/         -- M1.8: FosterFlow Worker
+│   │   ├── (organization)/   -- M1.8: FosterFlow Organization
+│   │   └── (client-portal)/  -- M8.1: Klientská zóna
+│   ├── lib/
+│   │   ├── adapters/         -- M1.1: StorageAdapter/CalendarAdapter/AuthAdapter/AIAdapter
+│   │   │   ├── StorageAdapterInterface.ts
+│   │   │   ├── InternalSupabaseStorageAdapter.ts   (M1)
+│   │   │   ├── GoogleDriveAdapter.ts                (M5.1)
+│   │   │   ├── OneDriveAdapter.ts                   (M5.1)
+│   │   │   └── ... (analogicky pro Calendar/Auth/AI)
+│   │   ├── supabase/
+│   │   └── validation/       -- Ajv schémata pro event_definitions (M1.5)
+│   └── components/
+│       └── DataGridView/     -- M1.9: sdílená komponenta pro konfigurovatelné tabulky
+├── .env.example
+└── package.json
+```
+
+## Definice hotovosti — princip platný pro KAŽDÝ milník
+
+Milník se NEPOVAŽUJE za dokončený na základě "kód je napsaný", ale na základě:
+1. **Všech acceptance testů** definovaných v jeho `.mdx` dokumentu, ověřitelně splněných
+2. **Regresní sady** — všechny acceptance testy VŠECH PŘEDCHOZÍCH milníků stále platí
+3. **Gate checklistu** na konci milníkového dokumentu, odškrtaného
+
+## První promptová instrukce pro AI programátora
+
+> "Spusť schema.sql a seed.sql proti nové Supabase instanci. Ověř, že se vytvořilo všech 143 tabulek bez chyby (kontrolní dotaz: `SELECT count(*) FROM information_schema.tables WHERE table_schema='public'`). Pak založ Next.js projekt dle package.json výše, implementuj `src/lib/adapters/` se 4 rozhraními a jejich `internal` implementacemi. Poté pokračuj VÝHRADNĖ podle `milnik_01_zaklad.mdx` — žádné jiné milníkové dokumenty teď nepotřebuješ a neměl bys k nim mít přístup. Až budou splněny všechny acceptance testy a gate checklist Milníku 1, zastav se a nahlas to. Nepokračuj automaticky do Milníku 2."
