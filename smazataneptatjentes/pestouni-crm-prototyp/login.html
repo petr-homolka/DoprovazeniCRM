@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Přihlášení · Doprovázení CRM</title>
+<link rel="stylesheet" href="style.css?v=20">
+</head>
+<body>
+<div class="login-wrap">
+  <div class="login-card">
+    <div class="login-logo" id="logo">D</div>
+    <h1 id="org">Doprovázení, z.s.</h1>
+    <div class="sub">CRM pro doprovázení pěstounských rodin</div>
+    <div id="form">
+      <label>Pracovní e-mail</label>
+      <input id="email" type="email" placeholder="jmeno@doprovazeni.cz" value="">
+      <button class="btn-primary" onclick="sendLink()">Poslat přihlašovací odkaz</button>
+      <div class="login-foot">Přihlášení přes <b>magic link</b> (bez hesla) — odkaz dorazí do e-mailu. V ostré verzi volitelně i přes Google / Microsoft (M5).</div>
+    </div>
+    <div id="sent" style="display:none">
+      <div class="ok">✓ Odkaz odeslán na <b id="sentTo"></b>.<br>Zkontroluj e-mail a klikni na přihlašovací odkaz.</div>
+      <div class="login-foot">(Prototyp) <a href="prehled.html">Vstoupit do systému →</a></div>
+    </div>
+  </div>
+</div>
+<script src="app.js?v=20"></script>
+<script>
+const b=App.loadBrand(); document.getElementById('logo').textContent=b.logo; document.getElementById('org').textContent=b.orgName; App.applyBrand(b);
+function sendLink(){ const e=document.getElementById('email').value.trim()||'jmeno@doprovazeni.cz';
+  document.getElementById('sentTo').textContent=e; document.getElementById('form').style.display='none'; document.getElementById('sent').style.display='block'; }
+window.sendLink=sendLink;
+document.getElementById('email').addEventListener('keydown',e=>{if(e.key==='Enter')sendLink();});
+</script>
+</body>
+</html>

@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Děti · Doprovázení CRM</title>
+<link rel="stylesheet" href="style.css?v=20">
+</head>
+<body>
+<div class="app">
+  <nav class="rail" id="rail"></nav>
+
+  <aside class="side">
+    <div class="org" title="Přepnout organizaci / nastavení">
+      <div class="org-logo">D</div>
+      <div class="org-meta"><div class="t">Doprovázení, z.s.</div><div class="s">Pobočka Brno</div></div>
+      <svg class="chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+    </div>
+    <button class="btn-primary" style="margin-top:6px">+ Nové dítě</button>
+    <div class="side-search">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4-4"/></svg>
+      <input placeholder="Hledat dítě…">
+    </div>
+    <div class="sec-label">Pohledy</div>
+    <div class="nav">
+      <div class="nav-item active" onclick="setView('all',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg> Všechny děti <span class="count" id="c-all"></span></div>
+    </div>
+    <div class="sec-label">Podle typu péče</div>
+    <div class="nav">
+      <div class="nav-item" onclick="setView('long',this)"><span class="dot" style="background:var(--care-long)"></span> Dlouhodobá <span class="count" id="c-long"></span></div>
+      <div class="nav-item" onclick="setView('temp',this)"><span class="dot" style="background:var(--care-temp)"></span> Přechodná <span class="count" id="c-temp"></span></div>
+      <div class="nav-item" onclick="setView('kin',this)"><span class="dot" style="background:var(--care-kin)"></span> Příbuzenská <span class="count" id="c-kin"></span></div>
+    </div>
+    <div class="side-foot">
+      <div class="sep-line"></div>
+      <div class="account">
+        <span class="avatar" style="width:34px;height:34px;font-size:12px;background:var(--avatar-neutral)">MD</span>
+        <div class="meta"><div class="n">Martin Dvořák</div><div class="r">Doprovázející pracovník</div></div>
+        <svg class="cog" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <h2 style="margin-right:8px">Děti</h2>
+      <div class="search">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4-4"/></svg>
+        <input id="search" placeholder="Hledat dítě…" oninput="applyFilters()">
+      </div>
+      <div class="spacer"></div>
+      <div class="seg theme-switch" id="themeseg"><button class="on" data-theme="">Klasický</button><button data-theme="b">Čistý</button></div>
+    </div>
+    <div class="content"><div id="tbl"></div>
+      <div class="footnote">Ukázková data (smyšlená). Děti · typ péče je status dítěte; příbuzní jako záložka v kartě.</div>
+    </div>
+  </main>
+</div>
+
+<script src="app.js?v=20"></script>
+<script>
+document.getElementById('rail').innerHTML = App.renderRail('Děti');
+App.initTheme(document.getElementById('themeseg'));
+
+const items = App.allChildren();
+const ageBucket = k => k.age<=6 ? '0–6 let' : (k.age<=12 ? '7–12 let' : '13–18 let');
+const relLink = k => k.relatives
+  ? `<span class="rel-link" title="Záložka v kartě dítěte"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2"/><path d="M3 19c0-3 2.5-5 6-5s6 2 6 5"/></svg> Příbuzní (${k.relatives})</span>`
+  : `<span class="rel-link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg> Přidat</span>`;
+
+const columns = [
+  {key:'fam',    label:'Dítě',            w:'2.2fr', on:true, locked:true},
+  {key:'age',    label:'Věk',             w:'.7fr',  on:true},
+  {key:'care',   label:'Typ péče',        w:'1.3fr', on:true},
+  {key:'house',  label:'Domácnost',       w:'1.8fr', on:true},
+  {key:'fosters',label:'Pěstouni',        w:'1.6fr', on:false},
+  {key:'rel',    label:'Příbuzní',        w:'1.2fr', on:true},
+  {key:'worker', label:'Pracovník',       w:'1.2fr', on:false},
+  {key:'next',   label:'Příští návštěva', w:'1.4fr', on:false},
+];
+
+function cell(k,key,idx,x){
+  const h=k.household;
+  switch(key){
+    case 'fam': return `<div class="fam">${App.swap(App.avatar(k.n,k.care,k.photo),x.cb)}<div><div class="name">${k.n}</div><div class="sub">${h.city}${h.district?` · ${h.district}`:''}</div></div></div>`;
+    case 'age': return `${k.age} let`;
+    case 'care': return App.careBadge(k.care);
+    case 'house': return h.name;
+    case 'fosters': return h.fosters.filter(p=>p.isFoster).map(p=>p.n).join(', ');
+    case 'rel': return relLink(k);
+    case 'worker': return h.worker;
+    case 'next': return `<span class="muted">${App.fmtDateTime(h.next)}</span>`;
+  }
+}
+function card(k,idx,x){
+  const h=k.household;
+  return `<div class="card" onclick="App._t.open('k','${k.id}')"><div class="card-cb">${x.cb}</div>
+    <div class="top">${App.avatar(k.n,k.care,k.photo)}<div><div class="name">${k.n}</div><div class="sub">${k.age} let · ${h.name}</div></div></div>
+    <div class="meta-row"><span>Typ péče</span>${App.careBadge(k.care)}</div>
+    <div class="meta-row"><span>Příbuzní</span><b>${k.relatives}</b></div></div>`;
+}
+const groupers = {
+  care:   {label:'Typ péče', fn:k=>App.CARE[k.care][1]},
+  age:    {label:'Věk', fn:ageBucket},
+  ko:     {label:'Klíčová osoba (KO)', fn:k=>k.household.worker},
+  do:     {label:'Doprovázející org. (DO)', fn:k=>k.household.do},
+  loc:    {label:'Lokalita', fn:k=>k.household.district||k.household.city},
+};
+
+function openK(k){
+  const h=k.household;
+  App.openDrawer(`
+    <div class="drawer-head"><button class="x" onclick="App.closeDrawer()">✕</button>
+      <div class="fam">${App.avatar(k.n,k.care,k.photo)}<div><div class="name" style="font-size:18px">${k.n}</div><div class="sub">${k.age} let · ${h.name}</div></div></div>
+    </div>
+    <div class="drawer-body">
+      <div class="section-title">Upozornění</div>
+      <div class="alerts">${App.upoz((()=>{ const a=[];
+        if(h.status==='due') a.push(['due','Návštěva po termínu',`Měla proběhnout do ${App.fmtDate(h.next.iso)}.`]);
+        if(h.status==='warn') a.push(['warn','Vyžaduje pozornost', h.note||'Zkontrolujte případ.']);
+        return a; })())}</div>
+
+      <div class="field"><span class="k">Typ péče</span>${App.careBadge(k.care)}</div>
+      <div class="field"><span class="k">Domácnost</span><span>${h.name}</span></div>
+      <div class="field"><span class="k">Pracovník</span><span>${h.worker}</span></div>
+
+      <div class="section-title">Pěstouni</div>
+      ${h.fosters.filter(p=>p.isFoster).map(p=>`<div class="person">${App.avatar(p.n,null,p.photo,40,'sq')}<div class="meta"><div class="n">${p.n}</div><div class="r">Pěstoun</div></div></div>`).join('')}
+
+      <div class="section-title">Biologická / širší rodina <span class="muted" style="font-weight:400">(záložka karty)</span></div>
+      ${k.relatives ? `
+        <div class="person"><span class="avatar sq" style="width:40px;height:40px;font-size:14px;background:var(--avatar-neutral)">M</span><div class="meta"><div class="n">Matka</div><div class="r">kontakt veden · styk 1× měsíčně</div></div></div>
+        <div class="person"><span class="avatar sq" style="width:40px;height:40px;font-size:14px;background:var(--avatar-neutral)">S</span><div class="meta"><div class="n">Sourozenec</div><div class="r">v jiné pěstounské rodině</div></div></div>
+        <div style="padding:4px 10px"><a href="#">+ přidat příbuzného</a></div>`
+        : `<p class="muted" style="padding:4px 10px">Zatím nejsou evidováni žádní příbuzní. <a href="#">Přidat</a></p>`}
+
+      <div class="section-title">Poslední záznamy</div>
+      <div class="recs">
+        <div class="rec"><div class="when">28. 5. 2026<div class="dur">15:30–16:25</div></div><div class="what"><div class="rt">Návštěva</div><div class="rd">Dítě spokojené, prospívá.</div></div></div>
+        <div class="rec"><div class="when">15. 5. 2026<div class="dur">—</div></div><div class="what"><div class="rt">Asistovaný kontakt s matkou</div><div class="rd">Proběhl v pořádku.</div></div></div>
+      </div>
+      <div class="section-title">Akce</div>
+      <button class="btn-primary" style="margin-bottom:8px">Zaznamenat kontakt</button>
+      <a class="btn-secondary" style="margin-top:0;text-decoration:none" href="hub.html?typ=dite&id=${k.id}">Otevřít Hub dítěte</a>
+    </div>`);
+}
+
+const T=App.Table({ id:'k', mount:document.getElementById('tbl'), items, columns, cell, card, groupers, onOpen:openK });
+document.getElementById('c-all').textContent=items.length;
+document.getElementById('c-long').textContent=items.filter(k=>k.care==='long').length;
+document.getElementById('c-temp').textContent=items.filter(k=>k.care==='temp').length;
+document.getElementById('c-kin').textContent=items.filter(k=>k.care==='kin').length;
+let view='all';
+function applyFilters(){ const q=(document.getElementById('search').value||'').toLowerCase().trim();
+  let r=items; if(view!=='all')r=r.filter(k=>k.care===view);
+  if(q)r=r.filter(k=>(k.n+' '+k.household.name+' '+k.household.worker).toLowerCase().includes(q)); T.setItems(r); }
+function setView(v,el){ view=v; document.querySelectorAll('.side .nav-item').forEach(x=>x.classList.remove('active')); if(el)el.classList.add('active'); applyFilters(); }
+window.applyFilters=applyFilters; window.setView=setView;
+</script>
+</body>
+</html>

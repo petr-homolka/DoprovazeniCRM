@@ -1,0 +1,389 @@
+---
+title: "Milník 1: Základ (produkčně nasaditelný pro jednu DO)"
+description: "Jádro systému FosterFlow — databáze, bezpečnost, Karta kontaktu, dva základní produkty. Po dokončení tohoto milníku jde systém do ostrého provozu."
+icon: "flag-checkered"
+---
+
+<Warning>
+**Toto je nejkritičtější milník celého projektu.** Po jeho dokončení a schválení gate podmínek (sekce 14) bude systém nasazen do ostrého provozu jedné doprovázející organizace se skutečnými citlivými daty. Žádný pozdější milník nesmí vyžadovat změnu, která by ohrozila již uložená data nebo už běžící funkce. Vše, co je zde postaveno, je **kontrakt**, který platí i pro Milníky 2 až 10.
+</Warning>
+
+## 0. Co tento milník obsahuje a proč
+
+Milník 1 (M1) je rozdělen na 15 fází. Cílem není "udělat trochu ze všeho", ale postavit **úplné, bezpečné, zálohovatelné jádro** pro jednu organizaci — bez multi-tenancy komplexity, bez AI, bez pokročilých financí. Tyto věci přijdou v dalších milnících a NESMÍ zpomalovat cestu k bezpečnému ostrému nasazení.
+
+<CardGroup cols={2}>
+  <Card title="Co JE v M1" icon="check">
+    Databázové jádro, RBAC, RLS, Karta kontaktu s historizací, sociální prostor, event store, dokumenty (bez OCR), dva produkty (Worker + Organization), konfigurovatelné tabulky, audit, zálohy + DR test, observabilita, accessibility baseline, i18n architektura, bezpečnostní audit, export dat.
+  </Card>
+  <Card title="Co NENÍ v M1 (záměrně odloženo)" icon="circle-xmark">
+    Soudy/krize/úkoly (M2), finance a SPVPP (M3), víc organizací najednou (M4), Google/Microsoft integrace a SSO (M5), AI cokoliv (M6), analytika (M7), klientská zóna (M8), veřejné API (M9), pluginy (M10).
+  </Card>
+</CardGroup>
+
+<Info>
+**Proč SSO (přihlášení přes Google/Microsoft) NENÍ v M1:** je to explicitní rozhodnutí. M1 používá pouze interní autentizaci (e-mail + Magic Link). Architektura je připravena (viz Fáze 1.1, `AuthAdapterInterface`) tak, aby SSO šlo přidat v M5 BEZ refaktoringu, ale implementace SSO čeká, protože není na kritické cestě k bezpečnému provozu a každá OAuth integrace navíc je riziko a komplexita navíc před prvním ostrým nasazením.
+</Info>
+
+---
+
+## 1. Fáze 1.1 — Infrastruktura, tech stack, provider-agnostické kontrakty
+
+### Tech stack (pevné verze)
+
+<CodeGroup>
+```json package.json
+{
+  "name": "fosterflow",
+  "engines": { "node": ">=20.0.0" },
+  "dependencies": {
+    "next": "^14.2.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "@supabase/supabase-js": "^2.45.0",
+    "@supabase/ssr": "^0.5.0",
+    "tailwindcss": "^3.4.0",
+    "lucide-react": "^0.400.0",
+    "ajv": "^8.17.0",
+    "zod": "^3.23.0",
+    "next-pwa": "^5.6.0",
+    "date-fns": "^3.6.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "@types/node": "^20.14.0",
+    "@types/react": "^18.3.0",
+    "@axe-core/playwright": "^4.9.0"
+  }
+}
+```
+</CodeGroup>
+
+<Note>
+Pevné verze jsou závazné. Pokud agent zjistí, že verze je nedostupná nebo nekompatibilní, MUSÍ se zastavit a explicitně to nahlásit s návrhem náhrady — ne tiše zvolit jinou verzi.
+</Note>
+
+### .env.example
+
+```bash
+# Supabase
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+
+# Aplikace
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+NODE_ENV=development
+
+# Observabilita (M1.11) - volitelné, fallback na interní error_logs tabulku
+ERROR_TRACKING_PROVIDER=internal
+SENTRY_DSN=
+```
+
+### Provider-agnostické kontrakty — POVINNÉ od první řádky kódu
+
+<Warning>
+Toto je nejdůležitější architektonické pravidlo celého projektu. Žádný modul, žádná komponenta, žádná API route nesmí nikdy přímo volat Google API, Microsoft API, nebo konkrétního AI poskytovatele. Vše jde přes interní rozhraní definovaná zde v M1, i když M1 implementuje jen jeden ("internal") adaptér pro každé.
+</Warning>
+
+Definuj tato čtyři TypeScript rozhraní v `src/lib/adapters/`:
+
+```typescript
+// src/lib/adapters/StorageAdapterInterface.ts
+export interface StorageAdapterInterface {
+  uploadFile(orgId: string, file: Buffer, metadata: FileMetadata): Promise<StorageReference>;
+  downloadFile(reference: StorageReference): Promise<Buffer>;
+  deleteFile(reference: StorageReference): Promise<void>;
+  getSignedUrl(reference: StorageReference, expiresInSeconds: number): Promise<string>;
+}
+// M1 implementace: InternalSupabaseStorageAdapter (jediná, používá Supabase Storage)
+// M5 doplní: GoogleDriveAdapter, OneDriveAdapter — KONTRAKT SE NEMĖNÍ
+
+// src/lib/adapters/CalendarAdapterInterface.ts
+export interface CalendarAdapterInterface {
+  createEvent(orgId: string, event: CalendarEventInput): Promise<ExternalEventRef>;
+  updateEvent(ref: ExternalEventRef, event: CalendarEventInput): Promise<void>;
+  deleteEvent(ref: ExternalEventRef): Promise<void>;
+}
+// M1 implementace: InternalCalendarAdapter (vlastní tabulka, žádný externí kalendář)
+// M5 doplní: GoogleCalendarAdapter, MicrosoftGraphCalendarAdapter
+
+// src/lib/adapters/AuthAdapterInterface.ts
+export interface AuthAdapterInterface {
+  initiateLogin(email: string): Promise<void>; // Magic Link
+  verifyCallback(token: string): Promise<UserSession>;
+}
+// M1 implementace: InternalMagicLinkAdapter
+// M5 doplní: GoogleOAuthAdapter, MicrosoftOAuthAdapter
+
+// src/lib/adapters/AIAdapterInterface.ts
+export interface AIAdapterInterface {
+  generateText(prompt: string, context: AIContext): Promise<string>;
+  transcribeAudio(audioBuffer: Buffer): Promise<string>;
+}
+// M1: rozhraní existuje, ŽÁDNÁ implementace, ŽÁDNÉ volání - AI se aktivuje až M6
+```
+
+Každý adaptér se vybírá runtime podle `organization_integration_settings` (tabulka existuje od M1, viz schema.sql sekce Provider-agnostická architektura). V M1 má každá organizace jen řádky s `provider='internal'`.
+
+<Check>
+**Acceptance test Fáze 1.1:** Spustit `npm install`, `npm run build` bez chyby. Existuje `src/lib/adapters/` se 4 rozhraními a jednou implementací (`internal`) pro každé. Žádný jiný soubor v `src/` neobsahuje string `googleapis` nebo `microsoft-graph` (kontrola: `grep -r "googleapis\|microsoft-graph" src/` vrátí prázdný výsledek).
+</Check>
+
+---
+
+## 2. Fáze 1.2 — Databázové jádro
+
+Spustit `schema.sql` (sekce 0-13, tagované `MILESTONE: M1.2`) a `seed.sql` (permissions, RBAC).
+
+### Klíčové tabulky této fáze
+
+<AccordionGroup>
+  <Accordion title="organizations, profiles, RBAC (permissions/roles/user_roles)">
+    Multi-tenant kostra existuje od počátku (`organization_id` na všech relevantních tabulkách), i když M1 provozuje jen JEDNU organizaci. RLS politiky jsou aktivní od první minuty — to není optimalizace na později, je to bezpečnostní základ.
+
+    Granulární RBAC: `permissions` jako číselník konkrétních akcí (`cases.view_assigned`, `finance.approve_basic`...), `roles` jako pojmenované svazky oprávnění, `user_roles` jako přiřazení. Žádná byznys logika se NIKDY neváže přímo na jméno role — vždy na `permission_code`.
+  </Accordion>
+  <Accordion title="households, persons (Karta kontaktu)">
+    `persons` je jádrová tabulka pro VŠECHNY fyzické osoby v systému — dítě, pěstoun, biologický příbuzný, sociální okolí. Sjednocující pojem je **Karta kontaktu**: bez ohledu na typ osoby má stejnou kostru (identifikace, custom_fields, historizace, vztahy).
+
+    `households` reprezentuje pěstounskou rodinu/domácnost s `lifecycle_state` stavovým automatem.
+  </Accordion>
+  <Accordion title="system_parameters a get_param()">
+    Temporální parametry (`valid_from`/`valid_to`) pro VŠECHNY hodnoty, které se mohou v čase měnit legislativou (limity respitu, procenta SPVPP). Funkce `get_param(klíč, datum, org_id)` vrací hodnotu platnou k danému datu. `detect_parameter_splits()` umožňuje report rozdělit na dílčí období, pokud se parametr v reportovaném období změnil.
+  </Accordion>
+</AccordionGroup>
+
+<Check>
+**Acceptance test Fáze 1.2:**
+1. `schema.sql` se spustí v Supabase SQL Editoru bez chyby, vytvoří se všechny tabulky sekcí 0-13.
+2. `seed.sql` naplní `permissions` (minimálně 55 záznamů dle V8 seed) a `integration_providers`.
+3. Lze vytvořit organizaci, profil s rolí, a přihlásit se Magic Linkem.
+4. **Bezpečnostní test:** SQL dotaz `SELECT * FROM households` spuštěný pod JWT uživatele organizace A nikdy nevrátí řádek organizace B, i kdyby aplikační kód zapomněl filtr (RLS to vynutí na úrovni databáze).
+</Check>
+
+---
+
+## 3. Fáze 1.3 — Hierarchické registry institucí a historizace Karty kontaktu
+
+### Tříúrovňová hierarchie institucí
+
+Obecný vzor pro úřady, školy i zdravotnictví:
+
+```
+Úroveň 1: Zřizovatel (Kraj / Obec s rozšířenou působností)
+   └─ Úroveň 2: Konkrétní pobočka/útvar (OSPOD Teplice / ZŠ Teplická / Poliklinika Teplice)
+        └─ Úroveň 3: Konkrétní osoba (sociální pracovnice / třídní učitel / lékař)
+```
+
+Implementováno tabulkami `administrative_authorities` → `ospod_offices`/`schools`/`medical_facilities` → `ospod_workers`/`school_teachers`/`doctors`. Soudy mají analogickou strukturu (`courts` → `court_judges`).
+
+### Historizace — nic se nepřepisuje, vše se historizuje
+
+<Warning>
+Dítě v pěstounské péči prochází systémem dlouhodobě, často od narození do zletilosti. Jméno, škola, lékař i adresa se v čase mění. Systém **nesmí** tyto údaje přepisovat — musí udržovat kompletní historii (od kdy – do kdy) pro účely soudních zpráv a auditů.
+</Warning>
+
+Tabulky: `person_past_names`, `person_citizenships`, `person_residency_history`, `person_contacts`, `person_address_history`, `person_education_history`, `person_report_cards`, `person_medical_history`, `person_physiological_metrics`, `person_identity_documents`, `person_consents`, `person_guardians`, `person_photo_documentation`.
+
+### Vícejazyčnost (i18n) — architektura od první obrazovky
+
+<Info>
+M1 obsahuje **pouze** českou (`cs-CZ`) lokalizaci obsahu. Ale žádný uživatelsky viditelný text nesmí být natvrdo v React komponentě — vše jde přes `translation_keys`/`translation_values`. Přidání dalšího jazyka v budoucnu (slovenská DO, cizojazyčný biologický rodič) je pak čistě datová operace, ne refaktoring.
+</Info>
+
+```typescript
+// Příklad použití v komponentě - NIKDY natvrdo "Aktivní" v JSX
+const { t } = useTranslation();
+<Badge>{t('household.status.active')}</Badge>
+```
+
+<Check>
+**Acceptance test Fáze 1.3:**
+1. Lze založit školu, učitele, lékaře a OSPOD pracovníka s plnou hierarchií.
+2. Historie adresy dítěte ukazuje minimálně 2 záznamy po změně bydliště (starý s `to_date`, nový s `to_date = NULL`).
+3. `grep -rn '"[A-ZÁ-Ž][a-zá-ž ]\{4,\}"' src/components/` (heuristika na natvrdo psaný český text v komponentách) nevrací nálezy mimo `translation_keys` volání.
+</Check>
+
+---
+
+## 4. Fáze 1.4 — Sociální prostor a vztahy (symetricky dítě/pěstoun)
+
+<Warning>
+Svěření do pěstounské péče se váže na konkrétní fyzickou osobu pěstouna, NE na rodinu jako celek — i když pěstoun žije v manželství/partnerství. Pěstoun má (nebo nemá) manžela/manželku, partnera/partnerku, vlastní biologické děti a svůj vlastní sociální prostor — to vše musí být v systému evidovatelné stejně důkladně jako sociální prostor dítěte.
+</Warning>
+
+Jedna sdílená tabulka `person_relationships` (NE dvě oddělené pro dítě a pěstouna) s `subject_id` (dítě NEBO pěstoun) a `related_person_id`. Typ vztahu je dynamický číselník (`relationship_type_term_id` → `taxonomy_terms`), seed obsahuje výchozí termíny pro obě strany (otec/matka/dědeček... pro dítě, manžel_pěstouna/biologické_dítě_pěstouna... pro pěstouna).
+
+### Rating bezpečnosti vztahu
+
+`relationship_rating` ENUM A–Z, kde `Z` = zákaz styku nařízený soudně/OSPODem. UI musí při ratingu `Z` zobrazit červený banner ve Worker aplikaci.
+
+### Typ pěstounské péče A/B/C
+
+```
+A = Zprostředkovaná pěstounská péče (Dlouhodobá)
+B = Pěstounská péče na přechodnou dobu (Přechodná)
+C = Nezprostředkovaná pěstounská péče (Příbuzenská)
+```
+
+Zobrazuje se v závorce za příjmením (`Barbora Suchá (A)`), s tooltipem na hover.
+
+<Check>
+**Acceptance test Fáze 1.4:** Lze vytvořit dítě, pěstouna, jejich společnou babičku (příbuzenská péče typu C) jako JEDNU Kartu kontaktu se dvěma záznamy v `person_relationships` (babička dítěte + matka/tchýně pěstouna) — bez duplicity osoby v databázi.
+</Check>
+
+---
+
+## 5. Fáze 1.5 — Event store (configuration-driven)
+
+Centrální tabulka `events` jako chronologická časová osa rodiny. `event_definitions` definuje JSON Schema pro každý typ události — frontend dynamicky generuje formulář, backend validuje payload před uložením (knihovna Ajv).
+
+```sql
+-- events.type je TEXT validovaný proti event_definitions.event_type,
+-- NIKDY pevný ENUM - nový typ události = administrativní úkon, ne kódová změna
+```
+
+`post_actions` JSONB pole na `event_definitions` umožňuje "Workflow Lite" — po uložení události se automaticky vytvoří úkol nebo notifikace, bez nutnosti plnohodnotného workflow enginu (vědomě zjednodušený kompromis, viz historie rozhodnutí v Registru rozhodnutí).
+
+<Check>
+**Acceptance test Fáze 1.5:** Vytvoření události typu `visit_log` s chybějícím povinným polem `ai_summary` vrátí HTTP 400 s popisem chyby, data se NEULOŽÍ. Validní událost se zapíše a zobrazí na timeline rodiny.
+</Check>
+
+---
+
+## 6. Fáze 1.6 — Lifecycle state machine
+
+`lifecycle_state` ENUM pro `households` (lead → initial_contact → negotiation → pending_orp → active_accompanying → situation_change → termination → archived) a `foster_parent_status` ENUM pro `persons` (zajemce → cekajici → aktivni → pozastavene / vyrazene / prevedene / odmitnute) — DVĖ ODDĖLENÉ stavové stroje, protože jeden pěstoun může mít víc dohod v různých fázích.
+
+Přechod je možný jen po splnění podmínek (povinný dokument, vyplněné pole) a generuje záznam do `lifecycle_transitions`/`foster_parent_status_history` automaticky přes trigger.
+
+<Check>
+**Acceptance test Fáze 1.6:** Pokus o přechod rodiny z `pending_orp` do `active_accompanying` bez nahraného dokumentu Souhlas ORP je zablokován v UI (tlačítko disabled) a backend ho odmítne i při přímém API volání.
+</Check>
+
+---
+
+## 7. Fáze 1.7 — Dokumenty (DMS bez OCR)
+
+Upload (drag & drop desktop / kamera mobil), Koš s 30denním odkladem fyzického smazání (`is_trashed`/`trashed_at`), verzování (`version_number`/`supersedes_document_id`), oblíbené.
+
+<Warning>
+`storage_provider_key`/`external_file_reference` jsou GENERICKÉ od první implementace — i když M1 vždy ukládá do interního Supabase Storage, sloupce jsou připravené na M5 aktivaci Google Drive/OneDrive adaptéru BEZ migrace schématu.
+</Warning>
+
+<Check>
+**Acceptance test Fáze 1.7:** Upload PDF z mobilu i desktopu, smazání → zmizí z hlavního výpisu, objeví se v Koši, fyzicky zmizí až po simulovaných 30 dnech (testovací CRON s posunutým časem).
+</Check>
+
+---
+
+## 8. Fáze 1.8 — Worker (mobil) + Organization (desktop)
+
+<Tabs>
+  <Tab title="FosterFlow Worker (terén)">
+    Design: Things + WhatsApp. Spodní navigační lišta (Moje rodiny | Kalendář | Notifikace | Profil), žádný sidebar. Timeline jako chronologický feed, ne tabulka. FAB tlačítko (+) s rychlým menu: Nová událost (zápis), Vyfotit dokument. Offline-first: IndexedDB lokální fronta, status `pending_sync`, žádné blokování UI bez signálu.
+
+    <Info>PWA, ne nativní app. Nativní wrapper je vědomě odložené rozhodnutí — zvážit znovu, pokud push notifikace na iOS PWA budou limitovat provoz (M2+ revize).</Info>
+  </Tab>
+  <Tab title="FosterFlow Organization (kancelář)">
+    Design inspirovaný trading aplikacemi. Třísloupcový layout: levý (navigace), střední (datová tabulka s filtry), pravý (detail in-place, bez přechodu na novou stránku). Sparklines pro číselné indikátory (v M1 jen demo data, reálné finanční sparklines přijdou s M3).
+  </Tab>
+</Tabs>
+
+### Accessibility baseline (WCAG AA)
+
+<Check>
+Automatizovaný test `@axe-core/playwright` v CI musí projít na hlavních obrazovkách (login, dashboard, detail rodiny, formulář nové události) bez kritických violations před mergem do main větve.
+</Check>
+
+---
+
+## 9. Fáze 1.9 — Konfigurovatelné tabulky (Google Analytics styl)
+
+Sdílená React komponenta `DataGridView` použitá pro VŠECHNY datagridy v aplikaci (rodiny, děti, později doklady, úkoly). `table_view_definitions` ukládá konfiguraci sloupců (pořadí, šířka, viditelnost) per uživatel nebo sdíleně per organizace. `table_available_fields` je registr toho, co se vůbec dá zobrazit (včetně dynamických Custom Fields).
+
+<Check>
+**Acceptance test Fáze 1.9:** Uživatel přesune sloupec "Adresa" před sloupec "Pěstoun" v tabulce rodin, obnoví stránku — pořadí zůstává uložené (per uživatel). Druhý uživatel vidí svou vlastní (nebo výchozí sdílenou) konfiguraci, ne tu přesunutou.
+</Check>
+
+---
+
+## 10. Fáze 1.10 — Audit, zálohy, disaster recovery
+
+Trigger `process_audit_log()` na všech klíčových tabulkách zapisuje do `audit_logs` (kdo, kdy, co, staré/nové hodnoty). WORM záloha: noční `pg_dump`, šifrování veřejným klíčem organizace, uložení do S3 Object Lock / GCS retention na 30 dní nesmazatelně i pro SuperAdmina.
+
+<Warning>
+**M1 GATE PODMÍNKA — nesmí se obejít:** Záloha, která se nikdy nezkusila obnovit, není záloha. Tabulka `backup_restore_tests` musí obsahovat alespoň jeden záznam s `restore_successful = TRUE` provedený na reálném snapshotu dat PŘED prvním ostrým nasazením. `disaster_recovery_runbooks` musí mít definované RTO/RPO pro minimálně dva scénáře (ztráta databáze, ransomware) — seed.sql obsahuje výchozí šablony k doplnění.
+</Warning>
+
+<Check>
+**Acceptance test Fáze 1.10:** Provést simulovaný test obnovy ze zálohy do izolovaného stage prostředí, ověřit integritu dat (počty řádků klíčových tabulek se shodují), zapsat výsledek do `backup_restore_tests`. RTO skutečně naměřený musí být ≤ RTO deklarovaný v runbooku.
+</Check>
+
+---
+
+## 11. Fáze 1.11 — Observabilita
+
+`error_logs` a `performance_metrics` jako interní tabulky fungující VŽDY, nezávisle na tom, zda je napojena externí služba (Sentry-like, adaptér přes `ERROR_TRACKING_PROVIDER` env proměnnou). Alerting na `severity = critical` musí fungovat (alespoň e-mail) před produkčním nasazením.
+
+<Check>
+**Acceptance test Fáze 1.11:** Vynucená testovací chyba v aplikaci se zapíše do `error_logs` a vyvolá e-mailovou notifikaci na nastavenou adresu do 5 minut.
+</Check>
+
+---
+
+## 12. Fáze 1.12 — Accessibility (rozšíření)
+
+Viz Fáze 1.8 pro CI test. Doplňkově: kontrola kontrastu barev v `organization_theme_config` výchozích hodnotách, klávesová navigovatelnost formulářů, `aria-label` na všech interaktivních ikonách bez textu.
+
+---
+
+## 13. Fáze 1.13 — i18n (dokončení)
+
+Viz Fáze 1.3 — zde se ověřuje kompletnost: žádný natvrdo psaný text nezůstal opomenutý mimo `translation_keys`.
+
+---
+
+## 14. Fáze 1.14 — Bezpečnostní audit (GATE před produkcí)
+
+<Danger>
+**TOTO JE TVRDÁ BRÁNA. Bez splnění této fáze se M1 NESMÍ nasadit do ostrého provozu.**
+</Danger>
+
+`security_audit_log` a `security_findings` evidují formální bezpečnostní review (interní review minimum, externí penetrační test silně doporučen před prvním nasazením se skutečnými citlivými daty). Žádný finding se `severity IN ('high','critical')` nesmí zůstat ve stavu `open`.
+
+<Check>
+**Acceptance test Fáze 1.14:**
+1. RLS politiky ověřeny manuálním pokusem o cross-tenant přístup (i když M1 má jen jednu organizaci, test simuluje druhou).
+2. Žádné tajné klíče (Supabase service role, API klíče) nejsou v kódu ani v git historii (`git log -p | grep` kontrola).
+3. Všechny `security_findings` se `severity` high/critical jsou `resolved` nebo `accepted_risk` s podpisem odpovědné osoby.
+</Check>
+
+---
+
+## 15. Fáze 1.15 — Export dat (vlastnictví a exit strategie)
+
+<Info>
+**Princip, ne feature flag:** Data jsou majetkem doprovázející organizace, ne provozovatele systému. Funkce plného exportu (`data_export_requests`, formát `zip_full` se všemi tabulkami v dokumentovaném JSON) musí fungovat VE VŠECH budoucích tarifech bez výjimky — to se nesmí stát součástí žádného "vyšší tarif odemkne export" gatingu.
+</Info>
+
+<Check>
+**Acceptance test Fáze 1.15:** Požadavek na export vygeneruje ZIP obsahující všechna data organizace (households, persons, events, documents) ve strukturovaném formátu s dokumentací schématu, stažitelný přes časově omezený link.
+</Check>
+
+---
+
+## Souhrnný GATE pro nasazení M1 do produkce
+
+<Checklist>
+- [ ] Všech 15 fází má splněný acceptance test
+- [ ] Regresní sada (všechny testy Fází 1.1–1.14) projde po dokončení Fáze 1.15
+- [ ] `backup_restore_tests` obsahuje úspěšný test obnovy
+- [ ] `security_findings` neobsahuje open critical/high nález
+- [ ] Observabilita a alerting funkční
+- [ ] Accessibility CI test zelený na hlavních obrazovkách
+- [ ] Export dat funkční a ověřený
+</Checklist>
+
+Po splnění všech bodů: **systém je připraven na ostré nasazení pro jednu doprovázející organizaci.** Pokračuj Milníkem 2.

@@ -1,0 +1,148 @@
+---
+title: "Milník 6: AI vrstva"
+description: "Provider-agnostické AI adaptéry, voice-to-text záznamník, OCR, RAG Knowledge Base s verzovanou legislativou, audit AI trasování, konverzační BI s view-based bezpečností, prompt verzování, AI crawler, etický audit rozhodování."
+icon: "brain-circuit"
+---
+
+<Warning>
+**Proč AI je až M6, ne dřív:** AI funkce jsou mocné, ale zvyšují komplexitu a náklady (token spend), a u systému pracujícího s nejcitlivějšími osobními údaji vyžadují obezřetnost navíc. M6 přichází POTÉ, co finanční vrstva (M3) a multi-tenancy (M4) běží stabilně — AI se nasazuje na ověřený základ, ne paralelně s ním.
+</Warning>
+
+## Co tento milník obsahuje
+
+<CardGroup cols={2}>
+  <Card title="Co JE v M6" icon="check">
+    AI adaptér abstrakce (Gemini/OpenAI/Anthropic/self-hosted), voice-to-text záznamník, OCR pipeline, RAG s verzovanou legislativou, audit trasování AI, konverzační BI (text-to-SQL nad bezpečnými views), prompt verzování a A/B testy, crawler s karanténou, etický audit princip.
+  </Card>
+  <Card title="Co NENÍ v M6" icon="circle-xmark">
+    Žádné prediktivní risk-scoring modely (ML detekce rizik) — to zůstává mimo rozsah V8 stejně jako u všech předchozích verzí. Etická vrstva (Fáze 6.8) je příprava PRO BUDOUCNOST, ne aktivace skutečného prediktivního modelu.
+  </Card>
+</CardGroup>
+
+---
+
+## Fáze 6.1 — AI adaptér abstrakce (provider-agnostic)
+
+<Warning>
+Stejný princip jako storage/calendar/auth z M5: AI provider je VOLBA organizace, ne pevná architektonická závislost. DO, která chce "absolutní svobodu" i v AI, může zvolit `self_hosted_llm` adaptér.
+</Warning>
+
+```typescript
+class GeminiAIAdapter implements AIAdapterInterface {
+  async generateText(prompt: string, context: AIContext): Promise<string> { /* ... */ }
+  async transcribeAudio(audioBuffer: Buffer): Promise<string> { /* ... */ }
+}
+// Alternativy implementující STEJNÝ kontrakt: OpenAIAdapter, AnthropicAdapter, SelfHostedLLMAdapter
+```
+
+`ai_assistant_profiles.ai_integration_setting_id` určuje, který adaptér konkrétní asistent používá. Výchozí pro DO bez explicitní volby: Google Gemini (nejširší ekosystémová integrace s Google Workspace, pokud ho DO již používá z M5).
+
+<Check>
+**Acceptance test:** Organizace s `self_hosted_llm` providerem pro kategorii `ai` úspěšně generuje shrnutí návštěvy přes lokálně běžící model, bez jakéhokoliv volání externí AI API. Přepnutí providera v konfiguraci změní, který adaptér se použije, bez nutnosti změny kódu volajícího `generateText()`.
+</Check>
+
+---
+
+## Fáze 6.2 — Voice-to-text záznamník a OCR
+
+KO nahraje audio → transkripce přes aktivní AI adaptér → Gemini/jiný model strukturuje text dle promptu (formální zápis, krizová rizika, akční kroky) → **human-in-the-loop**: JSON se zobrazí KO ke schválení, data se NEZAPÍŠÍ do `events`, dokud KO nepotvrdí.
+
+OCR pipeline (Document AI nebo ekvivalent dle providera): upload → text extrakce → AI strukturace metadat (typ dokumentu, datum, instituce, resumé) → KO in-place edituje a potvrzuje.
+
+<Check>
+**Acceptance test:** Nahrávka s diktovaným zápisem z návštěvy vygeneruje strukturovaný draft, který se NEOBJEVÍ na timeline rodiny, dokud KO neklikne "Uložit a potvrdit". Zrušení draftu bez potvrzení nezanechá žádnou stopu v `events`.
+</Check>
+
+---
+
+## Fáze 6.3 — RAG Knowledge Base s verzovanou legislativou
+
+<Danger>
+Metodiky se mění, zákony se novelizují. Systém NESMÍ halucinovat na základě zrušeného zákona. Vektorové vyhledávání pustí POUZE články s `valid_to IS NULL` nebo `valid_to >= TODAY` — tvrdý databázový filtr PŘED similarity search, ne spoléhání na to, že model "ví", co je aktuální.
+</Danger>
+
+`legal_frameworks` → `knowledge_base_articles` (s `version_number`, `valid_from`/`valid_to`, `section_reference`) → `pgvector` embedding. Nová novela = NOVÁ verze článku, stará dostane `valid_to`, nepřepisuje se.
+
+Systémový prompt vyžaduje citaci ID článku ke každému tvrzení — pokud informace v kontextu chybí, AI odmítá odpovědět, nespekuluje.
+
+<Check>
+**Acceptance test:** Po vložení novely s `valid_from` v budoucnosti a nastavení `valid_to` na starou verzi k dnešnímu dni, dotaz na dané téma vrátí odpověď založenou POUZE na aktuálně platné verzi, nikdy na zastaralé, i kdyby stará verze měla vyšší similarity score.
+</Check>
+
+---
+
+## Fáze 6.4 — Audit AI trasování
+
+`ai_interaction_logs` jako append-only log: přesné znění dotazu, odpovědi, a **pole všech ID článků**, které AI dostala jako kontext. Pokud KO po půl roce řekne "AI mi řekla, že to můžu udělat", Ředitel přesně dohledá, na čem AI tvrzení postavila.
+
+<Check>
+**Acceptance test:** Každý RAG dotaz vygeneruje záznam v `ai_interaction_logs` s `retrieved_article_ids` obsahujícím skutečně použité články. Smazání/úprava tohoto logu není možná přes běžné API (append-only, žádný UPDATE/DELETE endpoint).
+</Check>
+
+---
+
+## Fáze 6.5 — Konverzační BI (view-based bezpečnost)
+
+<Danger>
+**Architektonicky nejdůležitější bod celého AI milníku.** LLM NESMÍ mít přímý přístup k databázi a nesmí být jediným strážcem oprávnění. Bezpečnost je vlastností DATABÁZE (RLS), ne kroku v aplikační logice.
+</Danger>
+
+```sql
+CREATE VIEW ai_bi_finance_view AS SELECT ... FROM payment_documents pd
+LEFT JOIN households h ON pd.household_id = h.id
+LEFT JOIN providers pr ON pd.provider_id = pr.id;
+```
+
+Workflow: uživatel napíše dotaz přirozeným jazykem → backend pošle AI **pouze DDL strukturu povolených views** (ne celé schéma) → AI vygeneruje čistý `SELECT` → backend zkontroluje zakázané klauzule (DROP/UPDATE/INSERT) → **dotaz se spustí POD AUTH TOKENEM AKTUÁLNÍHO UŽIVATELE**, ne administrátorského účtu → PostgreSQL RLS automaticky vyfiltruje výsledek.
+
+<Check>
+**Acceptance test:** Pěstoun v Klientské zóně (M8) s aktivním `ai.use_chatbot` se zeptá na "kolik dluží jiná rodina" — AI vygeneruje syntakticky validní SQL, ale RLS vrátí 0 řádků, protože pěstoun nemá přístup k cizí domácnosti, BEZ OHLEDU na obsah vygenerovaného dotazu. Tento test se provádí záměrně s "útočným" promptem navrženým k obejití omezení.
+</Check>
+
+---
+
+## Fáze 6.6 — Prompt verzování a A/B testování
+
+`ai_prompt_versions` se stejným principem jako `template_versions` (M2.6) — prompty se MĖNÍ v čase a stará verze musí zůstat dohledatelná pro zpětné vysvětlení AI chování. `ai_prompt_ab_tests` umožňuje testovat dvě verze promptu na části provozu s měřením kvality (`user_approval_rate`).
+
+<Check>
+**Acceptance test:** Aktivace A/B testu rozdělí 50 % požadavků na verzi A, 50 % na verzi B, výsledky se zaznamenávají odděleně, a po skončení testu lze určit `winner_version_id` na základě zvolené metriky.
+</Check>
+
+---
+
+## Fáze 6.7 — AI Crawler a karanténa zdrojů
+
+`knowledge_base_sources` s periodickým crawlováním URL (SHA-256 hash detekce změny) → `crawler_discovered_assets` se statusem `pending_approval` → metodik schvaluje PŘED tím, než AI boti k novému obsahu získají přístup.
+
+<Check>
+**Acceptance test:** Změna obsahu sledované URL vytvoří záznam v `knowledge_base_sync_logs` s `requires_admin_approval = TRUE`, nový obsah se NEPROPÍŠE do vektorové databáze, dokud metodik explicitně neschválí.
+</Check>
+
+---
+
+## Fáze 6.8 — Etický audit AI rozhodování (princip a příprava)
+
+<Info>
+Toto je datová a procesní PŘÍPRAVA, ne aktivace prediktivního modelu. Predikce rizika u dětí v pěstounské péči je extrémně citlivá oblast. Pokud se v budoucnu implementuje (mimo rozsah V8), tato infrastruktura zajišťuje, že to bude transparentní od prvního dne.
+</Info>
+
+`ai_decision_explanations` (lidsky čitelné shrnutí "proč AI takto rozhodla" + `contributing_factors`) a `ai_decision_disputes` (formální cesta ke zpochybnění algoritmického rozhodnutí, ne "smazat upozornění a jít dál").
+
+<Check>
+**Acceptance test:** Datový model umožňuje zaznamenat AI rozhodnutí s vysvětlením a následně podat formální dispute, který má vlastní review proces s výsledkem (`upheld`/`overturned`/`partially_revised`). Žádný skutečný prediktivní model není v tomto milníku aktivován — test ověřuje JEN infrastrukturu.
+</Check>
+
+---
+
+## Souhrnný GATE pro M6
+
+<Checklist>
+- [ ] Regresní sada M1–M5 stále projde
+- [ ] AI funkce jsou VŽDY vypnutelné/volitelné per DO a per tarif (feature flags z M4.3)
+- [ ] View-based bezpečnost AI BI ověřena "útočným" testem s pokusem o obejití RLS
+- [ ] RAG nikdy nevrátí odpověď založenou na zastaralé legislativě
+- [ ] Human-in-the-loop potvrzen — žádný AI výstup se nezapíše do dat bez explicitního potvrzení člověkem
+</Checklist>
+
+Pokračuj Milníkem 7 — analytika, měření a benchmarking.

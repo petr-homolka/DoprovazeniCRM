@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Úkoly · Doprovázení CRM</title>
+<link rel="stylesheet" href="style.css?v=20">
+</head>
+<body>
+<div class="app">
+  <nav class="rail" id="rail"></nav>
+  <aside class="side">
+    <div class="org" title="Přepnout organizaci / nastavení">
+      <div class="org-logo">D</div>
+      <div class="org-meta"><div class="t">Doprovázení, z.s.</div><div class="s">Pobočka Brno</div></div>
+      <svg class="chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+    </div>
+    <button class="btn-primary" style="margin-top:6px" onclick="addTask()">+ Nový úkol</button>
+    <div class="sec-label">Pohledy</div>
+    <div class="nav" id="views"></div>
+    <div class="side-foot"><div class="sep-line"></div>
+      <div class="account"><span class="avatar" style="width:34px;height:34px;font-size:12px;background:var(--avatar-neutral)">MD</span><div class="meta"><div class="n">Martin Dvořák</div><div class="r">Doprovázející pracovník</div></div></div>
+    </div>
+  </aside>
+  <main class="main">
+    <div class="topbar"><h2 style="margin-right:8px">Úkoly</h2>
+      <div class="search"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4-4"/></svg><input id="search" placeholder="Hledat úkol…" oninput="render()"></div>
+      <div class="spacer"></div>
+      <div class="seg theme-switch" id="themeseg"><button class="on" data-theme="">Klasický</button><button data-theme="b">Čistý</button></div>
+    </div>
+    <div class="content" style="padding:0"><div id="board" style="height:100%"></div></div>
+  </main>
+</div>
+
+<!-- MODÁL detailu úkolu -->
+<div class="modal-bg" id="taskModal"><div class="modal" style="width:480px">
+  <div class="modal-h">Detail úkolu <button class="x" onclick="closeTask()">✕</button></div>
+  <div class="modal-b" id="taskBody"></div>
+</div></div>
+
+<script src="app.js?v=20"></script>
+<script>
+document.getElementById('rail').innerHTML = App.renderRail('Úkoly');
+App.initTheme(document.getElementById('themeseg'));
+
+const COLS=[['todo','Nové','var(--text-3)'],['doing','Probíhá','var(--blue)'],['wait','Čeká na podklady','var(--alert-warn)'],['done','Hotovo','var(--green)']];
+const PRIO={high:['Vysoká','var(--alert-due)'],mid:['Střední','var(--alert-warn)'],low:['Nízká','var(--text-3)']};
+const MYNAME='M. Dvořák';
+let view='all', tasks=[
+  {id:1,title:'Připravit zprávu pro OSPOD (1. pol. 2026)',etype:'dite',eid:'k1',ename:'Tereza Marková',care:'long',due:'2026-06-25',prio:'high',who:'M. Dvořák',col:'doing'},
+  {id:2,title:'Doplnit vzdělávání – chybí 2 h',etype:'pestoun',eid:'f3',ename:'Marie Svobodová',care:null,due:'2026-06-21',prio:'high',who:'L. Horáková',col:'todo'},
+  {id:3,title:'Naplánovat návštěvu po termínu',etype:'pestoun',eid:'f3',ename:'Marie Svobodová',care:null,due:'2026-06-18',prio:'high',who:'M. Dvořák',col:'todo'},
+  {id:4,title:'Vyžádat vysvědčení od pěstounů',etype:'dite',eid:'k6',ename:'Klára Šťastná',care:'long',due:'2026-07-02',prio:'mid',who:'M. Dvořák',col:'wait'},
+  {id:5,title:'Roční vyhodnocení dohody',etype:'pestoun',eid:'f4',ename:'Eva Veselá',care:null,due:'2026-06-30',prio:'mid',who:'M. Dvořák',col:'todo'},
+  {id:6,title:'Zajistit respitní pobyt (léto)',etype:'pestoun',eid:'f7',ename:'Petra Kučerová',care:null,due:'2026-07-10',prio:'low',who:'M. Dvořák',col:'doing'},
+  {id:7,title:'Podepsat aktualizaci dohody',etype:'pestoun',eid:'f1',ename:'Jana Nováková',care:null,due:'2026-05-30',prio:'mid',who:'M. Dvořák',col:'done'},
+];
+let nextId=8;
+
+const VIEWS=[['all','Všechny úkoly',t=>true],['my','Moje úkoly',t=>t.who===MYNAME],['over','Po termínu',t=>App.dayDiff(t.due)<0&&t.col!=='done']];
+function renderViews(){document.getElementById('views').innerHTML=VIEWS.map(([k,l,fn])=>`<div class="nav-item ${view===k?'active':''}" onclick="setView('${k}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8M3 12h7"/></svg> ${l} <span class="count">${tasks.filter(fn).length}</span></div>`).join('');}
+window.setView=v=>{view=v;renderViews();render();};
+
+function taskCard(t){
+  const over=App.dayDiff(t.due)<0&&t.col!=='done';
+  return `<div class="ktask" draggable="true" data-id="${t.id}" onclick="openTask(${t.id})">
+    <div class="kt-top"><span class="prio" style="background:${PRIO[t.prio][1]}" title="Priorita: ${PRIO[t.prio][0]}"></span><span class="kt-title">${t.title}</span></div>
+    <div class="kt-meta">
+      <a class="ent-chip" href="hub.html?typ=${t.etype}&id=${t.eid}" onclick="event.stopPropagation()">${App.avatar(t.ename,t.care,null,20,t.etype==='dite'?'':'sq')} ${t.ename}</a>
+      <span class="kt-due ${over?'over':''}">📅 ${App.fmtDate(t.due)}${over?' · po termínu':''}</span>
+      <span style="margin-left:auto">${App.avatar(t.who,null,null,22)}</span>
+    </div></div>`;
+}
+function render(){
+  const q=(document.getElementById('search').value||'').toLowerCase().trim();
+  const vf=VIEWS.find(v=>v[0]===view)[2];
+  const list=tasks.filter(vf).filter(t=>!q||(t.title+' '+t.ename).toLowerCase().includes(q));
+  document.getElementById('board').innerHTML=`<div class="kanban">${COLS.map(([ck,cl,cc])=>{
+    const items=list.filter(t=>t.col===ck);
+    return `<div class="kcol" data-col="${ck}"><div class="kcol-h"><span class="dot" style="background:${cc}"></span>${cl}<span class="cnt">${items.length}</span></div>
+      <div class="kcol-body" data-col="${ck}">${items.map(taskCard).join('')}</div></div>`;}).join('')}</div>`;
+  wireDnD();
+}
+function wireDnD(){
+  let dragId=null;
+  document.querySelectorAll('.ktask').forEach(el=>{
+    el.addEventListener('dragstart',e=>{dragId=+el.dataset.id;e.dataTransfer.effectAllowed='move';el.style.opacity='.4';});
+    el.addEventListener('dragend',()=>{el.style.opacity='1';});
+  });
+  document.querySelectorAll('.kcol-body').forEach(b=>{
+    b.addEventListener('dragover',e=>{e.preventDefault();b.parentElement.classList.add('drag');});
+    b.addEventListener('dragleave',()=>b.parentElement.classList.remove('drag'));
+    b.addEventListener('drop',e=>{e.preventDefault();b.parentElement.classList.remove('drag');
+      const t=tasks.find(x=>x.id===dragId); if(t){t.col=b.dataset.col;render();renderViews();}});
+  });
+}
+/* detail / editace úkolu */
+function openTask(id){const t=tasks.find(x=>x.id===id);if(!t)return;
+  const inp='style="width:100%;border:1px solid var(--border-2);border-radius:10px;padding:9px 11px"';
+  document.getElementById('taskBody').innerHTML=`
+    <label class="muted" style="font-size:12px">Název</label>
+    <input ${inp} value="${t.title.replace(/"/g,'&quot;')}" oninput="editTask(${id},'title',this.value)" style="width:100%;border:1px solid var(--border-2);border-radius:10px;padding:9px 11px;margin:4px 0 14px">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div><label class="muted" style="font-size:12px">Stav</label><select ${inp} onchange="editTask(${id},'col',this.value)" style="width:100%;border:1px solid var(--border-2);border-radius:10px;padding:9px 11px;margin-top:4px">${COLS.map(([k,l])=>`<option value="${k}" ${t.col===k?'selected':''}>${l}</option>`).join('')}</select></div>
+      <div><label class="muted" style="font-size:12px">Priorita</label><select onchange="editTask(${id},'prio',this.value)" style="width:100%;border:1px solid var(--border-2);border-radius:10px;padding:9px 11px;margin-top:4px">${Object.entries(PRIO).map(([k,v])=>`<option value="${k}" ${t.prio===k?'selected':''}>${v[0]}</option>`).join('')}</select></div>
+      <div><label class="muted" style="font-size:12px">Termín</label><input type="date" value="${t.due}" onchange="editTask(${id},'due',this.value)" style="width:100%;border:1px solid var(--border-2);border-radius:10px;padding:9px 11px;margin-top:4px"></div>
+      <div><label class="muted" style="font-size:12px">Řešitel</label><input value="${t.who}" oninput="editTask(${id},'who',this.value)" style="width:100%;border:1px solid var(--border-2);border-radius:10px;padding:9px 11px;margin-top:4px"></div>
+    </div>
+    <div style="margin-top:14px"><label class="muted" style="font-size:12px">Navázáno na</label>
+      <div style="margin-top:6px"><a class="ent-chip" href="hub.html?typ=${t.etype}&id=${t.eid}">${App.avatar(t.ename,t.care,null,20,t.etype==='dite'?'':'sq')} ${t.ename} ↗</a></div></div>
+    <div style="margin-top:18px;display:flex;justify-content:flex-end;gap:8px"><button class="btn-secondary" style="width:auto;margin:0;padding:9px 16px" onclick="closeTask()">Hotovo</button></div>`;
+  document.getElementById('taskModal').classList.add('open');
+}
+function editTask(id,f,v){const t=tasks.find(x=>x.id===id);if(t){t[f]=v;render();renderViews();}}
+function closeTask(){document.getElementById('taskModal').classList.remove('open');}
+window.openTask=openTask;window.editTask=editTask;window.closeTask=closeTask;
+document.getElementById('taskModal').addEventListener('click',e=>{if(e.target.id==='taskModal')closeTask();});
+
+function addTask(){const title=prompt('Název úkolu:');if(!title)return;
+  tasks.unshift({id:nextId++,title,etype:'pestoun',eid:'f1',ename:'Jana Nováková',care:null,due:'2026-07-01',prio:'mid',who:MYNAME,col:'todo'});
+  renderViews();render();}
+window.addTask=addTask;
+
+renderViews(); render();
+</script>
+</body>
+</html>

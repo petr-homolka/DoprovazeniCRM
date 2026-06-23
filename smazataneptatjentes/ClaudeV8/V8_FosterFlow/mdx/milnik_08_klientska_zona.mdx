@@ -1,0 +1,103 @@
+---
+title: "Milník 8: Klientská zóna a externí přístupy"
+description: "Foster Parent Portal pro samoobsluhu pěstounů, výstupní adaptéry pro úřady, bezpečný přístup pro externí účetní, rozšíření notifikací o SMS a push."
+icon: "house-user"
+---
+
+<Info>
+**Předpoklad:** M1–M7 běží v produkci. Tento milník otevírá systém směrem k externím, ne-zaměstnaneckým uživatelům (pěstouni, externí účetní) — což má jiný bezpečnostní profil než interní KO/Ředitel/Ekonomka.
+</Info>
+
+## Co tento milník obsahuje
+
+<CardGroup cols={2}>
+  <Card title="Co JE v M8" icon="check">
+    Klientská zóna (Foster Parent Portal) jako TŘETÍ nezávislá aplikace, výstupní adaptéry pro úřady s verzovanými šablonami, accountant access s povinným SMS 2FA, SMS a push mobile notifikace.
+  </Card>
+  <Card title="Co NENÍ v M8" icon="circle-xmark">
+    Veřejné API pro systémová napojení třetích stran (M9) — Klientská zóna je UI pro lidi, ne API pro stroje.
+  </Card>
+</CardGroup>
+
+---
+
+## Fáze 8.1 — Klientská zóna (Foster Parent Portal)
+
+<Danger>
+Toto je TŘETÍ nezávislá aplikace (vedle Worker a Organization). RLS musí být absolutně neprůstřelné — pěstoun smí číst POUZE záznamy, kde `household_id`/`person_id` odpovídá jeho vlastní rodině. Nesmí vidět interní poznámky KO, supervize ani auditní logy organizace.
+</Danger>
+
+Autentizace: Magic Link (z M1) nebo Google/Microsoft SSO (pokud DO aktivovala M5.3) — odpadá správa hesel pro often-starší uživatele.
+
+Samoobsluha: vzdělávání (nahrání certifikátu → `education_records` status `completed`, KO potvrzuje na `verified`), respit (žádost s přílohou faktury → `client_requests` → po schválení automaticky vytvoří `payment_documents` s `provider_id` dle pořadatele a vstupuje do schvalovacího řetězce z M3.5).
+
+Digitální souhlas s dokumenty: tlačítko "Přečetl jsem a souhlasím" loguje čas, IP a ID jako právně platný souhlas.
+
+<Warning>
+Design musí být "blbuvzdorný" (senior-friendly): velké fonty, maximální kontrast, žádná skrytá menu. Accessibility (WCAG AA, zavedené v M1.12) platí zde dvojnásob — cílová skupina je často starší a méně technicky zdatná.
+</Warning>
+
+<Check>
+**Acceptance test:**
+1. Pěstoun se přihlásí a vidí POUZE svou rodinu — pokus o manipulaci s ID v URL na cizí rodinu vrací prázdný výsledek nebo 403, nikdy data.
+2. Žádost o proplacení tábora s přílohou faktury vytvoří `payment_documents` záznam a vstoupí do schvalovacího workflow definovaného organizací.
+3. Accessibility test (axe-core) projde na hlavních obrazovkách portálu se stejnou přísností jako u M1.12.
+</Check>
+
+---
+
+## Fáze 8.2 — Výstupní adaptéry pro úřady
+
+<Warning>
+Koncept "Šablona × Příjemce": pokud Úřad práce změní formát XML schématu, metodik upraví `export_templates.mapping_configuration` pro daného příjemce a inkrementuje verzi. Backendový export engine zůstává netknutý.
+</Warning>
+
+`export_templates` (recipient: `urad_prace`/`krajsky_urad`/`mpsv`/`financni_urad`/`externi_ucetni`, format: `csv`/`xlsx`/`xml`/`json`) + `export_logs` (auditní stopa s SHA-256 hash vygenerovaného souboru).
+
+Účetní exporty (POHODA/Money S3): kódování Windows-1250, středník jako oddělovač, mapování `variable_symbol` a `document_number`.
+
+<Check>
+**Acceptance test:** Vygenerování výkazu pro Úřad práce podle šablony verze 1 a podle novější verze 2 (s dodatečným sloupcem požadovaným úřadem) dává odlišný výstup pro STEJNÁ podkladová data, podle toho, která verze šablony je aktivní k datu generování.
+</Check>
+
+---
+
+## Fáze 8.3 — Accountant access (SMS 2FA)
+
+<Danger>
+Externí účetní NESMÍ mít přístup do plného CRM a nesmí vidět citlivé zápisy z krizových intervencí. `accountant_access_tokens.sms_verification_phone` je POVINNÉ pole — žádný přístup k finančním datům mimo hlavní systém bez druhého faktoru.
+</Danger>
+
+```
+1. Ekonomka vygeneruje balíček exportů + accountant_access_tokens (platnost např. 48h, povinné tel. číslo)
+2. Účetní obdrží odkaz → klikne → systém zašle jednorázový SMS PIN
+3. Po zadání PINu → izolovaná stránka jen se schválenými soubory ke stažení
+4. Stažení se zaznamená do audit_logs
+```
+
+<Check>
+**Acceptance test:** Pokus o přístup k odkazu bez zadání SMS PINu je odmítnut. Vypršení `valid_to` znepřístupní odkaz i se správným PINem. Stažený soubor obsahuje POUZE schválené finanční doklady, ne celý systém.
+</Check>
+
+---
+
+## Fáze 8.4 — Notifikace rozšíření (SMS, push mobile)
+
+Dokončení `notification_channel` implementace z M2.7 — nyní se skutečně odesílá přes SMS gateway a Firebase Cloud Messaging (Web Push API pro PWA), ne jen zapisuje do `notification_delivery_logs` se statusem `pending`.
+
+<Check>
+**Acceptance test:** Krizová notifikace (z M2.3) nyní skutečně dorazí jako push notifikace na mobil přihlášeného KO do 1 minuty, i s appkou na pozadí. SMS se odešle Řediteli při urgentní prioritě dle jeho `preferred_urgent_channel`.
+</Check>
+
+---
+
+## Souhrnný GATE pro M8
+
+<Checklist>
+- [ ] Regresní sada M1–M7 stále projde
+- [ ] Pěstouni a externí účetní mají bezpečný samoobslužný přístup
+- [ ] RLS pro Klientskou zónu ověřen "útočným" testem (pokus o přístup k cizí rodině)
+- [ ] SMS 2FA nelze obejít
+</Checklist>
+
+Pokračuj Milníkem 9 — veřejné API a externí integrace.

@@ -1,0 +1,151 @@
+---
+title: "Milník 3: Finance a SPVPP"
+description: "Platební partneři, doklady, schvalovací workflow, SPVPP kategorie s temporálním splitem, refundační výjimka, manuální bankovní párování. Stále jedna DO, ale ekonomka pracuje plně v systému."
+icon: "money-bill-wave"
+---
+
+<Info>
+**Předpoklad:** M1 a M2 jsou v produkčním provozu. Finanční vrstva je komplexní sama o sobě a má vlastní milník, protože chyba ve finanční logice má jiný typ rizika (legislativní compliance, peníze) než chyba v UI.
+</Info>
+
+## Co tento milník obsahuje
+
+<CardGroup cols={2}>
+  <Card title="Co JE v M3" icon="check">
+    Providers, payment_documents s položkami vázanými na konkrétní dítě, service_transactions, SPVPP kategorie s procentními limity, temporální split engine, schvalovací workflow vázané na oprávnění, refundační výjimka, manuální import bankovního výpisu s AI heuristickým párováním.
+  </Card>
+  <Card title="Co NENÍ v M3" icon="circle-xmark">
+    Žádné živé bankovní API (PSD2 čeká na M9.5 — toto je vědomě pozdější a podmíněné nejvyšším tarifem). Žádné externí výstupní adaptéry pro úřady (M8). Žádné AI BI konverzační dotazy nad financemi (M6).
+  </Card>
+</CardGroup>
+
+---
+
+## Fáze 3.1 — Platební partneři (Providers)
+
+Každý, kdo přijímá nebo odesílá platbu, musí být v systému jako `providers` — provozovatel tábora, fyzická osoba hlídající dítě, terapeut, agentura. IČO, bankovní spojení, smlouva s DO, datum nahlášení na KÚ (pro tábory/hlídače).
+
+<Note>
+Konceptuálně je provider "Karta kontaktu", ale technicky je to samostatná tabulka (ne `persons`), protože nese specifická finanční pole, která by `persons` zbytečně zatěžovala pro 95 % osob, co nikdy nejsou platebním partnerem.
+</Note>
+
+<Check>
+**Acceptance test:** Vytvoření providera s duplicitním IČO v rámci stejné organizace je odmítnuto (`UNIQUE(organization_id, ico)`).
+</Check>
+
+---
+
+## Fáze 3.2 — Doklady (payment_documents + items vázané na dítě)
+
+<Warning>
+Klíčová vlastnost této verze: **položka dokladu se váže na konkrétní dítě** (`payment_document_items.person_id`), ne jen celý doklad na jedno dítě. Jedna faktura za tábor pro dva sourozence nese náklady obou dětí samostatně, každý s vlastní `spvpp_category`.
+</Warning>
+
+```
+Workflow zpracování dokladu:
+1. Draft - KO nebo pěstoun nahraje doklad, Document AI metadata čeká na M6 (v M3 ruční zadání)
+2. Položkový rozpad - každá položka MUSÍ mít person_id a spvpp_category, jinak nelze
+   odeslat ke schválení
+3. Po schválení (Fáze 3.5) - automaticky vygenerují řádky do service_transactions
+```
+
+Částečné uznání: ekonomka odškrtne `is_approved = FALSE` u konkrétní položky (např. penále za pozdní přihlášení), `approved_amount_czk` se přepočítá, status → `partially_accepted`.
+
+<Check>
+**Acceptance test:** Doklad se dvěma položkami pro dvě různé děti se po schválení promítne do `service_transactions` jako dva samostatné řádky s odlišným `person_id`. Pokus o odeslání ke schválení s položkou bez `person_id` je odmítnut.
+</Check>
+
+---
+
+## Fáze 3.3 — SPVPP kategorie a temporální split
+
+<Warning>
+Zákon vyžaduje čerpání státního příspěvku v proporcích mezi kategoriemi (respit, poradenství, vzdělávání) s minimálním a maximálním procentem. Parametry NIKDY nejsou natvrdo v kódu — čtou se z `system_parameters`/`spvpp_parameters` s `valid_from`/`valid_to`.
+</Warning>
+
+### Matematika alikvotního rozpadu
+
+Pokud se v půlce roku změní `base_annual_amount_czk` novelou:
+
+```
+Limit = Base_A × (Days_A / Days_v_roce) + Base_B × (Days_B / Days_v_roce)
+```
+
+Report za rok se zlomovým datem automaticky rozdělí na dílčí období s vlastními parametry a uvedením legislativního zdroje — funkce `detect_parameter_splits()` z M1.2 se zde aplikuje na finanční výkazy.
+
+<Check>
+**Acceptance test:** Testovací data s uměle vloženou změnou `spvpp.respit.max_pct` v polovině roku vygenerují report rozdělený na dvě dílčí období s odpovídajícími částkami, ne jeden (chybný) výpočet pro celý rok s jedním parametrem.
+</Check>
+
+---
+
+## Fáze 3.4 — (sloučeno do 3.3, temporální split je společný mechanismus)
+
+---
+
+## Fáze 3.5 — Schvalovací workflow (permission-based)
+
+<Warning>
+Krok schvalování se váže na `permission_code` z granulárního RBAC (M1.2), **NIKDY na pevnou roli**. To zachovává jediný zdroj pravdy pro "kdo co může" v celém systému.
+</Warning>
+
+```sql
+-- Příklad konfigurace:
+-- Krok 1: required_permission_code = 'finance.approve_basic', min_amount_czk = 0
+-- Krok 2: required_permission_code = 'finance.approve_large', min_amount_czk = 20000
+```
+
+Evaluation Engine: doklad `pending_approval` → vyhledá aktivní `approval_workflows` organizace → kroky seřazené dle `step_number` → pokud částka splňuje `min_amount_czk`, krok je aktivní. Eskalace při `timeout_hours` vypršení zapíše do `approval_history_logs` a notifikuje držitele `admin.view_escalations`.
+
+<Check>
+**Acceptance test:** Uživatel s oprávněním `finance.approve_basic`, ale BEZ `finance.approve_large` vidí a může schválit doklad do 20 000 Kč, ale doklad nad tento limit mu zmizí z čekajících na schválení (čeká na držitele vyššího oprávnění). Změna role uživatele (přidání/odebrání oprávnění) se projeví okamžitě bez nutnosti měnit konfiguraci `approval_steps`.
+</Check>
+
+---
+
+## Fáze 3.6 — Refundační výjimka
+
+<Danger>
+Standardní pravidlo: platba VŽDY dodavateli, NIKDY pěstounovi — ochrana proti zneužití dotace. Výjimka existuje, ale je explicitní, viditelně označená a vždy vyžaduje odůvodnění + schválení.
+</Danger>
+
+```sql
+CONSTRAINT chk_reimbursement_requires_reason CHECK (
+    (is_foster_reimbursement = FALSE) OR
+    (is_foster_reimbursement = TRUE AND reimbursement_reason IS NOT NULL AND foster_parent_id IS NOT NULL)
+);
+```
+
+Tento databázový CHECK constraint (ne jen aplikační validace) znemožňuje uložit refundaci bez odůvodnění i při přímém SQL zápisu. Schvalovací workflow pro refundaci vyžaduje `finance.approve_reimbursement` bez ohledu na výši částky (žádný `auto_approve` krok).
+
+<Check>
+**Acceptance test:** Pokus o INSERT do `payment_documents` s `is_foster_reimbursement = TRUE` a `reimbursement_reason = NULL` je odmítnut přímo databází, ne jen API vrstvou.
+</Check>
+
+---
+
+## Fáze 3.7 — Bankovní párování (manuální import, FÁZE A)
+
+<Note>
+Toto je vědomě **pasivní** první fáze bankovní integrace. Manuální import výpisu (formát ABO/GPC) nahraný ekonomkou, AI heuristika pro fuzzy matching. Živé PSD2 API napojení na účet je samostatná, mnohem komplexnější fáze (M9.5), podmíněná nejvyšším tarifem a dodatečnou smluvní vrstvou — záměrně oddělená, aby M3 nebyl blokován na vyřešení bankovní autorizace.
+</Note>
+
+Párovací matice: exaktní shoda (VS + částka + účet protistrany) → automatické provázání. Pokud selže → AI heuristika (Gemini-ready rozhraní, ale BEZ aktivace v M3 — `ingestion_method = 'manual_import'`, fuzzy matching v M3 je čistě SQL similarity, ne LLM-based, protože AI vrstva čeká na M6).
+
+<Check>
+**Acceptance test:** Import výpisu s transakcí přesně odpovídající VS a částkou nezpracovaného dokladu ho automaticky páruje a přepne na `paid`. Transakce bez VS, ale s podobnou částkou (±5 %), se zobrazí ekonomce jako návrh k manuálnímu potvrzení, ne automaticky.
+</Check>
+
+---
+
+## Souhrnný GATE pro M3
+
+<Checklist>
+- [ ] Regresní sada M1 + M2 stále projde
+- [ ] Ekonomka kompletně pracuje s doklady, schvalováním a SPVPP přehledy v systému
+- [ ] Temporální split ověřen na reálném scénáři legislativní změny
+- [ ] Refundační výjimka nejde obejít ani přímým SQL zápisem
+- [ ] Manuální bankovní párování funkční pro alespoň jeden reálný bankovní formát (ABO/GPC)
+</Checklist>
+
+Pokračuj Milníkem 4 — přechod z jedné organizace na multi-tenant SaaS.

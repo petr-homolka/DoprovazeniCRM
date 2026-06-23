@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dokumenty · Doprovázení CRM</title>
+<link rel="stylesheet" href="style.css?v=20">
+</head>
+<body>
+<div class="app">
+  <nav class="rail" id="rail"></nav>
+  <aside class="side">
+    <div class="org" title="Přepnout organizaci / nastavení">
+      <div class="org-logo">D</div>
+      <div class="org-meta"><div class="t">Doprovázení, z.s.</div><div class="s">Pobočka Brno</div></div>
+      <svg class="chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+    </div>
+    <button class="btn-primary" style="margin-top:6px" onclick="document.getElementById('pick').click()">+ Nahrát dokument</button>
+    <input type="file" id="pick" hidden>
+    <div class="sec-label">Kategorie</div>
+    <div class="nav" id="cats"></div>
+    <div class="side-foot"><div class="sep-line"></div>
+      <div class="account"><span class="avatar" style="width:34px;height:34px;font-size:12px;background:var(--avatar-neutral)">MD</span><div class="meta"><div class="n">Martin Dvořák</div><div class="r">Doprovázející pracovník</div></div></div>
+    </div>
+  </aside>
+  <main class="main">
+    <div class="topbar"><h2 style="margin-right:8px">Dokumenty</h2>
+      <div class="search"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4-4"/></svg><input id="search" placeholder="Hledat dokument nebo kontakt…" oninput="render()"></div>
+      <div class="spacer"></div>
+      <div class="seg theme-switch" id="themeseg"><button class="on" data-theme="">Klasický</button><button data-theme="b">Čistý</button></div>
+    </div>
+    <div class="content" style="padding:0"><div id="body" style="height:100%;overflow:auto"></div></div>
+  </main>
+</div>
+
+<!-- MODÁL dokumentu -->
+<div class="modal-bg docmodal" id="docModal"><div class="modal">
+  <div class="modal-h" id="docTitle">Dokument <button class="x" onclick="closeDoc()">✕</button></div>
+  <div class="docmodal-body">
+    <div class="doc-preview"><div class="doc-page" id="docPage"></div></div>
+    <div class="doc-side"><div class="ds-h">Detail</div>
+      <div id="docMeta" style="padding:14px 16px;font-size:13px;flex:1;overflow:auto"></div>
+      <div style="padding:12px 16px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:8px">
+        <a class="btn-primary" id="docHub" style="text-decoration:none;text-align:center;padding:9px">Otevřít v Hubu kontaktu</a>
+        <button class="btn-secondary" style="margin:0">Stáhnout · Anotovat</button>
+      </div>
+    </div>
+  </div>
+</div></div>
+
+<script src="app.js?v=20"></script>
+<script>
+document.getElementById('rail').innerHTML = App.renderRail('Dokumenty');
+App.initTheme(document.getElementById('themeseg'));
+
+let DOCS = App.allDocs().slice();
+const KINDCOL={PDF:['var(--alert-due)','#FDECEA'],DOCX:['var(--blue)','#E9F1FF'],XLSX:['var(--green)','#E7F8EE'],JPG:['#8B5CF6','#F1ECFB'],PNG:['#8B5CF6','#F1ECFB']};
+let cat='all';
+window.setCat=c=>{cat=c;renderCats();render();};
+
+function renderCats(){
+  const counts={}; DOCS.forEach(d=>counts[d.cat]=(counts[d.cat]||0)+1);
+  let html=`<div class="nav-item ${cat==='all'?'active':''}" onclick="setCat('all')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h18M3 12h18M3 17h18"/></svg> Vše <span class="count">${DOCS.length}</span></div>`;
+  Object.entries(App.DOC_CATS).forEach(([k,l])=>{ if(!counts[k])return;
+    html+=`<div class="nav-item ${cat===k?'active':''}" onclick="setCat('${k}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h8l4 4v16H6zM14 2v4h4"/></svg> ${l} <span class="count">${counts[k]}</span></div>`;});
+  document.getElementById('cats').innerHTML=html;
+}
+function render(){
+  const q=(document.getElementById('search').value||'').toLowerCase().trim();
+  let list=DOCS.filter(d=>cat==='all'||d.cat===cat).filter(d=>!q||(d.name+' '+d.ename).toLowerCase().includes(q));
+  document.getElementById('body').innerHTML=`<div class="docs-grid">${list.map((d,i)=>{const c=KINDCOL[d.kind]||['var(--text-2)','var(--active)'];
+    return `<div class="doc-card" onclick="openDoc(${DOCS.indexOf(d)})">
+      <div class="doc-thumb" style="color:${c[0]};background:${c[1]}">${d.kind}</div>
+      <div class="dn">${d.name}</div>
+      <div class="dd">${App.fmtDate(d.date)}</div>
+      <div style="margin-top:8px"><span class="ent-chip">${App.avatar(d.ename,d.etype==='dite'?'long':null,null,20,d.etype==='dite'?'':'sq')} ${d.ename}</span></div>
+    </div>`;}).join('')||'<div class="muted" style="padding:24px">Žádné dokumenty.</div>'}</div>`;
+}
+function openDoc(i){const d=DOCS[i];if(!d)return;
+  document.getElementById('docTitle').firstChild.textContent=d.name+' ';
+  document.getElementById('docPage').innerHTML=Array(8).fill('<div class="ph-line"></div><div class="ph-line s"></div>').join('');
+  document.getElementById('docMeta').innerHTML=`
+    <div class="vrow" style="grid-template-columns:1fr;gap:2px;padding:8px 0"><div class="k">Typ</div><div class="v">${d.kind} · ${App.DOC_CATS[d.cat]||'—'}</div></div>
+    <div class="vrow" style="grid-template-columns:1fr;gap:2px;padding:8px 0"><div class="k">Datum</div><div class="v">${App.fmtDate(d.date)}</div></div>
+    <div class="vrow" style="grid-template-columns:1fr;gap:2px;padding:8px 0"><div class="k">Kontakt</div><div class="v">${d.ename}</div></div>
+    <p class="muted" style="font-size:12px;margin-top:10px">Náhled je ukázkový. Otevírá se v overlay; v ostré verzi s anotacemi (špendlíky) a verzováním.</p>`;
+  document.getElementById('docHub').href=`hub.html?typ=${d.etype}&id=${d.eid}`;
+  document.getElementById('docModal').classList.add('open');
+}
+window.openDoc=openDoc;
+function closeDoc(){document.getElementById('docModal').classList.remove('open');}
+window.closeDoc=closeDoc;
+document.getElementById('docModal').addEventListener('click',e=>{if(e.target.id==='docModal')closeDoc();});
+document.getElementById('pick').onchange=e=>{const f=e.target.files[0];if(!f)return;DOCS.unshift({name:f.name.replace(/\.[^.]+$/,''),kind:(f.name.split('.').pop()||'').toUpperCase(),date:'2026-06-20',etype:'pestoun',eid:'f1',ename:'Jana Nováková',cat:'jine'});renderCats();render();};
+
+renderCats(); render();
+</script>
+</body>
+</html>

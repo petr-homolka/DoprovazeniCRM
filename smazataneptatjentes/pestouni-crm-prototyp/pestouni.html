@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pěstouni · Doprovázení CRM</title>
+<link rel="stylesheet" href="style.css?v=20">
+</head>
+<body>
+<div class="app">
+  <nav class="rail" id="rail"></nav>
+
+  <aside class="side">
+    <div class="org" title="Přepnout organizaci / nastavení">
+      <div class="org-logo">D</div>
+      <div class="org-meta"><div class="t">Doprovázení, z.s.</div><div class="s">Pobočka Brno</div></div>
+      <svg class="chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+    </div>
+    <button class="btn-primary" style="margin-top:6px">+ Nový pěstoun</button>
+    <div class="side-search">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4-4"/></svg>
+      <input placeholder="Hledat pěstouna…">
+    </div>
+    <div class="sec-label">Pohledy</div>
+    <div class="nav">
+      <div class="nav-item active" onclick="setView('all',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg> Všichni pěstouni <span class="count" id="c-all"></span></div>
+      <div class="nav-item" onclick="setView('under',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/></svg> Vzdělávání pod plánem <span class="count" id="c-under"></span></div>
+      <div class="nav-item" onclick="setView('done',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg> Vzdělávání splněno <span class="count" id="c-done"></span></div>
+    </div>
+    <div class="side-foot">
+      <div class="sep-line"></div>
+      <div class="account">
+        <span class="avatar" style="width:34px;height:34px;font-size:12px;background:var(--avatar-neutral)">MD</span>
+        <div class="meta"><div class="n">Martin Dvořák</div><div class="r">Doprovázející pracovník</div></div>
+        <svg class="cog" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <h2 style="margin-right:8px">Pěstouni</h2>
+      <div class="search">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4-4"/></svg>
+        <input id="search" placeholder="Hledat pěstouna…" oninput="applyFilters()">
+      </div>
+      <div class="spacer"></div>
+      <div class="seg theme-switch" id="themeseg"><button class="on" data-theme="">Klasický</button><button data-theme="b">Čistý</button></div>
+    </div>
+    <div class="content"><div id="tbl"></div>
+      <div class="footnote">Ukázková data (smyšlená). Pěstouni · sledování zákonného vzdělávání (24 h / 18 h za 12 měsíců).</div>
+    </div>
+  </main>
+</div>
+
+<script src="app.js?v=20"></script>
+<script>
+document.getElementById('rail').innerHTML = App.renderRail('Pěstouni');
+App.initTheme(document.getElementById('themeseg'));
+
+const items = App.allFosters();
+const eduState = p => p.eduDone>=p.req ? 'Splněno' : (p.eduDone>=p.req*0.6 ? 'Rozpracováno' : 'Pod plánem');
+
+const columns = [
+  {key:'fam',   label:'Pěstoun',         w:'2.2fr', on:true, locked:true},
+  {key:'house', label:'Domácnost',       w:'1.8fr', on:true},
+  {key:'kids',  label:'Děti v péči',     w:'1fr',   on:true},
+  {key:'care',  label:'Typ péče',        w:'1.4fr', on:true},
+  {key:'edu',   label:'Vzdělávání',      w:'1.8fr', on:true},
+  {key:'worker',label:'Pracovník',       w:'1.2fr', on:false},
+  {key:'phone', label:'Telefon',         w:'1.3fr', on:false},
+  {key:'next',  label:'Příští návštěva', w:'1.4fr', on:false},
+];
+
+function cell(p,key,idx,x){
+  const h=p.household;
+  switch(key){
+    case 'fam': return `<div class="fam">${App.swap(App.avatar(p.n,null,p.photo,null,'sq'),x.cb)}<div><div class="name">${p.n}</div><div class="sub">${h.city}${h.district?` · ${h.district}`:''}</div></div></div>`;
+    case 'house': return h.name;
+    case 'kids': return `<div class="kids">${h.kids.map(k=>App.avatar(k.n,k.care,k.photo,30)).join('')}</div>`;
+    case 'care': return App.careMix(h);
+    case 'edu': return App.eduBar(p.eduDone,p.req);
+    case 'worker': return h.worker;
+    case 'phone': return `<span class="muted">${h.phone||'—'}</span>`;
+    case 'next': return `<span class="muted">${App.fmtDateTime(h.next)}</span>`;
+  }
+}
+function card(p,idx,x){
+  const h=p.household;
+  return `<div class="card" onclick="App._t.open('p','${p.id}')"><div class="card-cb">${x.cb}</div>
+    <div class="top">${App.avatar(p.n,null,p.photo,null,'sq')}<div><div class="name">${p.n}</div><div class="sub">${h.name}</div></div></div>
+    <div class="meta-row"><span>Typ péče</span><span>${App.careMix(h)}</span></div>
+    <div class="meta-row"><span>Děti</span><b>${h.kids.length}</b></div>
+    <div style="margin-top:8px">${App.eduBar(p.eduDone,p.req)}</div></div>`;
+}
+const groupers = {
+  edu:    {label:'Vzdělávání (stav)', fn:eduState},
+  ko:     {label:'Klíčová osoba (KO)', fn:p=>p.household.worker},
+  do:     {label:'Doprovázející org. (DO)', fn:p=>p.household.do},
+  care:   {label:'Typ péče', fn:p=>App.careGroupLabel(p.household)},
+  loc:    {label:'Lokalita', fn:p=>p.household.district||p.household.city},
+};
+
+function openP(p){
+  const h=p.household, req=p.req, pct=Math.round(p.eduDone/req*100);
+  App.openDrawer(`
+    <div class="drawer-head"><button class="x" onclick="App.closeDrawer()">✕</button>
+      <div class="fam">${App.avatar(p.n,null,p.photo,null,'sq')}<div><div class="name" style="font-size:18px">${p.n}</div><div class="sub">Pěstoun · ${h.name}</div></div></div>
+    </div>
+    <div class="drawer-body">
+      <div class="section-title">Upozornění</div>
+      <div class="alerts">${App.upoz((()=>{ const a=[];
+        if(p.eduDone<req) a.push([p.eduDone<req*0.6?'due':'warn',`Vzdělávání: ${p.eduDone}/${req} h`,`Zbývá ${req-p.eduDone} h do konce období.`]);
+        if(h.status==='due') a.push(['due','Návštěva po termínu',`Měla proběhnout do ${App.fmtDate(h.next.iso)}.`]);
+        if(h.status==='warn') a.push(['warn','Vyžaduje pozornost', h.note||'Zkontrolujte případ.']);
+        return a; })())}</div>
+
+      <div class="section-title">Zákonné vzdělávání</div>
+      <div class="edu-card">
+        <div class="top"><div><span class="big">${p.eduDone}</span> <span class="sub">/ ${req} h (${pct} %)</span></div>
+          <div class="sub">období od ${App.fmtDate(p.periodStart)}</div></div>
+        ${App.eduBar(p.eduDone,req)}
+        <div class="sub" style="margin-top:8px">Povinnost: ${req} h / 12 měsíců (${req===24?'zprostředkovaná/přechodná':'příbuzenská'} péče). Zbývá ${Math.max(0,req-p.eduDone)} h.</div>
+      </div>
+      <button class="btn-secondary" style="margin-top:8px">+ Zapsat absolvované vzdělávání</button>
+
+      <div class="section-title">Partner / domácnost</div>
+      ${h.fosters.filter(x=>!x.isFoster).map(x=>`<div class="person">${App.avatar(x.n,null,x.photo,40,'sq')}<div class="meta"><div class="n">${x.n}</div><div class="r">Partner/ka · není pěstoun</div></div></div>`).join('') || '<p class="muted" style="padding:4px 10px">Bez evidovaného partnera.</p>'}
+
+      <div class="section-title">Děti v péči</div>
+      ${h.kids.map(k=>`<div class="child">${App.avatar(k.n,k.care,k.photo,40)}<div class="meta"><div class="n">${k.n} ${App.careBadge(k.care)}</div><div class="r">${k.age} let</div></div></div>`).join('')}
+
+      <div class="section-title">Poslední záznamy</div>
+      <div class="recs">
+        <div class="rec"><div class="when">10. 4. 2026<div class="dur">4 h</div></div><div class="what"><div class="rt">Seminář: Attachment v NRP</div><div class="rd">Akreditace MPSV · započítáno do vzdělávání.</div></div></div>
+        <div class="rec"><div class="when">28. 5. 2026<div class="dur">15:30–16:25</div></div><div class="what"><div class="rt">Návštěva v domácnosti</div><div class="rd">Běžná podpora (nezapočítává se do vzdělávání).</div></div></div>
+      </div>
+      <div class="section-title">Akce</div>
+      <button class="btn-primary" style="margin-bottom:8px">Zapsat vzdělávání</button>
+      <a class="btn-secondary" style="margin-top:0;text-decoration:none" href="hub.html?typ=pestoun&id=${p.id}">Otevřít Hub pěstouna</a>
+    </div>`);
+}
+
+const T=App.Table({ id:'p', mount:document.getElementById('tbl'), items, columns, cell, card, groupers, onOpen:openP });
+document.getElementById('c-all').textContent=items.length;
+document.getElementById('c-under').textContent=items.filter(p=>p.eduDone<p.req).length;
+document.getElementById('c-done').textContent=items.filter(p=>p.eduDone>=p.req).length;
+let view='all';
+function applyFilters(){ const q=(document.getElementById('search').value||'').toLowerCase().trim();
+  let r=items; if(view==='under')r=r.filter(p=>p.eduDone<p.req); else if(view==='done')r=r.filter(p=>p.eduDone>=p.req);
+  if(q)r=r.filter(p=>(p.n+' '+p.household.name+' '+p.household.worker).toLowerCase().includes(q)); T.setItems(r); }
+function setView(v,el){ view=v; document.querySelectorAll('.side .nav-item').forEach(x=>x.classList.remove('active')); if(el)el.classList.add('active'); applyFilters(); }
+window.applyFilters=applyFilters; window.setView=setView;
+</script>
+</body>
+</html>

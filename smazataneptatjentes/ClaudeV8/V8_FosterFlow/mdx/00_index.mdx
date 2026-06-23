@@ -1,0 +1,74 @@
+---
+title: "FosterFlow: Master Blueprint v8"
+description: "Kompletní konsolidované zadání rozdělené do 10 milníků. Tento dokument nahrazuje VŠECHNY předchozí verze (V3-V6) v plném rozsahu."
+icon: "book-open-cover"
+---
+
+<Danger>
+**Instrukce pro AI a vývojáře:** Toto je JEDINÝ a ÚPLNÝ zdroj pravdy pro vývoj systému FosterFlow. Nahrazuje všechny předchozí verze Blueprintu beze zbytku. Žádná systémová logika, oprávnění ani procesní krok nesmí být implementovány v rozporu s touto specifikací nebo s předstihem před milníkem, ve kterém jsou popsány.
+</Danger>
+
+## Jak číst tuto dokumentaci
+
+Blueprint je rozdělen na **10 milníků**, každý ve vlastním dokumentu. Toto rozdělení je záměrné a slouží jednomu cíli: **AI programátor (Claude Code, Google Antigravity) dostává v každé chvíli jen tu část kontextu, kterou skutečně potřebuje pro aktuálně pracovaný milník** — ne celý dokument o desítkách tisíc slov najednou.
+
+<Steps>
+  <Step title="Začni Fází 0 briefingem">
+    Obsahuje tech stack, .env šablonu, pravidla chování při nejistotě a definici "hotovosti" napříč všemi milníky.
+  </Step>
+  <Step title="Spusť schema.sql a seed.sql">
+    Kompletní databázové schéma pro VŠECH 10 milníků existuje od počátku (143 tabulek, milníkově otagované SQL komentáři), ale aplikační kód se k jednotlivým tabulkám "propracovává" postupně podle milníku, ve kterém se právě pracuje.
+  </Step>
+  <Step title="Pracuj milník po milníku, v pořadí 1 → 10">
+    Nikdy nezačínej milník N+1, dokud milník N nesplnil svůj GATE (acceptance testy + regresní sada). Toto pravidlo nemá výjimku.
+  </Step>
+  <Step title="Po Milníku 1: produkční nasazení">
+    Milník 1 je jediný, který explicitně počítá s tím, že po jeho dokončení systém začne pracovat se skutečnými citlivými daty jedné organizace. Milníky 2-10 se vyvíjejí a testují s větší volností, ale nasazení nad běžící produkci musí být vždy zpětně kompatibilní.
+  </Step>
+</Steps>
+
+## Přehled milníků
+
+| Milník | Název | Klíčová otázka |
+|---|---|---|
+| [M1](/milnik-01-zaklad) | Základ | Je systém bezpečný a stabilní pro ostrý provoz jedné DO? |
+| [M2](/milnik-02-provozni) | Provozní nezbytnosti | Pracuje DO se soudy, krizemi a úkoly v systému? |
+| [M3](/milnik-03-finance) | Finance a SPVPP | Pracuje ekonomka plně v systému, ne v Excelu? |
+| [M4](/milnik-04-multitenancy) | Multi-tenancy a SaaS základ | Běží druhá nezávislá DO bez kolize s první? |
+| [M5](/milnik-05-providers) | Svoboda volby ekosystému | Může si DO vybrat Google/Microsoft/nezávislost? |
+| [M6](/milnik-06-ai) | AI vrstva | Jsou AI funkce mocné, bezpečné a vždy volitelné? |
+| [M7](/milnik-07-analytika) | Analytika a měření | Mají DO i provozovatel datově podložené rozhodování? |
+| [M8](/milnik-08-klientska-zona) | Klientská zóna | Mají pěstouni a účetní bezpečný samoobslužný přístup? |
+| [M9](/milnik-09-verejne-api) | Veřejné API | Může se externí systém (OSPOD) bezpečně napojit? |
+| [M10](/milnik-10-dlouhovekost) | Dlouhověkost a ekosystém | Zvládne systém 15-20 let evoluce bez rozpadu? |
+
+## Architektonické principy platné PRO VŠECHNY milníky
+
+<CardGroup cols={2}>
+  <Card title="Provider-agnostická architektura" icon="shuffle">
+    Storage, kalendář, autentizace a AI NIKDY nejsou natvrdo navázány na Google/Microsoft/konkrétního AI poskytovatele. Vždy přes interní adaptérová rozhraní definovaná od M1.1, s konkrétními implementacemi přidávanými v M5 (storage/calendar/auth) a M6 (AI).
+  </Card>
+  <Card title="Karta kontaktu" icon="id-card">
+    Pěstoun, dítě, klíčová osoba, biologický příbuzný, sociální okolí — všechno jsou záznamy v `persons` se stejnou kostrou (identifikace, custom fields, historizace, vztahy). Úřední osoby a platební partneři žijí ve specializovaných registrech, konceptuálně stejný princip, technicky oddělené tabulky.
+  </Card>
+  <Card title="Žádné tiché breaking changes" icon="shield-halved">
+    Každý milník je migrace NAD existující produkční databází předchozího milníku. Žádný `DROP` bez `deprecation_registry` záznamu (od M10.3 formálně, ale princip platí od M1). Regresní sada všech předchozích acceptance testů musí projít po každém novém milníku.
+  </Card>
+  <Card title="Vlastnictví dat" icon="key">
+    Plný export dat (M1.15) funguje VE VŠECH tarifech bez výjimky. Data jsou majetkem doprovázející organizace, ne provozovatele systému.
+  </Card>
+</CardGroup>
+
+## Co dělat, když specifikace neřeší konkrétní situaci
+
+<Warning>
+Rozlišuj **implementační detail** (jak se to napíše — zvol konzervativní výklad konzistentní s architekturou a pokračuj) od **byznys rozhodnutí** (co se má stát — zastav se a zeptej se). Tichý dohad na byznys rozhodnutí je přesně to riziko, kterému se celý tento postup snaží vyhnout.
+</Warning>
+
+## Přiložené technické artefakty
+
+- `schema.sql` — kompletní databázové schéma, 143 tabulek, milníkově otagované
+- `seed.sql` — výchozí oprávnění, číselníky, zákonné parametry, integration providers
+- `registr_rozhodnuti_v8.md` — úplný seznam pojmenování a architektonických rozhodnutí s důvody
+- `milnikova_mapa.md` — pracovní rozvrh všech 70 fází napříč 10 milníky
+- `faze_0_briefing.md` — startovní instrukce pro AI programátora

@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Přehled · Doprovázení CRM</title>
+<link rel="stylesheet" href="style.css?v=20">
+</head>
+<body>
+<div class="app">
+  <nav class="rail" id="rail"></nav>
+  <aside class="side">
+    <div class="org" title="Přepnout organizaci / nastavení">
+      <div class="org-logo">D</div>
+      <div class="org-meta"><div class="t">Doprovázení, z.s.</div><div class="s">Pobočka Brno</div></div>
+      <svg class="chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+    </div>
+    <div class="sec-label">Rychlé akce</div>
+    <div class="nav">
+      <a class="nav-item" href="pestouni.html" style="text-decoration:none;color:inherit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM5 20c0-3.5 3-6 7-6s7 2.5 7 6"/></svg> Pěstouni</a>
+      <a class="nav-item" href="deti.html" style="text-decoration:none;color:inherit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 7a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM7 21v-4a5 5 0 0 1 10 0v4"/></svg> Děti</a>
+      <a class="nav-item" href="kalendar.html" style="text-decoration:none;color:inherit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18v16H3zM3 9h18M8 3v4M16 3v4"/></svg> Kalendář</a>
+      <a class="nav-item" href="nastaveni.html" style="text-decoration:none;color:inherit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg> Nastavení</a>
+    </div>
+    <div class="side-foot"><div class="sep-line"></div>
+      <div class="account"><span class="avatar" style="width:34px;height:34px;font-size:12px;background:var(--avatar-neutral)">MD</span><div class="meta"><div class="n">Martin Dvořák</div><div class="r">Doprovázející pracovník</div></div></div>
+    </div>
+  </aside>
+  <main class="main">
+    <div class="topbar"><h2 style="margin-right:8px">Přehled</h2>
+      <div class="search"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4-4"/></svg><input placeholder="Hledat napříč systémem…"></div>
+      <div class="spacer"></div>
+      <div class="seg theme-switch" id="themeseg"><button class="on" data-theme="">Klasický</button><button data-theme="b">Čistý</button></div>
+    </div>
+    <div class="content"><div id="body"></div></div>
+  </main>
+</div>
+
+<script src="app.js?v=20"></script>
+<script>
+document.getElementById('rail').innerHTML = App.renderRail('Přehled');
+App.initTheme(document.getElementById('themeseg'));
+
+const HH=App.households, FO=App.allFosters(), CH=App.allChildren();
+const podPlanem=FO.filter(p=>p.eduDone<p.req);
+const poTerminu=HH.filter(h=>h.status==='due');
+const pozor=HH.filter(h=>h.status!=='ok');
+const nadchazi=[...HH].sort((a,b)=>App.dayDiff(a.next.iso)-App.dayDiff(b.next.iso));
+
+function spark(vals,color){const w=120,h=32,max=Math.max(...vals),min=Math.min(...vals),rng=(max-min)||1;
+  const pts=vals.map((v,i)=>`${(i/(vals.length-1))*w},${(h-3)-((v-min)/rng)*(h-8)}`).join(' ');
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="display:block"><polyline fill="none" stroke="${color}" stroke-width="2" points="${pts}"/></svg>`;}
+function stat(lbl,num,vals,color,foot){return `<div class="stat"><div class="lbl">${lbl}</div><div class="num">${num}</div><div class="foot"><span>${foot||''}</span>${spark(vals,color)}</div></div>`;}
+const famName=h=>h.name.replace('Domácnost ','');
+const firstFoster=h=>(h.fosters.find(x=>x.isFoster)||{}).id;
+
+document.getElementById('body').innerHTML=`
+  <div class="stats">
+    ${stat('Pěstouni',FO.length,[5,6,6,7,7,FO.length],'var(--care-long)','aktivní')}
+    ${stat('Děti v péči',CH.length,[6,7,8,8,9,CH.length],'var(--care-temp)','svěřené')}
+    ${stat('Domácnosti',HH.length,[3,4,4,5,5,HH.length],'var(--green)','vedené')}
+    ${stat('Vzdělávání pod plánem',podPlanem.length,[1,2,2,3,3,podPlanem.length],'var(--alert-warn)','pěstounů')}
+    ${stat('Návštěvy po termínu',poTerminu.length,[0,1,1,0,1,poTerminu.length],'var(--alert-due)','řešit')}
+  </div>
+  <div class="dash-cols">
+    <div class="panel"><h3>Vyžaduje pozornost <a href="pestouni.html">vše</a></h3>
+      ${pozor.map(h=>`<a class="prow" href="hub.html?typ=pestoun&id=${firstFoster(h)}">${App.avatar(famName(h),null,h.photo,36,'sq')}<div class="meta"><div class="n">${h.name}</div><div class="s">${h.worker} · ${App.fmtDateTime(h.next)}</div></div>${App.statusBadge(h.status)}</a>`).join('')||'<div class="prow">Vše v pořádku 🎉</div>'}
+    </div>
+    <div class="panel"><h3>Vzdělávání pod plánem <a href="pestouni.html">vše</a></h3>
+      ${podPlanem.map(p=>`<a class="prow" href="hub.html?typ=pestoun&id=${p.id}">${App.avatar(p.n,null,p.photo,36,'sq')}<div class="meta"><div class="n">${p.n}</div><div style="margin-top:4px">${App.eduBar(p.eduDone,p.req,true)}</div></div></a>`).join('')||'<div class="prow">Všichni splňují ✓</div>'}
+    </div>
+    <div class="panel"><h3>Nejbližší návštěvy <a href="kalendar.html">kalendář</a></h3>
+      ${nadchazi.slice(0,6).map(h=>{const d=App.dayDiff(h.next.iso);const col=d<0?'var(--alert-due)':(d<=7?'var(--alert-warn)':'var(--text-2)');
+        return `<a class="prow" href="hub.html?typ=pestoun&id=${firstFoster(h)}">${App.avatar(famName(h),null,h.photo,36,'sq')}<div class="meta"><div class="n">${h.name}</div><div class="s">${App.fmtDateTime(h.next)}</div></div><span style="color:${col};font-size:12px;font-weight:600">${d<0?'po termínu':d===0?'dnes':'za '+d+' d'}</span></a>`;}).join('')}
+    </div>
+    <div class="panel"><h3>Děti dle typu péče</h3>
+      ${['long','temp','kin'].map(c=>{const n=CH.filter(k=>k.care===c).length;return `<div class="prow"><span class="avatar" style="width:14px;height:14px;background:${App.CARE[c][2]}"></span><div class="meta"><div class="n">${App.CARE[c][1]}</div></div><b>${n}</b></div>`;}).join('')}
+    </div>
+  </div>
+  <div class="footnote">Ukázková data (smyšlená). Dashboard se generuje z dat systému – v ostré verzi včetně sparklines z reálných řad.</div>`;
+</script>
+</body>
+</html>

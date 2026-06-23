@@ -1,0 +1,112 @@
+---
+title: "Milník 9: Veřejné API a externí integrace"
+description: "Verzované veřejné API pro třetí strany (OSPOD a další), OAuth/API klíče se scope oprávněními, webhooks, pilotní externí napojení, živé bankovní PSD2 API."
+icon: "plug"
+---
+
+<Danger>
+**Toto je nejrizikovější milník v celém projektu a je záměrně poslední před M10.** Veřejné API otevírá systém vnějším systémům — to je jiná disciplína bezpečnosti než interní RBAC (M1) nebo Klientská zóna (M8), kde uživatelé jsou lidé s jasnou identitou. Externí systém může mít chyby, může být kompromitovaný, může se chovat nepředvídatelně. M9 přichází AŽ PO ověření M1–M8 v reálném produkčním provozu po delší dobu.
+</Danger>
+
+## Co tento milník obsahuje
+
+<CardGroup cols={2}>
+  <Card title="Co JE v M9" icon="check">
+    Verzovaný veřejný API kontrakt (OpenAPI), OAuth/API klíče se scope-based oprávněními NEZÁVISLÝMI na interním RBAC, webhooks, řízený pilotní projekt s jedním externím partnerem, živé bankovní PSD2/multibanking napojení pro nejvyšší tarif.
+  </Card>
+  <Card title="Co NENÍ v M9" icon="circle-xmark">
+    Plošné zpřístupnění API komukoliv bez schvalovacího procesu. App marketplace (to je M10.5, samostatná otevřená platforma).
+  </Card>
+</CardGroup>
+
+---
+
+## Fáze 9.1 — Veřejné API kontrakt (OpenAPI, verzování)
+
+<Warning>
+Veřejné API (`/v1/`, `/v2/`...) je VERZOVÁNO NEZÁVISLE na interním `/api/` z M1, které se může měnit s frontendem kdykoliv. Veřejné API musí mít stabilitu a deprecation politiku (návaznost na M10.3).
+</Warning>
+
+`public_api_versions` evidují stav (`active`/`deprecated`/`sunset`) s `openapi_spec_document_id` — kompletní OpenAPI specifikace publikovaná a udržovaná jako dokument, ne jen interní poznámky.
+
+<Check>
+**Acceptance test:** OpenAPI specifikace `/v1/` validně popisuje všechny veřejné endpointy a projde validátorem (Swagger Validator nebo ekvivalent) bez chyby. Endpoint `/v2/` může existovat paralelně s `/v1/` bez vzájemné kolize.
+</Check>
+
+---
+
+## Fáze 9.2 — OAuth/API klíče, scope-based oprávnění
+
+<Danger>
+Scope-based oprávnění (`api_key_scope`: `read_households`, `write_events`...) je VLASTNÍ vrstva NEZÁVISLÁ na interním `permission_code` z M1.2. Externí systém NIKDY nedostává široký interní permission, jen úzce vymezený scope — i kompromitovaný API klíč má omezený dosah škody.
+</Danger>
+
+```sql
+CREATE TABLE external_api_clients (
+    organization_id UUID REFERENCES organizations(id) NOT NULL,
+    client_name TEXT NOT NULL,           -- 'OSPOD Teplice integrace'
+    api_key_hash TEXT NOT NULL UNIQUE,
+    allowed_scopes api_key_scope[] NOT NULL,
+    rate_limit_per_minute INT DEFAULT 60,
+    expires_at TIMESTAMP WITH TIME ZONE
+);
+```
+
+<Check>
+**Acceptance test:** API klíč se scopem pouze `read_households` úspěšně čte seznam rodin, ale pokus o `POST /v1/events` (vyžadující `write_events`, který klíč nemá) vrací 403, i kdyby byl klíč jinak validní a nevypršelý.
+</Check>
+
+---
+
+## Fáze 9.3 — Webhooks
+
+`webhook_subscriptions` (event_type jako `crisis_case.created`, `court_decision.effective`) s HMAC signature (`secret_hash`) pro ověření autenticity payloadu na straně příjemce. `webhook_delivery_logs` s retry logikou při neúspěšném doručení.
+
+<Check>
+**Acceptance test:** Vytvoření krizového případu (z M2.3) odešle webhook na registrovanou `target_url` do 30 sekund, s platným HMAC signature ověřitelným sdíleným secretem. Neúspěšné doručení (HTTP 500 na straně příjemce) vyvolá alespoň 3 opakované pokusy s exponenciálním odstupem.
+</Check>
+
+---
+
+## Fáze 9.4 — Pilotní napojení (řízený pilot, ne plošně)
+
+<Info>
+**Strategické rozhodnutí:** první skutečné externí napojení (např. konkrétní OSPOD nebo jiný typ partnera) se nasazuje jako ŘÍZENÝ PILOT s jedním partnerem, ne plošná nabídka API všem. To umožňuje objevit reálné integrační problémy v kontrolovaném prostředí před širším zpřístupněním.
+</Info>
+
+<Check>
+**Acceptance test:** Pilotní partner úspěšně čte/zapisuje data v rozsahu svého scope po dobu definovaného pilotního období (např. 4 týdny) bez bezpečnostního incidentu a se zaznamenanou zpětnou vazbou k API ergonomice.
+</Check>
+
+---
+
+## Fáze 9.5 — Živé bankovní PSD2/multibanking API
+
+<Warning>
+Nahrazuje/rozšiřuje manuální import z M3.7 — `bank_statements`/`bank_transactions` ZŮSTÁVAJÍ jako cílové tabulky, živé API je DALŠÍ zdroj jejich plnění, ne náhrada architektury. Dostupné JEN pro `tier_custom`, vyžaduje dodatečnou smluvní vrstvu (`organization_legal_agreements` z M4.3) kvůli citlivosti přímého přístupu k bankovnímu účtu DO.
+</Warning>
+
+```sql
+ALTER TABLE bank_transactions ADD COLUMN source_connection_id UUID REFERENCES bank_psd2_connections(id);
+ALTER TABLE bank_transactions ADD COLUMN ingestion_method TEXT DEFAULT 'manual_import'
+    CHECK (ingestion_method IN ('manual_import', 'psd2_live_api'));
+```
+
+PSD2 konsent má omezenou platnost (typicky 90 dní dle PSD2 RTS) a vyžaduje periodickou reautorizaci — proto je to vědomě AŽ PO ověření M3 manuálního importu v dlouhodobém provozu, ne souběžně s ním.
+
+<Check>
+**Acceptance test:** Organizace na `tier_custom` autorizuje PSD2 přístup k účtu, transakce se začnou objevovat v `bank_transactions` s `ingestion_method = 'psd2_live_api'` a procházejí STEJNOU párovací logikou jako manuálně importované (z M3.7), bez nutnosti duplicitní implementace. Vypršení `consent_expires_at` zastaví import a vyžádá reautorizaci.
+</Check>
+
+---
+
+## Souhrnný GATE pro M9
+
+<Checklist>
+- [ ] Regresní sada M1–M8 stále projde
+- [ ] První externí systém úspěšně komunikuje přes veřejné API v produkci (pilot úspěšný)
+- [ ] Scope-based oprávnění ověřeno — kompromitovaný klíč s omezeným scope nemůže způsobit škodu nad rámec svého scope
+- [ ] PSD2 napojení funguje paralelně s manuálním importem bez konfliktu
+</Checklist>
+
+Pokračuj Milníkem 10 — dlouhověkost, otevřenost a ekosystém.

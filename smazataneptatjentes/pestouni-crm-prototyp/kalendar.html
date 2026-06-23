@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kalendář · Doprovázení CRM</title>
+<link rel="stylesheet" href="style.css?v=20">
+</head>
+<body>
+<div class="app">
+  <nav class="rail" id="rail"></nav>
+  <aside class="side">
+    <h1 style="margin-bottom:10px">Kalendář</h1>
+    <button class="btn-primary" onclick="openForm()">+ Vytvořit událost</button>
+    <div class="side-search" style="margin-top:10px"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4-4"/></svg><input id="calSearch" placeholder="Hledat v kalendáři…" oninput="render()"></div>
+    <div class="sec-label">Filtr kontaktu</div>
+    <select id="entFilter" onchange="render()" style="width:100%;border:1px solid var(--border-2);border-radius:10px;padding:8px 10px;margin:2px 0 4px"><option value="">— všichni —</option></select>
+    <div class="sec-label">Kalendáře (KO)</div>
+    <div class="nav" id="calendars"></div>
+    <div class="sec-label">Typy událostí</div>
+    <div class="nav" id="filters"></div>
+    <div class="sec-label">Zobrazit</div>
+    <div class="nav">
+      <div class="nav-item" id="holToggle" onclick="toggleHol()"><span class="cal-swatch" style="background:var(--alert-due)"></span> Svátky a jmeniny</div>
+      <div class="nav-item" id="taskToggle" onclick="toggleTasks()"><span class="cal-swatch" style="background:var(--alert-warn)"></span> Úkoly (termíny)</div>
+    </div>
+    <div class="side-foot"><div class="sep-line"></div>
+      <div class="muted" style="font-size:11px;padding:0 4px 8px">Pracovní doba KO 8–17 (mimo ni je den ztlumený). Dovolená KO je vyznačena šrafovaně.</div>
+      <div class="account"><span class="avatar" style="width:34px;height:34px;font-size:12px;background:var(--avatar-neutral)">VD</span><div class="meta"><div class="n">Vedení DO</div><div class="r">vidí všechny KO</div></div></div>
+    </div>
+  </aside>
+  <main class="main">
+    <div class="topbar">
+      <button class="cal-today" onclick="goToday()">Dnes</button>
+      <div class="cal-nav"><button class="navb" onclick="nav(-1)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></button><button class="navb" onclick="nav(1)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></button></div>
+      <h2 id="rangeTitle" style="margin:0 6px"></h2>
+      <span class="chip" id="weekBadge" style="display:none"></span>
+      <span class="muted" style="font-size:13px">· Všechny KO (vedení)</span>
+      <div class="spacer"></div>
+      <div class="seg" id="viewSeg"><button data-v="month">Měsíc</button><button data-v="week" class="on">Týden</button><button data-v="3day">3 dny</button><button data-v="day">Den</button><button data-v="agenda">Agenda</button></div>
+      <div class="seg theme-switch" id="themeseg" style="margin-left:8px"><button class="on" data-theme="">Klasický</button><button data-theme="b">Čistý</button></div>
+    </div>
+    <div class="content" style="padding:0"><div id="body" style="height:100%"></div></div>
+  </main>
+</div>
+
+<!-- MODÁL: nová událost -->
+<div class="modal-bg" id="evModal"><div class="modal" style="width:480px">
+  <div class="modal-h">Nová událost <button class="x" onclick="closeForm()">✕</button></div>
+  <div class="modal-b" id="evBody"></div>
+  <div class="modal-f"><button class="btn-secondary" style="width:auto;margin:0;padding:9px 16px" onclick="closeForm()">Zrušit</button><button class="btn-primary" style="width:auto;padding:9px 18px" onclick="saveForm()">Uložit událost</button></div>
+</div></div>
+
+<!-- BOČNÍ PANEL: detail události + chat -->
+<div class="ev-panel" id="evPanel">
+  <div class="ev-tabs"><button data-t="detail" class="on" onclick="evTab('detail')">Detail</button><button data-t="chat" onclick="evTab('chat')">Chat</button><button class="pclose" onclick="closeEvent()">✕</button></div>
+  <div class="ev-cols" id="evCols">
+    <div class="ev-detail"><div class="edh">Detail události</div><div class="edb" id="evDetailBody"></div></div>
+    <div class="ev-chat"><div class="ech"><span id="evChatHead">Chat</span><button class="pclose" onclick="closeEvent()" style="margin-left:auto">✕</button></div><div class="chat-stream" id="evChatStream" style="flex:1"></div>
+      <div class="composer" id="evComposer"><button class="attach" onclick="document.getElementById('evChatFile').click()"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.5 12 21a5 5 0 0 1-7-7l9-9a3.5 3.5 0 0 1 5 5l-9 9a2 2 0 0 1-3-3l8-8"/></svg></button><input id="evChatInput" placeholder="Napiš zprávu…" onkeydown="if(event.key==='Enter')evSend()"><button class="send" onclick="evSend()"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg></button><input type="file" id="evChatFile" hidden></div>
+    </div>
+  </div>
+</div>
+
+<script src="app.js?v=20"></script>
+<script>
+document.getElementById('rail').innerHTML = App.renderRail('Kalendář');
+App.initTheme(document.getElementById('themeseg'));
+
+const TYPES={visit:['Návštěva','var(--green)'],contact:['Kontakt','var(--cyan)'],term:['Termín / report','var(--orange)'],edu:['Vzdělávání','var(--blue)'],other:['Ostatní','#8B5CF6']};
+const WORKERS=[...new Set(App.households.map(h=>h.worker))];
+const WPAL=['#3380FF','#8B5CF6','#22C55E','#FF7F4D','#EC48BE'];
+let calColors=App.calColorsLoad();
+function wcol(w){return calColors[w]||WPAL[WORKERS.indexOf(w)%WPAL.length];}
+const ENTS=[...App.allFosters().map(p=>({label:p.n,etype:'pestoun',eid:p.id})),...App.allChildren().map(k=>({label:k.n,etype:'dite',eid:k.id,care:k.care}))];
+const TODAY=new Date(2026,5,20); let cursor=new Date(2026,5,20);
+const MNn=['leden','únor','březen','duben','květen','červen','červenec','srpen','září','říjen','listopad','prosinec'];
+const DOWs=['Po','Út','St','Čt','Pá','So','Ne'], DOWl=['Pondělí','Úterý','Středa','Čtvrtek','Pátek','Sobota','Neděle'];
+const pad=n=>String(n).padStart(2,'0');
+const isoD=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const dowi=d=>(d.getDay()+6)%7;
+const addDays=(d,n)=>{const x=new Date(d);x.setDate(x.getDate()+n);return x;};
+const mondayOf=d=>addDays(d,-dowi(d));
+const toMin=t=>{const[a,b]=t.split(':').map(Number);return a*60+b;};
+const addMin=(t,m)=>{const x=toMin(t)+m;return `${pad(Math.floor(x/60))}:${pad(x%60)}`;};
+const TODAY_ISO=isoD(TODAY);
+const ADDR='Teplice, Čelakovského 772/3';
+
+/* vlastní typy událostí (per uživatel) */
+function loadTypes(){try{return JSON.parse(localStorage.getItem('crm-evtypes')||'[]');}catch(e){return[];}}
+function saveTypes(a){try{localStorage.setItem('crm-evtypes',JSON.stringify(a));}catch(e){}}
+let customTypes=loadTypes();
+function typeColor(k){return TYPES[k]?TYPES[k][1]:(customTypes.find(t=>t.key===k)||{}).color||'var(--text-3)';}
+function typeLabel(k){return TYPES[k]?TYPES[k][0]:(customTypes.find(t=>t.key===k)||{}).label||k;}
+function typeOptions(sel){return [...Object.entries(TYPES).map(([k,v])=>[k,v[0]]),...customTypes.map(t=>[t.key,t.label])].map(([k,l])=>`<option value="${k}" ${sel===k?'selected':''}>${l}</option>`).join('');}
+window.evTypeChange=el=>{if(el.value!=='__new__')return;const n=prompt('Název nového typu události:');if(n){const key='c'+Date.now().toString(36);customTypes.push({key,label:n,color:'#8B5CF6'});saveTypes(customTypes);el.innerHTML=typeOptions(key)+'<option value="__new__">+ Nový typ…</option>';}else el.value='visit';};
+
+/* našeptávač kontaktů (vazba na víc osob) */
+const ENTALL=[
+  ...App.allFosters().map(p=>({label:p.n,addr:p.household.city})),
+  ...App.allChildren().map(k=>({label:k.n,addr:k.household.city})),
+  ...WORKERS.map(w=>({label:App.workerFull(w),addr:''})),
+  {label:'OSPOD Brno-střed',addr:'Dominikánská 2, Brno'},
+  {label:'Krajský úřad JMK',addr:'Žerotínovo nám. 3, Brno'},
+  {label:'Vedení DO',addr:''},
+];
+let selectedEnts=[];
+window.addEnt=(l)=>{l=(l||'').trim();const e=ENTALL.find(x=>x.label===l)||(l?{label:l,addr:''}:null);if(!e)return;if(selectedEnts.some(s=>s.label===e.label))return;selectedEnts.push(e);if(selectedEnts.length===1){const loc=document.getElementById('ev_loc');if(loc&&!loc.value&&e.addr)loc.value=e.addr;}renderEntChips();const i=document.getElementById('ev_entInput');if(i)i.value='';};
+window.rmEnt=(i)=>{selectedEnts.splice(i,1);renderEntChips();};
+function renderEntChips(){const el=document.getElementById('ev_entChips');if(el)el.innerHTML=selectedEnts.map((s,i)=>`<span class="tag" style="background:var(--active);margin:2px">${s.label} <span style="cursor:pointer;color:var(--text-3)" onclick="rmEnt(${i})">✕</span></span>`).join('');}
+
+function buildEvents(){const E=[];
+  App.households.forEach(h=>{const fid=(h.fosters.find(x=>x.isFoster)||{}).id;
+    E.push({date:h.next.iso,start:h.next.time||'10:00',dur:60,title:'Návštěva: '+h.name.replace('Domácnost ',''),type:'visit',owner:h.worker,etype:'pestoun',eid:fid,ename:h.name,href:`hub.html?typ=pestoun&id=${fid}`,loc:`${h.city}`});});
+  E.push({date:'2026-06-05',start:'09:00',dur:120,title:'Zpráva pro OSPOD (Tereza M.)',type:'term',owner:'M. Dvořák',etype:'dite',eid:'k1',ename:'Tereza Marková',href:'hub.html?typ=dite&id=k1'});
+  E.push({date:'2026-06-12',start:'15:00',dur:90,title:'Asistovaný kontakt s matkou (Tereza)',type:'contact',owner:'M. Dvořák',etype:'dite',eid:'k1',ename:'Tereza Marková',href:'hub.html?typ=dite&id=k1',loc:'OSPOD Brno-střed, Dominikánská 2'});
+  E.push({date:'2026-06-10',start:'13:00',dur:240,title:'Seminář vzdělávání (4 h)',type:'edu',owner:'L. Horáková',etype:'pestoun',eid:'f3',ename:'Marie Svobodová',href:'pestouni.html'});
+  E.push({date:'2026-06-18',start:'16:30',dur:60,title:'Besídka ve škole',type:'other',owner:'M. Dvořák',etype:'dite',eid:'k1',ename:'Tereza Marková',href:'#',loc:'ZŠ Teplice, Buzulucká'});
+  E.push({date:'2026-06-20',start:'11:00',dur:60,title:'Konzultace – Procházková',type:'contact',owner:'L. Horáková',etype:'pestoun',eid:'f6',ename:'Hana Procházková',href:'hub.html?typ=pestoun&id=f6'});
+  E.push({date:'2026-06-30',start:'10:00',dur:90,title:'Roční vyhodnocení (Veselých)',type:'term',owner:'M. Dvořák',etype:'pestoun',eid:'f4',ename:'Eva Veselá',href:'pestouni.html'});
+  return E;}
+const EVENTS=buildEvents();
+
+let view='week';
+const state={owners:new Set(WORKERS),types:new Set(Object.keys(TYPES)),showHol:true,showTasks:true,ent:'',q:''};
+const anyInteg=()=>{const i=App.integLoad();return i.google||i.outlook;};
+function matchFilters(e){const q=state.q;
+  return state.owners.has(e.owner)&&(state.types.has(e.type)||!TYPES[e.type])&&(!state.ent||e.eid===state.ent)&&(!q||(e.title+' '+(e.ename||'')).toLowerCase().includes(q));}
+function visEvents(){return EVENTS.filter(matchFilters);}
+function visTasks(){if(!state.showTasks)return[];return App.allTasks().filter(t=>state.owners.has(t.owner)&&(!state.ent||t.eid===state.ent)&&(!state.q||(t.title+' '+(t.ename||'')).toLowerCase().includes(state.q)));}
+function vacFor(isoStr){return App.vacations().filter(v=>state.owners.has(v.owner)&&isoStr>=v.from&&isoStr<=v.to);}
+
+/* sidebar */
+function fillEnt(){document.getElementById('entFilter').innerHTML='<option value="">— všichni —</option>'+ENTS.map(e=>`<option value="${e.eid}">${e.label} (${e.etype==='dite'?'dítě':'pěstoun'})</option>`).join('');document.getElementById('entFilter').value=state.ent;}
+function renderCalendars(){document.getElementById('calendars').innerHTML=WORKERS.map(w=>`<div class="nav-item" style="gap:10px"><input type="color" class="cal-colorpick" value="${wcol(w)}" title="Změnit barvu kalendáře" onchange="setColor('${w}',this.value)" onclick="event.stopPropagation()" style="opacity:${state.owners.has(w)?1:.4}"><span onclick="toggleOwner('${w}')" style="flex:1;cursor:pointer;opacity:${state.owners.has(w)?1:.45}">${App.workerFull(w)}</span></div>`).join('');}
+function renderFilters(){document.getElementById('filters').innerHTML=Object.entries(TYPES).map(([k,[l,c]])=>`<div class="nav-item" onclick="toggleType('${k}')"><span class="cal-swatch" style="background:${c};opacity:${state.types.has(k)?1:.25}"></span> <span style="opacity:${state.types.has(k)?1:.45}">${l}</span></div>`).join('');}
+window.toggleOwner=w=>{state.owners.has(w)?state.owners.delete(w):state.owners.add(w);renderCalendars();render();};
+window.toggleType=k=>{state.types.has(k)?state.types.delete(k):state.types.add(k);renderFilters();render();};
+window.toggleHol=()=>{state.showHol=!state.showHol;document.getElementById('holToggle').style.opacity=state.showHol?1:.5;render();};
+window.toggleTasks=()=>{state.showTasks=!state.showTasks;document.getElementById('taskToggle').style.opacity=state.showTasks?1:.5;render();};
+window.setColor=(w,c)=>{calColors[w]=c;App.calColorsSave(calColors);renderCalendars();render();};
+
+const syncIc=()=>anyInteg()?'<svg class="sync-ic" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 1-15 6.7L3 16M3 12a9 9 0 0 1 15-6.7L21 8M3 21v-5h5M21 3v5h-5"/></svg>':'';
+const navLink=loc=>`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(loc)}`;
+const navIc=loc=>loc?`<a href="${navLink(loc)}" target="_blank" rel="noopener" title="Navigovat: ${loc}" onclick="event.stopPropagation()" style="color:inherit"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7-5.2-7-11a7 7 0 0 1 14 0c0 5.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg></a>`:'';
+function evColors(e){const c=wcol(e.owner);return {c,bg:`color-mix(in srgb, ${c} 14%, var(--surface))`};}
+function holLine(isoStr){if(!state.showHol)return '';const h=App.holidaysFor(isoStr);const p=[];if(h.state)p.push(`<span style="color:var(--alert-due)">${h.state}</span>`);if(h.school)p.push(`<span style="color:var(--green)">${h.school}</span>`);if(h.nameday)p.push(`<span class="muted">${h.nameday}</span>`);return p.length?`<div style="font-size:10px;font-weight:400;margin-top:2px">${p.join(' · ')}</div>`:'';}
+
+/* časová mřížka */
+function timeGrid(days){const H0=7,H1=20,hh=48,WH=[8,17];
+  const hours=[];for(let h=H0;h<=H1;h++)hours.push(`<div class="hr">${h}:00</div>`);
+  const head=`<div class="tg-head" style="grid-template-columns:54px repeat(${days.length},1fr)"><div class="th"></div>${days.map(d=>{const di=isoD(d);return `<div class="th ${di===TODAY_ISO?'today':''}">${DOWs[dowi(d)]}<div class="dn">${d.getDate()}</div>${holLine(di)}</div>`;}).join('')}</div>`;
+  // celodenní pruh (úkoly + dovolená)
+  const allday=`<div class="tg-allday" style="grid-template-columns:54px repeat(${days.length},1fr)"><div class="ad-gut">Celý den</div>${days.map(d=>{const di=isoD(d);
+    const tk=visTasks().filter(t=>t.due===di).map(t=>`<a class="ad-chip task" href="hub.html?typ=${t.etype}&id=${t.eid}" title="Termín úkolu: ${t.title}">⚑ ${t.title}</a>`).join('');
+    const vc=vacFor(di).map(v=>`<span class="ad-chip vac">${v.label}: ${App.workerFull(v.owner)}</span>`).join('');
+    return `<div class="ad-cell">${tk}${vc}</div>`;}).join('')}</div>`;
+  const cols=days.map(d=>{const di=isoD(d);
+    const evs=visEvents().filter(e=>e.date===di).map(e=>{const{c,bg}=evColors(e);const top=(toMin(e.start)-H0*60)/60*hh;const ht=Math.max(26,e.dur/60*hh-2);
+      return `<div class="tg-ev" style="cursor:pointer;top:${top}px;height:${ht}px;background:${bg};border-left-color:${c}" title="${e.title} · ${App.workerFull(e.owner)}" onclick="event.stopPropagation();openEvent(${EVENTS.indexOf(e)})"><div class="te-time">${e.start} ${syncIc()}</div><div class="te-t">${e.title}</div><div class="te-foot">${App.avatar(App.workerFull(e.owner),null,null,16)}<span class="cal-swatch" style="background:${typeColor(e.type)}"></span>${navIc(e.loc)}</div></div>`;}).join('');
+    const now=di===TODAY_ISO?`<div class="tg-now" style="top:${(toMin('14:20')-H0*60)/60*hh}px"></div>`:'';
+    const nw=`<div class="nonwork" style="top:0;height:${(WH[0]-H0)*hh}px"></div><div class="nonwork" style="top:${(WH[1]-H0)*hh}px;bottom:0"></div>`;
+    return `<div class="tg-col" data-iso="${di}" onclick="slotClick(event,'${di}',${H0},${hh})">${nw}${evs}${now}</div>`;}).join('');
+  return `<div style="display:flex;flex-direction:column;height:100%">${head}${allday}<div style="overflow:auto;flex:1"><div class="tg-body"><div class="tg-gutter">${hours.join('')}</div><div class="tg-cols" style="grid-template-columns:repeat(${days.length},1fr);height:${(H1-H0+1)*hh}px">${cols}</div></div></div></div>`;}
+window.slotClick=(e,isoStr,H0,hh)=>{if(e.target.closest('.tg-ev'))return;const y=e.offsetY!=null?e.offsetY:0;const h=Math.min(20,Math.max(H0,H0+Math.floor(y/hh)));openForm(isoStr,`${pad(h)}:00`);};
+
+/* agenda (kolem kurzoru – měsíc) */
+function agenda(){const y=cursor.getFullYear(),m=cursor.getMonth();
+  const evs=visEvents().filter(e=>{const dt=new Date(e.date);return dt.getFullYear()===y&&dt.getMonth()===m;}).slice().sort((a,b)=>a.date.localeCompare(b.date)||toMin(a.start)-toMin(b.start));
+  const byDay={};evs.forEach(e=>{(byDay[e.date]=byDay[e.date]||[]).push(e);});
+  const tks=visTasks().filter(t=>{const dt=new Date(t.due);return dt.getFullYear()===y&&dt.getMonth()===m;});
+  tks.forEach(t=>{(byDay[t.due]=byDay[t.due]||[]).push({task:true,...t});});
+  const dates=Object.keys(byDay).sort();
+  return `<div class="agenda">${dates.length?dates.map(date=>{const d=new Date(date);
+    return `<div class="ag-day">${date===TODAY_ISO?'Dnes · ':''}${d.getDate()}. ${m+1}. ${y} · ${DOWs[dowi(d)]} ${holLine(date)}</div>`+byDay[date].sort((a,b)=>(a.task?'99':a.start).localeCompare(b.task?'99':b.start)).map(e=>{
+      if(e.task)return `<a class="ag-row" href="hub.html?typ=${e.etype}&id=${e.eid}" style="border-left-color:var(--alert-warn)"><div class="ag-time">⚑ termín</div><div class="ag-t">Úkol: ${e.title}</div><div class="ag-meta">${App.avatar(App.workerFull(e.owner),null,null,20)} ${App.workerFull(e.owner)}</div></a>`;
+      const{c}=evColors(e);return `<div class="ag-row" style="cursor:pointer;border-left-color:${c}" onclick="openEvent(${EVENTS.indexOf(e)})"><div class="ag-time">${e.start}–${addMin(e.start,e.dur)}</div><div class="ag-t">${e.title}</div><div class="ag-meta"><span class="cal-swatch" style="background:${typeColor(e.type)}"></span>${navIc(e.loc)}${App.avatar(App.workerFull(e.owner),null,null,20)} ${App.workerFull(e.owner)} ${syncIc()}</div></div>`;}).join('');}).join(''):'<p class="muted" style="padding:20px">Žádné události v tomto měsíci.</p>'}</div>`;}
+
+/* měsíc */
+function month(){const y=cursor.getFullYear(),m=cursor.getMonth();const first=new Date(y,m,1);const start=mondayOf(first);
+  let cells='';for(let i=0;i<42;i++){const d=addDays(start,i);const di=isoD(d);const out=d.getMonth()!==m;
+    const evs=visEvents().filter(e=>e.date===di).map(e=>{const{c,bg}=evColors(e);return `<div class="cal-ev" style="cursor:pointer;background:${bg};color:var(--text);border-left:3px solid ${c};display:flex;gap:5px;align-items:center" title="${e.title} · ${App.workerFull(e.owner)}" onclick="event.stopPropagation();openEvent(${EVENTS.indexOf(e)})"><span class="cal-swatch" style="background:${typeColor(e.type)}"></span>${e.start} ${e.title} ${navIc(e.loc)}</div>`;}).join('');
+    const tks=visTasks().filter(t=>t.due===di).map(t=>`<a class="cal-ev" href="hub.html?typ=${t.etype}&id=${t.eid}" style="background:var(--alert-warn-soft);color:var(--alert-warn);text-decoration:none">⚑ ${t.title}</a>`).join('');
+    const vc=vacFor(di).map(v=>`<div class="cal-ev" style="background:var(--hover);color:var(--text-2)">🏖 ${App.workerFull(v.owner)}</div>`).join('');
+    const lbl=d.getDate()===1?`${d.getDate()}. ${d.getMonth()+1}.`:d.getDate();
+    cells+=`<div class="cal-cell ${out?'out':''} ${di===TODAY_ISO?'today':''}" onclick="openForm('${di}')"><span class="dnum">${lbl}</span>${holLine(di)}${evs}${tks}${vc}</div>`;}
+  return `<div class="cal" style="padding:12px 24px 20px"><div class="cal-month"><div class="cal-dows">${DOWl.map(x=>`<div class="cal-dow">${x}</div>`).join('')}</div><div class="cal-cells">${cells}</div></div></div>`;}
+
+function daysFor(v){if(v==='week'){const mo=mondayOf(cursor);return [0,1,2,3,4,5,6].map(i=>addDays(mo,i));}if(v==='3day')return [0,1,2].map(i=>addDays(cursor,i));if(v==='day')return [new Date(cursor)];return [];}
+function nav(dir){if(view==='month'||view==='agenda')cursor=new Date(cursor.getFullYear(),cursor.getMonth()+dir,1);else cursor=addDays(cursor,dir*(view==='week'?7:view==='3day'?3:1));render();}
+function goToday(){cursor=new Date(TODAY);render();}
+window.nav=nav;window.goToday=goToday;
+
+function render(){
+  state.q=(document.getElementById('calSearch').value||'').toLowerCase().trim();
+  state.ent=document.getElementById('entFilter').value;
+  const wb=document.getElementById('weekBadge');
+  if(view==='week'||view==='3day'||view==='day'){wb.style.display='';wb.textContent='Týden '+App.isoWeek(isoD(daysFor(view)[0]));}else wb.style.display='none';
+  const y=cursor.getFullYear(),m=cursor.getMonth();
+  let title=MNn[m].charAt(0).toUpperCase()+MNn[m].slice(1)+' '+y;
+  if(view==='week'){const ds=daysFor('week');title+=' · '+ds[0].getDate()+'.–'+ds[6].getDate()+'.';}
+  else if(view==='3day'){const ds=daysFor('3day');title+=' · '+ds[0].getDate()+'.–'+ds[2].getDate()+'.';}
+  else if(view==='day'){title+=' · '+cursor.getDate()+'. ('+DOWl[dowi(cursor)]+')';}
+  else if(view==='agenda')title='Agenda · '+MNn[m]+' '+y;
+  document.getElementById('rangeTitle').textContent=title;
+  const b=document.getElementById('body');
+  b.innerHTML = view==='month'?month():view==='agenda'?agenda():timeGrid(daysFor(view));
+}
+document.getElementById('viewSeg').addEventListener('click',e=>{const btn=e.target.closest('button');if(!btn)return;document.querySelectorAll('#viewSeg button').forEach(x=>x.classList.remove('on'));btn.classList.add('on');view=btn.dataset.v;render();});
+
+/* formulář */
+function openForm(date,start){date=date||isoD(cursor);start=start||'09:00';selectedEnts=[];
+  const ic=App.integLoad();const syncRow=(ic.google||ic.outlook)?`<label style="display:flex;gap:8px;align-items:center;margin-top:12px;font-size:13px"><input type="checkbox" checked> Přidat do mého ${ic.google?'Google':'Outlook'} kalendáře</label>`:`<div class="muted" style="font-size:12px;margin-top:12px">Tip: připojení Google/Outlook nastavíš v <a href="nastaveni.html">Nastavení</a>.</div>`;
+  document.getElementById('evBody').innerHTML=`
+    <label class="muted" style="font-size:12px">Název</label>
+    <input id="ev_title" placeholder="např. Návštěva v domácnosti" style="width:100%;border:1px solid var(--border-2);border-radius:10px;padding:9px 11px;margin:4px 0 12px">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div><label class="muted" style="font-size:12px">Typ</label><select id="ev_type" onchange="evTypeChange(this)" style="width:100%;border:1px solid var(--border-2);border-radius:10px;padding:9px 11px;margin-top:4px">${typeOptions('visit')}<option value="__new__">+ Nový typ…</option></select></div>
+      <div><label class="muted" style="font-size:12px">Klíčová osoba</label><select id="ev_owner" style="width:100%;border:1px solid var(--border-2);border-radius:10px;padding:9px 11px;margin-top:4px">${WORKERS.map(w=>`<option value="${w}">${App.workerFull(w)}</option>`).join('')}</select></div>
+      <div><label class="muted" style="font-size:12px">Datum</label><input id="ev_date" type="date" value="${date}" style="width:100%;border:1px solid var(--border-2);border-radius:10px;padding:9px 11px;margin-top:4px"></div>
+      <div style="display:flex;gap:8px"><div style="flex:1"><label class="muted" style="font-size:12px">Od</label><input id="ev_start" type="time" value="${start}" style="width:100%;border:1px solid var(--border-2);border-radius:10px;padding:9px 11px;margin-top:4px"></div><div style="flex:1"><label class="muted" style="font-size:12px">Do</label><input id="ev_end" type="time" value="${addMin(start,60)}" style="width:100%;border:1px solid var(--border-2);border-radius:10px;padding:9px 11px;margin-top:4px"></div></div>
+    </div>
+    <label class="muted" style="font-size:12px;display:block;margin-top:12px">Navázáno na (pěstoun / dítě / KO / instituce – lze víc)</label>
+    <div id="ev_entChips" style="margin:4px 0"></div>
+    <div style="display:flex;gap:8px"><input id="ev_entInput" list="ev_entList" placeholder="Hledat a přidat…" style="flex:1;border:1px solid var(--border-2);border-radius:10px;padding:9px 11px" onkeydown="if(event.key==='Enter'){event.preventDefault();addEnt(this.value);}">
+      <button class="btn-secondary" style="width:auto;margin:0;padding:9px 14px" onclick="addEnt(document.getElementById('ev_entInput').value)">+ Přidat</button></div>
+    <datalist id="ev_entList">${ENTALL.map(e=>`<option value="${e.label}">`).join('')}</datalist>
+    <label class="muted" style="font-size:12px;display:block;margin-top:12px">Místo (pro navigaci) – předvyplní se z karty, lze změnit / nechat prázdné</label>
+    <input id="ev_loc" placeholder="${ADDR}" style="width:100%;border:1px solid var(--border-2);border-radius:10px;padding:9px 11px;margin-top:4px">
+    ${syncRow}`;
+  renderEntChips(); document.getElementById('evModal').classList.add('open');}
+function closeForm(){document.getElementById('evModal').classList.remove('open');}
+function saveForm(){const g=id=>document.getElementById(id);const start=g('ev_start').value||'09:00',end=g('ev_end').value||addMin(start,60);
+  const ename=selectedEnts.map(s=>s.label).join(', ');
+  EVENTS.push({date:g('ev_date').value||isoD(cursor),start,dur:Math.max(30,toMin(end)-toMin(start)),title:g('ev_title').value.trim()||'Nová událost',type:g('ev_type').value==='__new__'?'other':g('ev_type').value,owner:g('ev_owner').value,etype:'',eid:'',ename,href:'#',loc:g('ev_loc').value.trim()});
+  closeForm();render();}
+window.openForm=openForm;window.closeForm=closeForm;window.saveForm=saveForm;
+document.getElementById('evModal').addEventListener('click',e=>{if(e.target.id==='evModal')closeForm();});
+
+/* ---- boční panel: detail + chat ---- */
+const chatStore={};
+function seedChat(eid,ename){ if(chatStore[eid])return; chatStore[eid]=[
+  {who:'sys',text:'Vlákno s kontaktem '+ename},
+  {who:'them',text:'Dobrý den, potvrzuji termín.',time:'9:02'},
+  {who:'me',text:'Děkuji, vidíme se.',time:'9:05'} ]; }
+function hhOfEvent(e){ if(!e.eid)return null;
+  if(e.eid[0]==='f'){const p=App.allFosters().find(x=>x.id===e.eid);return p?p.household:null;}
+  if(e.eid[0]==='k'){const k=App.allChildren().find(x=>x.id===e.eid);return k?k.household:null;}
+  return null; }
+function personsOf(h){ const out=[];
+  h.fosters.forEach(p=>out.push({name:p.n,role:p.isFoster?'pěstoun':'partner (není pěstoun)',care:null,photo:p.photo,shape:'sq',href:p.id?`hub.html?typ=pestoun&id=${p.id}`:'#'}));
+  h.kids.forEach(k=>out.push({name:k.n,role:'dítě · '+App.CARE[k.care][1],care:k.care,photo:k.photo,shape:'',href:`hub.html?typ=dite&id=${k.id}`}));
+  return out; }
+let curEid=null;
+function openEvent(i){const e=EVENTS[i];if(!e)return;const{c}=evColors(e);
+  const hh=hhOfEvent(e); const persons=hh?personsOf(hh):[];
+  const vazby = persons.length
+    ? `<div class="k" style="margin-top:10px">Vazby</div><div style="display:flex;flex-direction:column;gap:2px;margin-top:4px">${persons.map(p=>`<a class="person" style="padding:7px 8px;text-decoration:none" href="${p.href}">${App.avatar(p.name,p.care,p.photo,30,p.shape)}<div class="meta"><div class="n" style="font-weight:500">${p.name}</div><div class="r">${p.role}</div></div></a>`).join('')}</div>`
+    : (e.ename?`<div class="vrow" style="grid-template-columns:1fr"><div class="k">Vazba</div><div class="v">${e.ename}</div></div>`:'');
+  document.getElementById('evDetailBody').innerHTML=`
+    <div style="font-size:17px;font-weight:600;margin-bottom:8px">${e.title}</div>
+    <span class="badge" style="background:color-mix(in srgb, ${typeColor(e.type)} 16%, var(--surface));color:${typeColor(e.type)}">${typeLabel(e.type)}</span>
+    <div class="vrow" style="grid-template-columns:1fr"><div class="k">Datum a čas</div><div class="v">${e.date.split('-').reverse().join('. ')} · ${e.start}–${addMin(e.start,e.dur)}</div></div>
+    <div class="vrow" style="grid-template-columns:1fr"><div class="k">Klíčová osoba</div><div class="v" style="display:flex;align-items:center;gap:8px">${App.avatar(App.workerFull(e.owner),null,null,22)} ${App.workerFull(e.owner)} <span class="cal-swatch" style="background:${c}"></span></div></div>
+    ${vazby}
+    ${e.loc?`<div class="vrow" style="grid-template-columns:1fr"><div class="k">Místo</div><div class="v">${e.loc}</div></div>
+      <iframe title="mapa" style="width:100%;height:160px;border:0;border-radius:10px;margin-top:8px" loading="lazy" src="https://maps.google.com/maps?q=${encodeURIComponent(e.loc)}&z=14&output=embed"></iframe>
+      <a class="ev-mapbtn" href="${navLink(e.loc)}" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l19-9-9 19-2-8-8-2z"/></svg> Navigovat v telefonu</a>`:'<div class="muted" style="font-size:12px;margin-top:10px">Bez místa — navigace není k dispozici.</div>'}`;
+  // chat = poznámky KO; vždy navázán na pěstouna
+  const pest = hh && hh.fosters.find(x=>x.isFoster);
+  curEid = pest ? pest.id : (e.eid||('ev'+i));
+  const chatName = pest ? pest.n : (e.ename||App.workerFull(e.owner));
+  document.getElementById('evChatHead').innerHTML=`${App.avatar(chatName,null,pest?pest.photo:null,24,'sq')} <span>Poznámky KO · ${chatName}</span>`;
+  seedNotes(curEid, chatName); renderEvChat();
+  document.getElementById('evPanel').classList.add('open'); evTab('detail');
+}
+function renderEvChat(){const s=document.getElementById('evChatStream');s.innerHTML=(chatStore[curEid]||[]).map(m=>m.who==='sys'?`<div class="msg sys"><div class="bubble">${m.text}</div></div>`:`<div class="msg ${m.who}"><div class="bubble">${m.text}<div class="meta">${m.time||''}</div></div></div>`).join('');s.scrollTop=s.scrollHeight;}
+function evSend(){const el=document.getElementById('evChatInput');const t=el.value.trim();if(!t||!curEid)return;chatStore[curEid].push({who:'me',text:t,time:'teď'});el.value='';renderEvChat();}
+function closeEvent(){document.getElementById('evPanel').classList.remove('open');}
+function evTab(t){document.querySelectorAll('.ev-tabs button[data-t]').forEach(b=>b.classList.toggle('on',b.dataset.t===t));document.getElementById('evCols').classList.toggle('show-chat',t==='chat');}
+window.openEvent=openEvent;window.closeEvent=closeEvent;window.evSend=evSend;window.evTab=evTab;
+document.getElementById('evChatFile').onchange=e=>{const f=e.target.files[0];if(f&&curEid){chatStore[curEid].push({who:'me',text:'📎 '+f.name,time:'teď'});renderEvChat();}};
+// swipe na mobilu mezi Detail/Chat
+(function(){const c=document.getElementById('evCols');let x0=null;
+  c.addEventListener('touchstart',e=>x0=e.touches[0].clientX,{passive:true});
+  c.addEventListener('touchend',e=>{if(x0==null)return;const dx=e.changedTouches[0].clientX-x0;if(dx<-40)evTab('chat');else if(dx>40)evTab('detail');x0=null;},{passive:true});})();
+
+fillEnt(); renderCalendars(); renderFilters(); render();
+</script>
+</body>
+</html>

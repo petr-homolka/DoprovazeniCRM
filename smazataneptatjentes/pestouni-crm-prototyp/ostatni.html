@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ostatní kontakty · Doprovázení CRM</title>
+<link rel="stylesheet" href="style.css?v=20">
+</head>
+<body>
+<div class="app">
+  <nav class="rail" id="rail"></nav>
+
+  <aside class="side">
+    <div class="org" title="Přepnout organizaci / nastavení">
+      <div class="org-logo">D</div>
+      <div class="org-meta"><div class="t">Doprovázení, z.s.</div><div class="s">Pobočka Brno</div></div>
+      <svg class="chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+    </div>
+    <button class="btn-primary" style="margin-top:6px">+ Nový kontakt</button>
+    <div class="side-search">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4-4"/></svg>
+      <input placeholder="Hledat kontakt…">
+    </div>
+    <div class="sec-label">Kategorie</div>
+    <div class="tree" id="tree"></div>
+    <div class="side-foot">
+      <div class="sep-line"></div>
+      <div class="account">
+        <span class="avatar" style="width:34px;height:34px;font-size:12px;background:var(--avatar-neutral)">MD</span>
+        <div class="meta"><div class="n">Martin Dvořák</div><div class="r">Doprovázející pracovník</div></div>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <h2 id="catTitle" style="margin-right:8px">Všechny kontakty</h2>
+      <div class="search">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4-4"/></svg>
+        <input id="search" placeholder="Hledat organizaci nebo osobu…" oninput="setQ(this.value)">
+      </div>
+      <div class="spacer"></div>
+      <div class="seg theme-switch" id="themeseg"><button class="on" data-theme="">Klasický</button><button data-theme="b">Čistý</button></div>
+    </div>
+    <div class="content"><div id="list"></div>
+      <div class="footnote">Ukázková data (smyšlená). Ostatní kontakty · právnické osoby s kontaktními osobami, ad-hoc přiřaditelné k dítěti / pěstounovi.</div>
+    </div>
+  </main>
+</div>
+
+<script src="app.js?v=20"></script>
+<script>
+document.getElementById('rail').innerHTML = App.renderRail('Ostatní');
+App.initTheme(document.getElementById('themeseg'));
+
+/* Strom kategorií (skupina → kategorie) */
+const CATS = [
+  ['Stát a veřejná správa', [
+    ['mpsv','MPSV ČR a ÚP ČR'],
+    ['kraj','Krajské úřady'],
+    ['obec','Magistráty / obecní a městské úřady (ORP)'],
+    ['ospod','OSPOD'],
+    ['soud','Soudy'],
+  ]],
+  ['Zdraví a vzdělávání', [
+    ['lekar','Lékaři'],
+    ['skola','Školy, učitelé, vychovatelé'],
+    ['vzdel','Poskytovatelé vzdělávání pěstounům'],
+  ]],
+  ['Volný čas a služby', [
+    ['volno','Volnočasové aktivity (kluby, DDM, kroužky)'],
+    ['jidelna','Jídelny'],
+    ['porad','Pořadatelé (tábory, CK)'],
+  ]],
+];
+
+/* Smyšlené entity (PO = právnická osoba, FO = fyzická osoba) */
+const CONTACTS = [
+  {cat:'ospod', type:'PO', name:'OSPOD Brno-střed', org:'Úřad MČ Brno-střed', persons:[{n:'Mgr. Lenka Bártová',role:'sociální pracovnice'}], assigned:['Tereza Marková','Adam Beneš']},
+  {cat:'ospod', type:'PO', name:'OSPOD Blansko', org:'MěÚ Blansko', persons:[{n:'Bc. Jana Křížová',role:'kolizní opatrovník'}], assigned:['Matěj Říha']},
+  {cat:'kraj',  type:'PO', name:'Krajský úřad JMK – odbor sociálních věcí', org:'Jihomoravský kraj', persons:[{n:'Ing. Petr Malý',role:'referent NRP'}], assigned:[]},
+  {cat:'soud',  type:'PO', name:'Okresní soud Brno-venkov', org:'', persons:[{n:'JUDr. Eva Horká',role:'soudkyně (P a Nc)'}], assigned:['Denis Sedláček']},
+  {cat:'lekar', type:'FO', name:'MUDr. Tomáš Veselý', org:'Pediatrie Kuřim s.r.o.', persons:[{n:'MUDr. Tomáš Veselý',role:'praktický lékař pro děti a dorost'}], assigned:['Lukáš Dohnal']},
+  {cat:'skola', type:'PO', name:'ZŠ a MŠ Brno, Křídlovická', org:'', persons:[{n:'Mgr. Alena Nová',role:'třídní učitelka 3.B'},{n:'Jan Dvořák',role:'vychovatel družiny'}], assigned:['Tereza Marková']},
+  {cat:'volno', type:'PO', name:'SK Slatina – fotbal', org:'', persons:[{n:'Martin Kolář',role:'trenér přípravky'}], assigned:['Filip Tichý']},
+  {cat:'porad', type:'PO', name:'Letní tábory Lipka', org:'Lipka z.s.', persons:[{n:'Klára Sojková',role:'hlavní vedoucí'}], assigned:['Klára Šťastná','Eliška Marešová']},
+  {cat:'vzdel', type:'PO', name:'TRIADA – vzdělávací centrum', org:'', persons:[{n:'PhDr. Marek Sýkora',role:'lektor (akreditace MPSV)'}], assigned:[]},
+  {cat:'obec',  type:'PO', name:'Magistrát města Brna – OSP', org:'Statutární město Brno', persons:[{n:'Ing. Hana Pokorná',role:'vedoucí oddělení'}], assigned:[]},
+  {cat:'mpsv',  type:'PO', name:'MPSV ČR – odbor rodinné politiky', org:'Ministerstvo práce a soc. věcí', persons:[{n:'metodická linka',role:'metodika NRP'}], assigned:[]},
+];
+
+let active = '';   // '' = vše
+const catLabel = id => { for(const [,items] of CATS){ const f=items.find(i=>i[0]===id); if(f) return f[1]; } return 'Všechny kontakty'; };
+
+function renderTree(){
+  const t=document.getElementById('tree');
+  let html = `<div class="cat ${active===''?'active':''}" data-c=""><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h18M3 12h18M3 17h18"/></svg> Všechny <span class="count">${CONTACTS.length}</span></div>`;
+  CATS.forEach(([grp,items])=>{
+    html += `<div class="sec-label" style="padding:10px 12px 4px">${grp}</div>`;
+    items.forEach(([id,label])=>{
+      const n=CONTACTS.filter(c=>c.cat===id).length;
+      html += `<div class="cat ${active===id?'active':''}" data-c="${id}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg> ${label} <span class="count">${n}</span></div>`;
+    });
+  });
+  t.innerHTML=html;
+  t.querySelectorAll('.cat').forEach(el=>el.onclick=()=>{ active=el.dataset.c; document.getElementById('catTitle').textContent=catLabel(active); renderTree(); renderList(); });
+}
+
+let q='';
+window.setQ=v=>{q=(v||'').toLowerCase().trim();renderList();};
+function renderList(){
+  let list = active? CONTACTS.filter(c=>c.cat===active) : CONTACTS;
+  if(q) list=list.filter(c=>(c.name+' '+c.org+' '+c.persons.map(p=>p.n+' '+p.role).join(' ')).toLowerCase().includes(q));
+  document.getElementById('list').innerHTML = `<div class="list">
+    <div class="list-head" style="grid-template-columns:2.2fr 1.6fr 1.8fr 1.4fr">
+      <div>Název</div><div>Typ / zřizovatel</div><div>Kontaktní osoba</div><div>Přiřazeno k</div></div>
+    ${list.map(c=>`<div class="row" style="grid-template-columns:2.2fr 1.6fr 1.8fr 1.4fr" onclick="openContact('${c.name.replace(/'/g,'')}')">
+      <div class="fam">${App.avatar(c.name,null,null,40,'sq')}<div><div class="name">${c.name}</div><div class="sub">${catLabel(c.cat)}</div></div></div>
+      <div><span class="org-type">${c.type==='PO'?'Právnická osoba':'Fyzická osoba'}</span>${c.org?`<div class="sub" style="margin-top:3px">${c.org}</div>`:''}</div>
+      <div>${c.persons.map(p=>`<div><b style="font-weight:600">${p.n}</b><div class="sub">${p.role}</div></div>`).join('')}</div>
+      <div>${c.assigned.length? c.assigned.map(a=>`<span class="tag">${a}</span>`).join('') : '<span class="muted">—</span>'}</div>
+    </div>`).join('')}
+  </div>`;
+}
+function openContact(name){
+  const c = CONTACTS.find(x=>x.name.replace(/'/g,'')===name);
+  App.openDrawer(`
+    <div class="drawer-head"><button class="x" onclick="App.closeDrawer()">✕</button>
+      <div class="fam">${App.avatar(c.name,null,null,44,'sq')}<div><div class="name" style="font-size:18px">${c.name}</div><div class="sub">${catLabel(c.cat)} · ${c.type==='PO'?'právnická osoba':'fyzická osoba'}</div></div></div>
+    </div>
+    <div class="drawer-body">
+      ${c.org?`<div class="field"><span class="k">Zřizovatel / org.</span><span>${c.org}</span></div>`:''}
+      <div class="section-title">Kontaktní osoby</div>
+      ${c.persons.map(p=>`<div class="person">${App.avatar(p.n,null,null,40,'sq')}<div class="meta"><div class="n">${p.n}</div><div class="r">${p.role}</div></div></div>`).join('')}
+      <div style="padding:4px 10px"><a href="#">+ přidat kontaktní osobu</a></div>
+
+      <div class="section-title">Přiřazeno k</div>
+      ${c.assigned.length? c.assigned.map(a=>`<span class="tag">${a}</span>`).join('') : '<p class="muted" style="padding:4px 10px">Zatím nepřiřazeno.</p>'}
+      <div style="padding:8px 10px"><a href="#">+ přiřadit k dítěti / pěstounovi</a></div>
+
+      <div class="section-title">Akce</div>
+      <button class="btn-primary" style="margin-bottom:8px">Přiřadit ke kontaktu</button>
+      <a class="btn-secondary" style="margin-top:0;text-decoration:none" href="hub.html?typ=ostatni">Otevřít Hub</a>
+    </div>`);
+}
+
+renderTree(); renderList();
+</script>
+</body>
+</html>

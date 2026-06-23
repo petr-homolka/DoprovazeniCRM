@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nastavení · Doprovázení CRM</title>
+<link rel="stylesheet" href="style.css?v=20">
+</head>
+<body>
+<div class="app">
+  <nav class="rail" id="rail"></nav>
+  <aside class="side">
+    <h1>Nastavení</h1>
+    <div class="sec-label">Sekce</div>
+    <div class="nav" id="setnav"></div>
+    <div class="side-foot">
+      <div class="sep-line"></div>
+      <button class="btn-primary" onclick="Set.save()">Uložit změny</button>
+      <button class="btn-secondary" onclick="Set.reset()">Obnovit výchozí</button>
+    </div>
+  </aside>
+  <main class="main">
+    <div class="topbar"><h2 style="margin-right:8px">Nastavení organizace</h2><div class="spacer"></div>
+      <div class="seg theme-switch" id="themeseg"><button class="on" data-theme="">Klasický</button><button data-theme="b">Čistý</button></div>
+    </div>
+    <div class="content"><div id="body" style="max-width:760px"></div></div>
+  </main>
+</div>
+
+<script src="app.js?v=20"></script>
+<script>
+document.getElementById('rail').innerHTML = App.renderRail('Nastavení');
+App.initTheme(document.getElementById('themeseg'));
+
+let brand = App.loadBrand();
+const SECS=[['org','Organizace & branding','M3 21h18M5 21V7l7-4 7 4v14M9 21v-5h6v5'],
+  ['barvy','Barvy','M12 3a9 9 0 1 0 0 18 2 2 0 0 0 0-4h-1a2 2 0 0 1 0-4h2a4 4 0 0 0 0-8z'],
+  ['integrace','Integrace a účty','M9 17H7A5 5 0 0 1 7 7h2M15 7h2a5 5 0 0 1 0 10h-2M8 12h8'],
+  ['kontakty','Kontakty organizace','M4 4h16v16H4zM8 9h8M8 13h5'],
+  ['prava','Práva a role','M12 2 4 6v6c0 5 8 8 8 8s8-3 8-8V6z']];
+let sec='org';
+const Set={
+  go(s){sec=s;render();},
+  set(k,v){brand[k]=v;App.applyBrand(brand);render(true);},
+  save(){App.saveBrand(brand);App.applyBrand(brand);toast('Uloženo ✓');},
+  reset(){brand=Object.assign({},App.BRAND_DEFAULTS);App.applyBrand(brand);render();toast('Obnoveno na výchozí');},
+  toggleI(k){const i=App.integLoad();i[k]=!i[k];App.integSave(i);render();toast(i[k]?'Připojeno ✓':'Odpojeno');},
+};
+window.Set=Set;
+function toast(t){let e=document.getElementById('toast');if(!e){e=document.createElement('div');e.id='toast';e.style.cssText='position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1A1A1A;color:#fff;padding:10px 18px;border-radius:10px;z-index:200;box-shadow:var(--shadow-pop)';document.body.appendChild(e);}e.textContent=t;e.style.opacity='1';clearTimeout(e._t);e._t=setTimeout(()=>e.style.opacity='0',1600);}
+
+function renderNav(){document.getElementById('setnav').innerHTML=SECS.map(([k,l,d])=>`<div class="nav-item ${sec===k?'active':''}" onclick="Set.go('${k}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${d}"/></svg> ${l}</div>`).join('');}
+
+function colorRow(k,label,hint){return `<div class="vrow" style="grid-template-columns:200px 1fr">
+  <div class="k"><span style="width:14px;height:14px;border-radius:4px;background:${brand[k]};display:inline-block;margin-right:8px;border:1px solid var(--border-2)"></span>${label}</div>
+  <div class="v"><input type="color" value="${brand[k]}" oninput="Set.set('${k}',this.value)" style="width:42px;height:30px;border:1px solid var(--border-2);border-radius:8px;background:none;cursor:pointer">
+    <input type="text" value="${brand[k]}" oninput="Set.set('${k}',this.value)" style="width:96px;border:1px solid var(--border-2);border-radius:8px;padding:7px 9px;font-family:monospace">
+    ${hint?`<span class="muted" style="font-size:12px">${hint}</span>`:''}</div></div>`;}
+
+function render(soft){
+  renderNav();
+  const b=document.getElementById('body');
+  if(sec==='org'){
+    b.innerHTML=`<div class="pcard"><div class="psection"><h3>Organizace</h3>
+      <div class="vrow" style="grid-template-columns:200px 1fr"><div class="k">Název organizace</div><div class="v"><input value="${brand.orgName.replace(/"/g,'&quot;')}" oninput="Set.set('orgName',this.value)" style="width:100%;border:1px solid var(--border-2);border-radius:10px;padding:9px 11px"></div></div>
+      <div class="vrow" style="grid-template-columns:200px 1fr"><div class="k">Pobočka</div><div class="v"><input value="${brand.branch.replace(/"/g,'&quot;')}" oninput="Set.set('branch',this.value)" style="width:100%;border:1px solid var(--border-2);border-radius:10px;padding:9px 11px"></div></div>
+      <div class="vrow" style="grid-template-columns:200px 1fr"><div class="k">Logo (písmeno/zkratka)</div><div class="v"><input maxlength="2" value="${brand.logo}" oninput="Set.set('logo',this.value)" style="width:60px;text-align:center;border:1px solid var(--border-2);border-radius:10px;padding:9px"></div></div>
+      </div>
+      <div class="psection"><h3>Hlavní barva</h3>${colorRow('accent','Akcent (tlačítka, aktivní prvky)','např. firemní barva')}
+        <div style="margin-top:12px;display:flex;gap:10px;align-items:center"><button class="btn-primary" style="width:auto;padding:9px 18px">Ukázkové tlačítko</button><span class="chip">Chip</span><span class="badge ok">Stav</span></div>
+      </div></div>
+      <p class="muted" style="font-size:13px;margin-top:14px">Změny se projeví okamžitě na všech obrazovkách (uloženo v prohlížeči). V ostré verzi půjde branding per organizace včetně loga a kontaktů.</p>`;
+  } else if(sec==='barvy'){
+    b.innerHTML=`<div class="pcard">
+      <div class="psection"><h3>Barvy typů péče</h3>${colorRow('careLong','Dlouhodobá')}${colorRow('careTemp','Přechodná')}${colorRow('careKin','Příbuzenská')}
+        <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><span class="badge" style="background:var(--care-long-soft);color:var(--care-long)">Dlouhodobá</span><span class="badge" style="background:var(--care-temp-soft);color:var(--care-temp)">Přechodná</span><span class="badge" style="background:var(--care-kin-soft);color:var(--care-kin)">Příbuzenská</span></div></div>
+      <div class="psection"><h3>Barvy upozornění / stavů</h3>${colorRow('alertOk','V pořádku')}${colorRow('alertWarn','Pozornost')}${colorRow('alertDue','Po termínu')}
+        <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><span class="badge ok">V pořádku</span><span class="badge warn">Pozornost</span><span class="badge due">Po termínu</span></div></div>
+      <div class="psection"><h3>Ostatní</h3>${colorRow('neutral','Neutrální avatar (pěstoun/ostatní bez fotky)')}
+        <div style="margin-top:10px"><span class="avatar sq" style="background:var(--avatar-neutral)">PN</span></div></div>
+    </div>`;
+  } else if(sec==='integrace'){
+    const i=App.integLoad();
+    const row=(k,name,desc,d)=>`<div class="vrow" style="grid-template-columns:1fr auto"><div class="k"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="${d}"/></svg> ${name}<div class="muted" style="font-size:12px;margin-top:2px;margin-left:26px">${desc}</div></div><div class="v">${i[k]?`<span class="badge ok">Připojeno</span> <button class="vact" onclick="Set.toggleI('${k}')">Odpojit</button>`:`<button class="btn-primary" style="width:auto;padding:7px 14px" onclick="Set.toggleI('${k}')">Připojit</button>`}</div></div>`;
+    b.innerHTML=`<div class="pcard"><div class="psection"><h3>Připojené kalendáře</h3>
+      ${row('google','Google Calendar','Události KO se obousměrně propíší do jejího Google kalendáře.','M3 5h18v16H3zM3 9h18M8 3v4M16 3v4')}
+      ${row('outlook','Microsoft Outlook','Synchronizace s kalendářem Microsoft 365 / Outlook.','M3 5h18v16H3zM3 9h18M8 3v4M16 3v4')}
+      <p class="muted" style="font-size:12px;margin-top:10px">Připojení je <b>per uživatel</b> (každá KO si připojí svůj účet). V prototypu jen přepínač; reálné OAuth napojení přijde s backendem (V8 / M5).</p></div>
+      <div class="psection"><h3>Další integrace (připravujeme)</h3>
+      <p class="muted" style="font-size:13px">Google/Microsoft přihlášení (SSO), úložiště dokumentů (Google Drive / OneDrive), e-mail a videohovory.</p></div></div>`;
+  } else if(sec==='kontakty'){
+    b.innerHTML=`<div class="pcard"><div class="psection"><h3>Kontaktní údaje organizace</h3>
+      <p class="muted">IČO, adresa, telefon, e-mail, statutární zástupce, číslo pověření k SPOD… (doplníme). Tyto údaje se použijí v hlavičkách generovaných reportů.</p></div></div>`;
+  } else {
+    b.innerHTML=`<div class="pcard"><div class="psection"><h3>Práva a role</h3>
+      <p class="muted">Role: Superadmin, vedení DO, klíčová osoba (KO), asistentka, omezený přístup pěstoun / dítě 12+. Granularní práva (mazat smí jen Superadmin; asistentka jen přidává; verzování změn). Plné nastavení přijde s backendem (Supabase RLS).</p>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
+        ${['Superadmin (provozovatel)','Vedení / admin DO','Klíčová osoba (KO)','Asistentka KO','Pěstoun (omezený)','Dítě 12+ (omezený)'].map(r=>`<div class="person"><span class="avatar sq" style="width:34px;height:34px;font-size:11px;background:var(--avatar-neutral)">${r[0]}</span><div class="meta"><div class="n">${r}</div></div></div>`).join('')}
+      </div></div></div>`;
+  }
+}
+render();
+</script>
+</body>
+</html>

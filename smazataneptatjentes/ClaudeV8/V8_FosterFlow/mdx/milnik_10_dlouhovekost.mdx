@@ -1,0 +1,138 @@
+---
+title: "Milník 10: Dlouhověkost, otevřenost a ekosystém"
+description: "Formální migrační systém, plugin/extension architektura, deprecation politika, dlouhodobá stabilita veřejného API, příprava na app marketplace. Pojistka pro 15-20 let evoluce systému."
+icon: "infinity"
+---
+
+<Info>
+**Proč tento milník existuje samostatně:** Systém má za sebou M1–M9 v produkci. Tady se neřeší nová funkčnost pro uživatele, ale **proces**, jak bude systém zvládat budoucí, dnes nepředvídatelné požadavky bez nutnosti přepisovat jádro nebo rozbíjet existující integrace. Toto je investice do schopnosti systému růst, ne do konkrétní funkce.
+</Info>
+
+## Co tento milník obsahuje
+
+<CardGroup cols={2}>
+  <Card title="Co JE v M10" icon="check">
+    Formální migrační nástroj nahrazující jednorázový schema.sql přístup, plugin/extension architektura s definovanými extension points, deprecation politika s vynucenými lhůtami, dlouhodobá stabilita veřejného API, příprava na app marketplace.
+  </Card>
+  <Card title="Co NENÍ v M10" icon="circle-xmark">
+    Skutečně spuštěný veřejný marketplace s platbami třetím vývojářům — to je byznysové rozhodnutí nad rámec tohoto Blueprintu, M10.5 jen připravuje technické předpoklady.
+  </Card>
+</CardGroup>
+
+---
+
+## Fáze 10.1 — Formální migrační systém
+
+<Warning>
+`schema.sql` jako jednorázový skript byl vhodný pro M1 start, ale neudržitelný pro systém běžící roky s desítkami inkrementálních změn. Od této fáze every schema change prochází migračním nástrojem (např. Supabase Migrations CLI nebo ekvivalent) s číslovanými, verzovanými migračními soubory.
+</Warning>
+
+```
+migrations/
+  0001_initial_schema.sql       (odpovídá M1.2-M1.15 stavu)
+  0002_court_agenda.sql          (M2.1)
+  ...
+  0058_public_api_clients.sql    (M9.2)
+  0059_plugin_architecture.sql   (M10.2)
+```
+
+Každá migrace je `ALTER`/`CREATE`, NIKDY destruktivní `DROP` bez explicitního schválení a záznamu v `deprecation_registry` (Fáze 10.3).
+
+<Check>
+**Acceptance test:** Čerstvá databáze postavená přehráním VŠECH migrací 0001 až N je bit-for-bit ekvivalentní (stejné tabulky, typy, constrainty) jako produkční databáze v aktuálním stavu. Žádná migrace v historii neobsahuje nevysvětlený `DROP TABLE`/`DROP COLUMN` bez odpovídajícího záznamu v deprecation_registry.
+</Check>
+
+---
+
+## Fáze 10.2 — Plugin/extension architektura
+
+<Danger>
+Pluginy NESMÍ mít přímý databázový přístup ani schopnost měnit schéma. Komunikují POUZE přes definované `extension_points` (analogie WordPress hooks) nebo přes veřejné API z M9 se scope omezením.
+</Danger>
+
+```sql
+CREATE TABLE extension_points (
+    point_key TEXT NOT NULL UNIQUE,  -- 'after_event_created', 'before_payment_approval'
+    payload_schema JSONB NOT NULL    -- co plugin obdrží jako vstup
+);
+
+CREATE TABLE plugin_extension_registrations (
+    plugin_id UUID REFERENCES installed_plugins(id),
+    extension_point_id UUID REFERENCES extension_points(id),
+    handler_config JSONB NOT NULL,   -- webhook URL nebo interní handler reference
+    priority INT DEFAULT 100
+);
+```
+
+<Info>
+Toto je architektonická pojistka pro 20letou životnost. Nový požadavek DO, který nikdo nepředvídal, se řeší NOVÝM PLUGINEM na existujícím extension_point, nebo formálním návrhem NOVÉHO extension_point — nikdy ad-hoc zásahem do jádra.
+</Info>
+
+<Check>
+**Acceptance test:** Vytvoření testovacího pluginu registrovaného na `after_event_created` extension_point se spustí při každém vytvoření události a obdrží payload přesně dle `payload_schema`, BEZ přímého SQL přístupu k tabulce `events`.
+</Check>
+
+---
+
+## Fáze 10.3 — Deprecation politika
+
+<Danger>
+**Pravidlo bez výjimky:** žádné pole, tabulka nebo endpoint se nesmí smazat bez záznamu v `deprecation_registry` s `sunset_date` minimálně 2 milníky v budoucnosti od `deprecated_in_version`.
+</Danger>
+
+```sql
+CREATE TABLE deprecation_registry (
+    target_type deprecation_target_type NOT NULL,  -- 'column','table','api_endpoint','enum_value'
+    target_identifier TEXT NOT NULL,
+    deprecated_in_version TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    replacement TEXT,
+    sunset_date DATE NOT NULL,
+    is_removed BOOLEAN DEFAULT FALSE
+);
+```
+
+Toto nahrazuje tiché mazání, které by za 20 let vedlo k nedohledatelným breaking changes pro existující integrace (veřejné API z M9) i interní kód.
+
+<Check>
+**Acceptance test:** Pokus o `DROP COLUMN` v migraci BEZ odpovídajícího záznamu v `deprecation_registry` je odhalen automatizovanou kontrolou v CI pipeline (lint pravidlo nad migračními soubory) a build selže.
+</Check>
+
+---
+
+## Fáze 10.4 — Dlouhodobá stabilita veřejného API
+
+Návazně na `public_api_versions` z M9.1: formální politika, že verze ve stavu `deprecated` zůstává funkční minimálně 12 měsíců před `sunset`. Partneři napojení přes M9 dostávají automatickou notifikaci (webhook `api_version.deprecated`) při změně stavu.
+
+<Check>
+**Acceptance test:** Nastavení `public_api_versions.status = 'deprecated'` pro `/v1/` automaticky odešle webhook všem aktivním `external_api_clients` používajícím tuto verzi, a `/v1/` zůstává funkční po definovanou dobu, ne okamžitě zrušená.
+</Check>
+
+---
+
+## Fáze 10.5 — Příprava na app marketplace (volitelné, technická příprava)
+
+<Info>
+Toto NENÍ aktivace skutečného obchodu s platbami třetím vývojářům — to je byznysové rozhodnutí mimo rozsah tohoto Blueprintu. Fáze 10.5 jen zajišťuje, že `installed_plugins` a `extension_points` infrastruktura z Fáze 10.2 by technicky UNESLA budoucí marketplace (katalog pluginů, hodnocení, instalace jedním kliknutím), pokud se k tomu provozovatel v budoucnu rozhodne.
+</Info>
+
+<Check>
+**Acceptance test:** Datový model `installed_plugins`/`extension_points` neobsahuje žádné architektonické rozhodnutí, které by znemožnilo budoucí přidání `plugin_marketplace_listings` tabulky (katalog) bez zásahu do existujících tabulek — pouze nová tabulka a nové API endpointy.
+</Check>
+
+---
+
+## Souhrnný GATE pro M10
+
+<Checklist>
+- [ ] Regresní sada M1–M9 stále projde
+- [ ] Systém má formální, vynucený proces pro budoucí 15+ let evoluce
+- [ ] Žádná budoucí změna nemůže tiše rozbít existující integraci bez varování (deprecation lhůta)
+- [ ] Plugin architektura ověřena alespoň jedním funkčním testovacím pluginem
+</Checklist>
+
+---
+
+## Po dokončení M10
+
+Systém FosterFlow má nyní kompletní funkční rozsah popsaný v Master Blueprintu v8, postavený na ověřeném, bezpečném základu z M1, s formálním procesem pro vlastní budoucí evoluci. Další požadavky organizací se řeší buď novým pluginem (Fáze 10.2), nebo — pokud jde o změnu jádra — formálním návrhem nového milníku se stejnou disciplínou: gate podmínky, regresní testy, žádné tiché breaking changes.
