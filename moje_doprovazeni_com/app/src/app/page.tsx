@@ -46,7 +46,7 @@ import {
   Lightbulb,
   RefreshCw
 } from "lucide-react";
-import { supabase } from "../lib/supabase";
+import { supabase, isSupabaseConfigured } from "../lib/supabase";
 
 // Mappings matching Czech household states and care types
 const ALL_STATUSES = [
@@ -1398,6 +1398,21 @@ export default function Home() {
               Přihlásit se
             </button>
           </form>
+
+          {!isSupabaseConfigured && (
+            <div className="space-y-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setSession({ user: { id: "preview-user" } })}
+                className="w-full py-3 bg-md-surface-variant hover:bg-border-custom text-foreground font-medium rounded-xl text-sm transition-colors border border-border-custom"
+              >
+                Prohlédnout design (náhled bez přihlášení)
+              </button>
+              <p className="text-[10px] text-muted text-center leading-relaxed">
+                Supabase není připojené — data se nenačtou, ale můžeš si projít vzhled a přepnout mezi režimy Google / Yandex / Fresh.
+              </p>
+            </div>
+          )}
 
           <div className="text-[10px] text-muted text-center border-t border-border-custom pt-4 leading-relaxed font-normal">
             Evropské servery (Frankfurt) • Šifrované PostgreSQL úložiště chráněné Supabase RLS.
