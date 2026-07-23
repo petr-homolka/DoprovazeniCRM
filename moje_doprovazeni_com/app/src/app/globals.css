@@ -3,6 +3,7 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 @custom-variant theme-yandex (&:where(.theme-yandex, .theme-yandex *));
+@custom-variant theme-chatgpt (&:where(.theme-chatgpt, .theme-chatgpt *));
 
 :root {
   /* Google Sans Font Overrides */
@@ -171,6 +172,77 @@ body {
   --radius-lg: var(--ya-radius-item) !important;
   --radius-md: 8px !important; /* prototype small radius */
   --radius-sm: 4px !important;
+}
+
+/* ========================================================= */
+/* FRESH DESIGN MODE — "ChatGPT-like but more interesting"    */
+/* Modern, clean, fresh teal accent (Verze C)                */
+/* ========================================================= */
+
+.theme-chatgpt, .theme-chatgpt body {
+  /* Fresh design tokens */
+  --gpt-teal: #10a37f;         /* fresh signature teal */
+  --gpt-teal-hover: #0e8e6d;
+  --gpt-teal-active: #0c7a5d;
+  --gpt-teal-container: #d9f5ec;
+  --gpt-font: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+
+  /* Font override — clean & fresh, distinct from Google Sans */
+  font-family: var(--gpt-font) !important;
+  --font-sans: var(--gpt-font) !important;
+  --font-mono: 'Inter', ui-monospace, SFMono-Regular, monospace !important;
+
+  /* Light palette — soft off-white surfaces, calm neutrals */
+  --background: #f7f7f8;
+  --foreground: #1f2023;
+  --card: #ffffff;
+  --muted: #6e6e80;
+  --border: #e7e7ec;
+
+  --primary-color: var(--gpt-teal);
+  --primary-hover: var(--gpt-teal-hover);
+  --primary-active: var(--gpt-teal-active);
+  --secondary-color: #1f2023;
+
+  --md-sys-color-primary-container: var(--gpt-teal-container);
+  --md-sys-color-on-primary-container: var(--gpt-teal-active);
+  --md-sys-color-surface-variant: #eff0f3;
+  --md-sys-color-outline: #d5d5dd;
+
+  /* Softer, fresher rounding */
+  --radius-full: 9999px !important;
+  --radius-3xl: 22px !important;
+  --radius-2xl: 18px !important;
+  --radius-xl: 14px !important;
+  --radius-lg: 12px !important;
+  --radius-md: 10px !important;
+  --radius-sm: 6px !important;
+}
+
+/* Dark variant of the Fresh mode (html.dark wraps the .theme-chatgpt div) */
+.dark .theme-chatgpt,
+.dark .theme-chatgpt body {
+  --background: #171718;
+  --foreground: #ececf1;
+  --card: #232326;
+  --muted: #9a9aa7;
+  --border: #34343c;
+
+  --primary-color: #19c37d;       /* brighter teal pops on dark */
+  --primary-hover: #23d68b;
+  --primary-active: #2fe39a;
+  --secondary-color: #ececf1;
+
+  --md-sys-color-primary-container: #14342b;
+  --md-sys-color-on-primary-container: #7fe9c7;
+  --md-sys-color-surface-variant: #2a2a30;
+  --md-sys-color-outline: #45454f;
+}
+
+/* A touch of polish: smoother focus rings & subtle card depth in Fresh mode */
+.theme-chatgpt *:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
 }
 
 /* Yandex Layout BEM Classes */

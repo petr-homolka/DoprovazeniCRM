@@ -151,10 +151,10 @@ export default function Home() {
 
   // Right vertical switcher rail and widget drawer state
   const [activeRightWidget, setActiveRightWidget] = useState<'calendar' | 'keep' | 'tasks' | 'maps' | null>(null);
-  const [designMode, setDesignMode] = useState<'google' | 'yandex'>(() => {
+  const [designMode, setDesignMode] = useState<'google' | 'yandex' | 'chatgpt'>(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("designMode");
-      if (saved === 'yandex' || saved === 'google') return saved;
+      if (saved === 'yandex' || saved === 'google' || saved === 'chatgpt') return saved;
     }
     return 'google';
   });
@@ -1412,7 +1412,7 @@ export default function Home() {
   const activeChatFeed = selectedFamilyId ? chatThreads[selectedFamilyId] || [] : [];
 
   return (
-    <div className={designMode === 'yandex' ? "Ya-Layout theme-yandex" : `flex h-screen w-full overflow-hidden bg-background text-foreground font-sans antialiased`}>
+    <div className={designMode === 'yandex' ? "Ya-Layout theme-yandex" : `flex h-screen w-full overflow-hidden bg-background text-foreground font-sans antialiased ${designMode === 'chatgpt' ? 'theme-chatgpt' : ''}`}>
       
       {/* ========================================================= */}
       {/* 1. APP SWITCH RAIL / GLOBAL SIDEBAR                       */}
@@ -1447,9 +1447,9 @@ export default function Home() {
           </div>
           <div className="Global-Nav__footer">
             <button 
-              onClick={() => setDesignMode(prev => prev === 'google' ? 'yandex' : 'google')}
+              onClick={() => setDesignMode(prev => prev === 'google' ? 'yandex' : prev === 'yandex' ? 'chatgpt' : 'google')}
               className="Global-Nav__item"
-              title="Přepnout na Google Workspace"
+              title="Přepnout vzhled (Google → Yandex → Fresh)"
             >
               <RefreshCw className="w-4 h-4" />
             </button>
@@ -1538,12 +1538,12 @@ export default function Home() {
 
           <div className="flex flex-col items-center space-y-4">
             <button 
-              onClick={() => setDesignMode(prev => prev === 'google' ? 'yandex' : 'google')}
-              className={`p-2.5 rounded-xl transition-all relative group flex flex-col items-center justify-center cursor-pointer shadow-xs bg-[#1a73e8] text-white hover:bg-[#1557b0]`}
-              title="Přepnout na Yandex 360"
+              onClick={() => setDesignMode(prev => prev === 'google' ? 'yandex' : prev === 'yandex' ? 'chatgpt' : 'google')}
+              className={`p-2.5 rounded-xl transition-all relative group flex flex-col items-center justify-center cursor-pointer shadow-xs ${designMode === 'chatgpt' ? 'bg-primary text-white hover:bg-primary-hover' : 'bg-[#1a73e8] text-white hover:bg-[#1557b0]'}`}
+              title="Přepnout vzhled (Google → Yandex → Fresh)"
             >
               <RefreshCw className="w-4 h-4" />
-              <span className="text-[8px] mt-0.5 font-medium scale-90 leading-none">{designMode === 'google' ? 'Yandex' : 'Google'}</span>
+              <span className="text-[8px] mt-0.5 font-medium scale-90 leading-none">{designMode === 'google' ? 'Yandex' : designMode === 'yandex' ? 'Fresh' : 'Google'}</span>
             </button>
 
             {/* Dark Mode Toggle Button */}
